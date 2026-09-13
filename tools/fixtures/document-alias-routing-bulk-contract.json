@@ -1,0 +1,212 @@
+{
+  "indices": [
+    {
+      "name": "alias-bulk-contract",
+      "body": {
+        "mappings": {"properties": {"value": {"type": "keyword"}}},
+        "settings": {
+          "number_of_shards": 1,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "aliases": {
+          "alias-bulk-route": {
+            "index_routing": "tenant"
+          }
+        }
+      }
+    },
+    {
+      "name": "alias-selected-a",
+      "body": {
+        "settings": {
+          "number_of_shards": 1,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "aliases": {
+          "alias-selected-route": {
+            "index_routing": "old",
+            "is_write_index": false
+          }
+        }
+      }
+    },
+    {
+      "name": "alias-selected-b",
+      "body": {
+        "settings": {
+          "number_of_shards": 1,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "aliases": {
+          "alias-selected-route": {
+            "index_routing": "tenant",
+            "is_write_index": true
+          }
+        }
+      }
+    }
+  ],
+  "bulk": [],
+  "cases": [
+    {
+      "name": "bulk-conflicting-routing-partial-success",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "bulk_items",
+      "steps": [
+        {
+          "method": "PUT",
+          "path": "/alias-bulk-contract/_doc/one?routing=tenant&refresh=true",
+          "body": {
+            "value": "seed"
+          },
+          "expected_status": 201
+        },
+        {
+          "method": "POST",
+          "path": "/_bulk",
+          "body": "{\"index\":{\"_index\":\"alias-bulk-route\",\"_id\":\"one\",\"routing\":\"other\"}}\n{\"value\":\"changed\"}\n{\"create\":{\"_index\":\"alias-bulk-route\",\"_id\":\"two\",\"routing\":\"other\"}}\n{\"value\":\"changed\"}\n{\"update\":{\"_index\":\"alias-bulk-route\",\"_id\":\"one\",\"routing\":\"other\"}}\n{\"doc\":{\"value\":\"changed\"}}\n{\"delete\":{\"_index\":\"alias-bulk-route\",\"_id\":\"one\",\"routing\":\"other\"}}\n{\"index\":{\"_index\":\"alias-bulk-route\",\"_id\":\"good\"}}\n{\"value\":\"good\"}\n",
+          "expected_status": 200,
+          "extract": "bulk_items",
+          "raw": true
+        }
+      ]
+    },
+    {
+      "name": "bulk-rejected-items-preserve-seed",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "get_document",
+      "steps": [
+        {
+          "method": "GET",
+          "path": "/alias-bulk-contract/_doc/one?routing=tenant",
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "bulk-valid-item-uses-alias-default",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "get_document",
+      "steps": [
+        {
+          "method": "GET",
+          "path": "/alias-bulk-contract/_doc/good?routing=tenant",
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "bulk-final-data",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/alias-bulk-contract/_refresh",
+          "body": {},
+          "expected_status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/alias-bulk-contract/_search",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "size": 10,
+            "sort": [{"value": "asc"}]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "selected-write-index-bulk",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "bulk_items",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/_bulk",
+          "body": "{\"index\":{\"_index\":\"alias-selected-route\",\"_id\":\"selected\"}}\n{\"value\":\"selected\"}\n",
+          "expected_status": 200,
+          "extract": "bulk_items",
+          "raw": true
+        }
+      ]
+    },
+    {
+      "name": "selected-write-index-readback",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "get_document",
+      "steps": [
+        {
+          "method": "GET",
+          "path": "/alias-selected-b/_doc/selected?routing=tenant",
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "multi-alias-_doc-rejected",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "alias_single_index_error",
+      "steps": [
+        {
+          "method": "GET",
+          "path": "/alias-selected-route/_doc/selected",
+          "expected_status": 400
+        }
+      ]
+    },
+    {
+      "name": "multi-alias-_source-rejected",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "alias_single_index_error",
+      "steps": [
+        {
+          "method": "GET",
+          "path": "/alias-selected-route/_source/selected",
+          "expected_status": 400
+        }
+      ]
+    },
+    {
+      "name": "selected-delete-conflict",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "document_write_error",
+      "steps": [
+        {
+          "method": "DELETE",
+          "path": "/alias-selected-route/_doc/selected?routing=old",
+          "expected_status": 400
+        }
+      ]
+    },
+    {
+      "name": "selected-delete-default",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "single_doc_write_result",
+      "steps": [
+        {
+          "method": "DELETE",
+          "path": "/alias-selected-route/_doc/selected",
+          "expected_status": 200
+        }
+      ]
+    }
+  ]
+}

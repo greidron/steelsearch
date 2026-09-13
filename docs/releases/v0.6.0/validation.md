@@ -57,3 +57,27 @@ with the environment and durability differences disclosed in the release notes.
 Strict performance preservation versus the separate development control remains
 unproven. User approval to publish v0.6.0 does not waive that separate objective
 or authorize a production OpenSearch cutover.
+
+## Post-Release Visibility Finding (2026-09-08)
+
+Subsequent local diagnostics reproduced incomplete native-search visibility with
+the exact v0.6.0 executable (`db244133...`) in the deferred-native-write development
+mode used for performance testing. Two single-node mixed-load probes (three shards,
+four clients, 5000 seed documents, two seconds each) expected 5317 and 5321 documents
+from successful unique-ID writes. After stopping writes and issuing two additional
+refreshes, native search still reported only 5280 and 5289 documents. Forced fallback
+search reported the expected totals. The current development candidate (`9fd8e71a...`)
+reached matching expected native/fallback totals after a post-load refresh in both
+control probes; this is not approval of that candidate for production.
+
+These cardinality probes are not new release performance measurements, exhaustive
+ID/content checks, or proof of the exact deficit in the original 60-second runs.
+The original benchmark did not check post-load search completeness. Its historical
+throughput comparisons therefore do not establish equivalent fully searchable work
+or safe OpenSearch replacement. Published raw reports, archives and hashes remain
+unchanged; the fixed v0.6.0 cumulative performance budget is not reset or waived.
+
+Evidence: `target/core-replacement-c05/refresh-work-v060-smoke/result.json`, SHA-256
+`883f46b6a00af5ea7d4d8577759a52bc8ad0a0df8b8fc7135dd2a112c6e08ce5`.
+See the [core replacement implementation plan](../../rust-port/core-replacement-implementation-plan-2026-09-07.md)
+for the longer before/after diagnostic and remaining verification work.

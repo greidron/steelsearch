@@ -1,10 +1,14 @@
 import importlib.util
+import copy
 import os
 import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+from unified_compatibility_scope import CORE_SUITES, PLUGIN_SUITES, validate_scope
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -162,6 +166,55 @@ def complete_synthetic_unified_report(skipped, resolved, unresolved):
 
 
 class UnifiedOpenSearchE2EReportTests(unittest.TestCase):
+    def test_core_cli_rejects_partial_cases_before_writing_reports(self):
+        runner = load_module(RUNNER_PATH, "run_unified_core_cases")
+        with patch.object(runner, "parse_args", return_value=SimpleNamespace(
+                compatibility_profile="core-no-plugins", case=["terms_aggregation"])), self.assertRaises(SystemExit):
+            runner.main()
+
+    def test_core_suite_selection_is_complete_and_excludes_only_plugins(self):
+        runner = load_module(RUNNER_PATH, "run_unified_core_selection")
+        selected = runner.select_suites(None, "core-no-plugins")
+        self.assertEqual({suite.name for suite in selected}, CORE_SUITES)
+        self.assertEqual({suite.name for suite in runner.SUITES}, CORE_SUITES | PLUGIN_SUITES)
+        for names in ([], ["search-compat"], ["knn-plugin-surface"]):
+            with self.subTest(names=names), self.assertRaises(SystemExit):
+                runner.select_suites(names, "core-no-plugins")
+        with self.assertRaises(SystemExit):
+            runner.select_suites(None, "unknown")
+
+    def core_scope_report(self):
+        return {"compatibility_profile": "core-no-plugins",
+                "suite_results": [{"name": name, "required": True} for name in sorted(CORE_SUITES)],
+                "excluded_suites": [{"name": name, "status": "excluded", "reason": "plugins unsupported"}
+                                    for name in sorted(PLUGIN_SUITES)]}
+
+    def test_core_scope_cannot_be_used_as_legacy_or_demote_security(self):
+        report = self.core_scope_report()
+        self.assertEqual(validate_scope(report, "core-no-plugins"), [])
+        self.assertTrue(validate_scope(report, "legacy-full"))
+        for mutation in ("missing", "duplicate", "security", "executed_plugin", "missing_exclusion"):
+            changed = copy.deepcopy(report)
+            if mutation == "missing":
+                changed["suite_results"].pop()
+            elif mutation == "duplicate":
+                changed["suite_results"].append(changed["suite_results"][0])
+            elif mutation == "security":
+                next(row for row in changed["suite_results"] if row["name"] == "security-authz")["required"] = False
+            elif mutation == "executed_plugin":
+                changed["excluded_suites"][0]["returncode"] = 0
+            else:
+                changed["excluded_suites"].pop()
+            with self.subTest(mutation=mutation):
+                self.assertTrue(validate_scope(changed, "core-no-plugins"))
+
+    def test_core_empty_report_cannot_be_built_or_validated(self):
+        runner = load_module(RUNNER_PATH, "run_unified_core_empty")
+        checker = load_module(CHECKER_PATH, "check_unified_core_empty")
+        with self.assertRaises(ValueError):
+            runner.build_report("test", [], "core-no-plugins")
+        self.assertTrue(checker.validate_report(self.core_scope_report(), False))
+
     def test_suite_with_missing_fixture_case_is_missing_not_ok(self):
         runner = load_module(RUNNER_PATH, "run_unified_opensearch_e2e")
         suite = runner.Suite(

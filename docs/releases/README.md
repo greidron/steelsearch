@@ -109,6 +109,21 @@ for the previous release to make a table pass.
 
 ## GitHub Publication
 
+### Cumulative Implementation Budget
+
+Every implementation unit must run the full non-plugin benchmark suite before
+completion. The fixed cumulative regression reference is the initial v0.6.0
+release, not the preceding unit or the most recent release. Throughput must be
+at least 95% of that baseline; each scenario's mean/p95/p99 latency must be at
+most 105%, under identical actual settings. The detailed implementation plan
+defines the complete run scope and exception process. This additional policy
+does not replace either mandatory release comparison above. The current notes
+validator checks table/evidence integrity; it does not yet enforce this new
+per-implementation cumulative budget. Implementing that automatic gate is G04
+in the core replacement plan; do not describe it as already enforced by CI.
+
+### Publication Procedure
+
 After release approval, use only the validated publisher:
 
 ```sh

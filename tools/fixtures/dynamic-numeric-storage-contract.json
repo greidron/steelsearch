@@ -1,0 +1,60 @@
+{
+  "indices": [{
+    "name": "dynamic-numeric-storage",
+    "body": {
+      "settings": {"number_of_shards": 1, "number_of_replicas": 0, "refresh_interval": "-1"},
+      "mappings": {"properties": {"kept": {"type": "double", "store": true}}}
+    }
+  }],
+  "bulk": [],
+  "cases": [
+    {
+      "name": "dynamic-float-array-native-term-source", "area": "search", "family": "mapping",
+      "extract": "search_hits",
+      "steps": [
+        {"method": "PUT", "path": "/dynamic-numeric-storage/_doc/one", "body": {"embedding": [0.25, 12.25, 200.25, 383.25], "kept": [12.5, 42.5]}, "expected_status": 201},
+        {"method": "POST", "path": "/dynamic-numeric-storage/_refresh", "body": {}, "expected_status": 200},
+        {"method": "POST", "path": "/dynamic-numeric-storage/_search", "body": {"query": {"term": {"embedding": 200.25}}}, "expected_status": 200}
+      ]
+    },
+    {
+      "name": "dynamic-float-array-fallback-term-source", "area": "search", "family": "mapping",
+      "extract": "search_hits",
+      "steps": [{"method": "POST", "path": "/dynamic-numeric-storage/_search?pre_filter_shard_size=1", "body": {"query": {"term": {"embedding": 383.25}}}, "expected_status": 200}]
+    },
+    {
+      "name": "dynamic-float-array-native-stored-fields", "area": "search", "family": "fetch",
+      "extract": "search_fields",
+      "steps": [{"method": "POST", "path": "/dynamic-numeric-storage/_search", "body": {"query": {"match_all": {}}, "stored_fields": ["embedding", "kept"]}, "expected_status": 200}]
+    },
+    {
+      "name": "dynamic-float-array-fallback-stored-fields", "area": "search", "family": "fetch",
+      "extract": "search_fields",
+      "steps": [{"method": "POST", "path": "/dynamic-numeric-storage/_search?pre_filter_shard_size=1", "body": {"query": {"match_all": {}}, "stored_fields": ["embedding", "kept"]}, "expected_status": 200}]
+    },
+    {
+      "name": "dynamic-float-array-native-docvalue-fields", "area": "search", "family": "fetch",
+      "extract": "search_fields",
+      "steps": [{"method": "POST", "path": "/dynamic-numeric-storage/_search", "body": {"query": {"match_all": {}}, "docvalue_fields": ["embedding", "kept"]}, "expected_status": 200}]
+    },
+    {
+      "name": "dynamic-float-array-fallback-docvalue-fields", "area": "search", "family": "fetch",
+      "extract": "search_fields",
+      "steps": [{"method": "POST", "path": "/dynamic-numeric-storage/_search?pre_filter_shard_size=1", "body": {"query": {"match_all": {}}, "docvalue_fields": ["embedding", "kept"]}, "expected_status": 200}]
+    },
+    {
+      "name": "dynamic-float-array-native-docvalue-order-and-duplicates", "area": "search", "family": "fetch",
+      "extract": "search_fields",
+      "steps": [
+        {"method": "PUT", "path": "/dynamic-numeric-storage/_doc/one", "body": {"embedding": [200.25, null, [0.25, 383.25], 200.25, 12.25], "kept": [42.5, 12.5, 42.5]}, "expected_status": 200},
+        {"method": "POST", "path": "/dynamic-numeric-storage/_refresh", "body": {}, "expected_status": 200},
+        {"method": "POST", "path": "/dynamic-numeric-storage/_search", "body": {"query": {"match_all": {}}, "docvalue_fields": ["embedding", "kept"]}, "expected_status": 200}
+      ]
+    },
+    {
+      "name": "dynamic-float-array-fallback-docvalue-order-and-duplicates", "area": "search", "family": "fetch",
+      "extract": "search_fields",
+      "steps": [{"method": "POST", "path": "/dynamic-numeric-storage/_search?pre_filter_shard_size=1", "body": {"query": {"match_all": {}}, "docvalue_fields": ["embedding", "kept"]}, "expected_status": 200}]
+    }
+  ]
+}

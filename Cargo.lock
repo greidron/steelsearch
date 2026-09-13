@@ -963,6 +963,7 @@ dependencies = [
 name = "os-engine-tantivy"
 version = "0.2.5"
 dependencies = [
+ "os-core",
  "os-engine",
  "os-plugin-knn",
  "os-query-dsl",
@@ -972,6 +973,7 @@ dependencies = [
  "serde_json",
  "tantivy",
  "time",
+ "uuid",
 ]
 
 [[package]]
@@ -1010,6 +1012,7 @@ dependencies = [
  "os-ml-commons",
  "os-node-rest-core",
  "os-plugin-knn",
+ "os-query-dsl",
  "os-rest",
  "os-stream",
  "os-transport",
@@ -1024,6 +1027,7 @@ dependencies = [
  "tracing",
  "url",
  "utoipa",
+ "uuid",
 ]
 
 [[package]]
@@ -1618,8 +1622,6 @@ dependencies = [
 [[package]]
 name = "tantivy"
 version = "0.21.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6083cd777fa94271b8ce0fe4533772cb8110c3044bab048d20f70108329a1f2"
 dependencies = [
  "aho-corasick",
  "arc-swap",

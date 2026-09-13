@@ -1,0 +1,491 @@
+{
+  "indices": [
+    {
+      "name": "native-agg-date-default",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 1,
+            "number_of_replicas": 0,
+            "refresh_interval": "-1"
+          }
+        },
+        "mappings": {
+          "properties": {
+            "event_time": {
+              "type": "date"
+            },
+            "service": {
+              "type": "keyword"
+            },
+            "category": {
+              "type": "keyword"
+            },
+            "latency": {
+              "type": "long"
+            },
+            "message": {
+              "type": "text"
+            },
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "native-agg-date-epoch",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 1,
+            "number_of_replicas": 0,
+            "refresh_interval": "-1"
+          }
+        },
+        "mappings": {
+          "properties": {
+            "event_time": {
+              "type": "date",
+              "format": "epoch_millis"
+            },
+            "service": {
+              "type": "keyword"
+            },
+            "category": {
+              "type": "keyword"
+            },
+            "latency": {
+              "type": "long"
+            },
+            "message": {
+              "type": "text"
+            },
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "bulk": [
+    {
+      "index": "native-agg-date-default",
+      "documents": [
+        {
+          "_id": "a",
+          "_source": {
+            "event_time": [
+              0,
+              0,
+              1000
+            ],
+            "service": [
+              "api",
+              "api"
+            ],
+            "category": "auth",
+            "latency": [
+              50,
+              50,
+              60
+            ],
+            "message": "service search",
+            "tenant": "tenant-a"
+          }
+        },
+        {
+          "_id": "b",
+          "_source": {
+            "event_time": 0,
+            "service": "api",
+            "category": "billing",
+            "latency": 150,
+            "message": "service event",
+            "tenant": "tenant-a"
+          }
+        },
+        {
+          "_id": "c",
+          "_source": {
+            "event_time": 86400000,
+            "service": "worker",
+            "category": "auth",
+            "latency": 300,
+            "message": "analytics event",
+            "tenant": "tenant-b"
+          }
+        },
+        {
+          "_id": "scalar-small",
+          "_source": {
+            "event_time": 1000,
+            "service": "worker",
+            "category": "auth",
+            "latency": 60,
+            "message": "analytics event",
+            "tenant": "tenant-b"
+          }
+        }
+      ]
+    },
+    {
+      "index": "native-agg-date-epoch",
+      "documents": [
+        {
+          "_id": "a",
+          "_source": {
+            "event_time": [
+              0,
+              0,
+              1000
+            ],
+            "service": [
+              "api",
+              "api"
+            ],
+            "category": "auth",
+            "latency": [
+              50,
+              50,
+              60
+            ],
+            "message": "service search",
+            "tenant": "tenant-a"
+          }
+        },
+        {
+          "_id": "b",
+          "_source": {
+            "event_time": 0,
+            "service": "api",
+            "category": "billing",
+            "latency": 150,
+            "message": "service event",
+            "tenant": "tenant-a"
+          }
+        },
+        {
+          "_id": "c",
+          "_source": {
+            "event_time": 86400000,
+            "service": "worker",
+            "category": "auth",
+            "latency": 300,
+            "message": "analytics event",
+            "tenant": "tenant-b"
+          }
+        },
+        {
+          "_id": "scalar-small",
+          "_source": {
+            "event_time": 1000,
+            "service": "worker",
+            "category": "auth",
+            "latency": 60,
+            "message": "analytics event",
+            "tenant": "tenant-b"
+          }
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "native-agg-date-default-doc-values",
+      "area": "aggregation",
+      "family": "native-aggregation-date-parsing",
+      "method": "POST",
+      "path": "/native-agg-date-default/_search",
+      "body": {
+        "size": 10,
+        "_source": false,
+        "docvalue_fields": [
+          {
+            "field": "event_time",
+            "format": "epoch_millis"
+          }
+        ]
+      },
+      "extract": "search_fields"
+    },
+    {
+      "name": "native-agg-date-default-fixed-nonempty",
+      "area": "aggregation",
+      "family": "native-aggregation-date-parsing",
+      "method": "POST",
+      "path": "/native-agg-date-default/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "days": {
+            "date_histogram": {
+              "field": "event_time",
+              "fixed_interval": "1d",
+              "min_doc_count": 1
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "native-agg-date-default-calendar-nonempty",
+      "area": "aggregation",
+      "family": "native-aggregation-date-parsing",
+      "method": "POST",
+      "path": "/native-agg-date-default/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "days": {
+            "date_histogram": {
+              "field": "event_time",
+              "calendar_interval": "day",
+              "min_doc_count": 1
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "native-agg-date-default-filtered-mixed",
+      "area": "aggregation",
+      "family": "native-aggregation-date-parsing",
+      "method": "POST",
+      "path": "/native-agg-date-default/_search",
+      "body": {
+        "size": 0,
+        "query": {
+          "bool": {
+            "must": [
+              {
+                "match": {
+                  "message": "service"
+                }
+              }
+            ],
+            "filter": [
+              {
+                "term": {
+                  "tenant": "tenant-a"
+                }
+              }
+            ]
+          }
+        },
+        "aggs": {
+          "services": {
+            "terms": {
+              "field": "service",
+              "size": 8
+            }
+          },
+          "categories": {
+            "terms": {
+              "field": "category",
+              "size": 8
+            }
+          },
+          "ranges": {
+            "range": {
+              "field": "latency",
+              "ranges": [
+                {
+                  "key": "low",
+                  "to": 100
+                },
+                {
+                  "key": "middle",
+                  "from": 100,
+                  "to": 300
+                },
+                {
+                  "key": "high",
+                  "from": 300
+                }
+              ]
+            }
+          },
+          "days": {
+            "date_histogram": {
+              "field": "event_time",
+              "calendar_interval": "day",
+              "min_doc_count": 1
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "native-agg-date-epoch-doc-values",
+      "area": "aggregation",
+      "family": "native-aggregation-date-parsing",
+      "method": "POST",
+      "path": "/native-agg-date-epoch/_search",
+      "body": {
+        "size": 10,
+        "_source": false,
+        "docvalue_fields": [
+          {
+            "field": "event_time",
+            "format": "epoch_millis"
+          }
+        ]
+      },
+      "extract": "search_fields"
+    },
+    {
+      "name": "native-agg-date-epoch-fixed-nonempty",
+      "area": "aggregation",
+      "family": "native-aggregation-date-parsing",
+      "method": "POST",
+      "path": "/native-agg-date-epoch/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "days": {
+            "date_histogram": {
+              "field": "event_time",
+              "fixed_interval": "1d",
+              "min_doc_count": 1
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "native-agg-date-epoch-calendar-nonempty",
+      "area": "aggregation",
+      "family": "native-aggregation-date-parsing",
+      "method": "POST",
+      "path": "/native-agg-date-epoch/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "days": {
+            "date_histogram": {
+              "field": "event_time",
+              "calendar_interval": "day",
+              "min_doc_count": 1
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "native-agg-date-epoch-filtered-mixed",
+      "area": "aggregation",
+      "family": "native-aggregation-date-parsing",
+      "method": "POST",
+      "path": "/native-agg-date-epoch/_search",
+      "body": {
+        "size": 0,
+        "query": {
+          "bool": {
+            "must": [
+              {
+                "match": {
+                  "message": "service"
+                }
+              }
+            ],
+            "filter": [
+              {
+                "term": {
+                  "tenant": "tenant-a"
+                }
+              }
+            ]
+          }
+        },
+        "aggs": {
+          "services": {
+            "terms": {
+              "field": "service",
+              "size": 8
+            }
+          },
+          "categories": {
+            "terms": {
+              "field": "category",
+              "size": 8
+            }
+          },
+          "ranges": {
+            "range": {
+              "field": "latency",
+              "ranges": [
+                {
+                  "key": "low",
+                  "to": 100
+                },
+                {
+                  "key": "middle",
+                  "from": 100,
+                  "to": 300
+                },
+                {
+                  "key": "high",
+                  "from": 300
+                }
+              ]
+            }
+          },
+          "days": {
+            "date_histogram": {
+              "field": "event_time",
+              "calendar_interval": "day",
+              "min_doc_count": 1
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "native-agg-date-epoch-fixed-zero-fill",
+      "area": "aggregation",
+      "family": "native-aggregation-date-parsing",
+      "method": "POST",
+      "path": "/native-agg-date-epoch/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "days": {
+            "date_histogram": {
+              "field": "event_time",
+              "fixed_interval": "1d"
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "native-agg-date-epoch-calendar-zero-fill",
+      "area": "aggregation",
+      "family": "native-aggregation-date-parsing",
+      "method": "POST",
+      "path": "/native-agg-date-epoch/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "days": {
+            "date_histogram": {
+              "field": "event_time",
+              "calendar_interval": "day"
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    }
+  ]
+}

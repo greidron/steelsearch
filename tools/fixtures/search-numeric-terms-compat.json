@@ -1,0 +1,21 @@
+{
+  "indices": [{"name":"numeric-terms","body":{"settings":{"number_of_shards":3,"number_of_replicas":0},"mappings":{"properties":{"rank":{"type":"long"},"label":{"type":"keyword"},"events":{"type":"nested","properties":{"kind":{"type":"keyword"}}}}}}}],
+  "bulk": [{"index":"numeric-terms","documents":[
+    {"_id":"one","_source":{"rank":[2,2,10,9007199254740993,9007199254740992],"label":["2","10","2"],"events":[{"kind":"payment"}]}},
+    {"_id":"two","_source":{"rank":[10,-2],"label":"2","events":[{"kind":"refund"}]}},
+    {"_id":"missing","_source":{"events":[{"kind":"payment"}]}},
+    {"_id":"null","_source":{"rank":null,"events":[{"kind":"payment"}]}},
+    {"_id":"empty","_source":{"rank":[],"events":[]}},
+    {"_id":"null-array","_source":{"rank":[null,null],"events":[]}}
+  ]}],
+  "cases": [
+    {"name":"numeric-key-asc","area":"aggregation","family":"aggregation","method":"POST","path":"/numeric-terms/_search?ignore_unavailable=false","body":{"size":0,"aggs":{"ranks":{"terms":{"field":"rank","missing":-1,"order":{"_key":"asc"}}}}},"extract":"terms_aggregation"},
+    {"name":"numeric-key-desc","area":"aggregation","family":"aggregation","method":"POST","path":"/numeric-terms/_search?ignore_unavailable=false","body":{"size":0,"aggs":{"ranks":{"terms":{"field":"rank","missing":-1,"order":{"_key":"desc"}}}}},"extract":"terms_aggregation"},
+    {"name":"numeric-count-asc","area":"aggregation","family":"aggregation","method":"POST","path":"/numeric-terms/_search?ignore_unavailable=false","body":{"size":0,"aggs":{"ranks":{"terms":{"field":"rank","missing":-1,"order":{"_count":"asc"}}}}},"extract":"terms_aggregation"},
+    {"name":"numeric-count-desc","area":"aggregation","family":"aggregation","method":"POST","path":"/numeric-terms/_search?ignore_unavailable=false","body":{"size":0,"aggs":{"ranks":{"terms":{"field":"rank","missing":-1,"order":{"_count":"desc"}}}}},"extract":"terms_aggregation"},
+    {"name":"numeric-include-exclude","area":"aggregation","family":"aggregation","method":"POST","path":"/numeric-terms/_search?ignore_unavailable=false","body":{"size":0,"aggs":{"ranks":{"terms":{"field":"rank","include":[2,10],"exclude":[10]}}}},"extract":"terms_aggregation"},
+    {"name":"numeric-minimum-limit","area":"aggregation","family":"aggregation","method":"POST","path":"/numeric-terms/_search?ignore_unavailable=false","body":{"size":0,"aggs":{"ranks":{"terms":{"field":"rank","missing":-1,"min_doc_count":2,"size":1}}}},"extract":"terms_aggregation"},
+    {"name":"numeric-nested-query","area":"aggregation","family":"aggregation","method":"POST","path":"/numeric-terms/_search","body":{"size":0,"query":{"nested":{"path":"events","query":{"term":{"events.kind":"payment"}}}},"aggs":{"ranks":{"terms":{"field":"rank","missing":-1,"order":{"_key":"asc"}}}}},"extract":"terms_aggregation"},
+    {"name":"numeric-looking-keywords","area":"aggregation","family":"aggregation","method":"POST","path":"/numeric-terms/_search?ignore_unavailable=false","body":{"size":0,"aggs":{"labels":{"terms":{"field":"label","order":{"_key":"asc"}}}}},"extract":"terms_aggregation"}
+  ]
+}

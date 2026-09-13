@@ -9,6 +9,9 @@ import json
 import time
 from pathlib import Path
 from typing import Any
+from unified_compatibility_scope import PROFILES, validate_scope
+from core_security_fixture import validate_projection
+from core_search_fixture import PROJECTED_SUITES, validate_projection as validate_search_projection
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -63,6 +66,7 @@ SUITE_REQUIRED_FIELDS = (
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("report")
+    parser.add_argument("--compatibility-profile", choices=PROFILES, default="legacy-full")
     parser.add_argument("--allow-missing", action="store_true")
     parser.add_argument("--allow-blocked", action="store_true")
     parser.add_argument(
@@ -105,6 +109,7 @@ def main() -> int:
         allow_missing=args.allow_missing,
         allow_blocked=args.allow_blocked,
         require_no_skips=args.require_no_skips,
+        compatibility_profile=args.compatibility_profile,
         require_no_unresolved_skips=args.require_no_unresolved_skips,
         required_nonempty_sections=set(args.require_section),
         required_opensearch_suites=set(args.require_opensearch_suite),
@@ -208,8 +213,18 @@ def validate_report(
     require_no_unresolved_skips: bool = False,
     required_nonempty_sections: set[str] | None = None,
     required_opensearch_suites: set[str] | None = None,
+    compatibility_profile: str = "legacy-full",
 ) -> list[str]:
     errors: list[str] = []
+    scope_errors = validate_scope(report, compatibility_profile)
+    if scope_errors:
+        return scope_errors
+    if compatibility_profile == "core-no-plugins":
+        security = next(suite for suite in report["suite_results"] if suite["name"] == "security-authz")
+        errors.extend(validate_projection(security))
+        for suite in report["suite_results"]:
+            if suite["name"] in PROJECTED_SUITES:
+                errors.extend(validate_search_projection(suite))
     required_nonempty_sections = required_nonempty_sections or set()
     required_opensearch_suites = required_opensearch_suites or set()
     for field in ("profile", "generated_at", "status", "coverage_summary", "suite_results"):

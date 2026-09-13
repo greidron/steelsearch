@@ -1,0 +1,396 @@
+{
+  "reference_version": "3.7.0-SNAPSHOT",
+  "reference_build_hash": "f991609d190dfd91c8a09902053a7bbfe0c27b3e",
+  "source_report_sha256": "38b86cb0caf0f9cb9a5146c456d54d203d2717f322a63d2c7815f2ac37ef1a9e",
+  "scope": "Actual reference term vectors for default position gap; ASCII inputs only; not HTTP candidate certification",
+  "rows": [
+    {
+      "id": "scalar",
+      "terms": {
+        "alpha": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 5,
+              "position": 0,
+              "start_offset": 0
+            }
+          ]
+        },
+        "beta": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 10,
+              "position": 1,
+              "start_offset": 6
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "array",
+      "terms": {
+        "alpha": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 5,
+              "position": 0,
+              "start_offset": 0
+            }
+          ]
+        },
+        "beta": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 10,
+              "position": 101,
+              "start_offset": 6
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "leading_empty",
+      "terms": {
+        "alpha": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 6,
+              "position": 100,
+              "start_offset": 1
+            }
+          ]
+        },
+        "beta": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 11,
+              "position": 201,
+              "start_offset": 7
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "middle_empty",
+      "terms": {
+        "alpha": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 5,
+              "position": 0,
+              "start_offset": 0
+            }
+          ]
+        },
+        "beta": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 11,
+              "position": 201,
+              "start_offset": 7
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "trailing_empty",
+      "terms": {
+        "alpha": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 5,
+              "position": 0,
+              "start_offset": 0
+            }
+          ]
+        },
+        "beta": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 10,
+              "position": 101,
+              "start_offset": 6
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "middle_null",
+      "terms": {
+        "alpha": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 5,
+              "position": 0,
+              "start_offset": 0
+            }
+          ]
+        },
+        "beta": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 10,
+              "position": 101,
+              "start_offset": 6
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "empty_array",
+      "terms": {
+        "alpha": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 5,
+              "position": 0,
+              "start_offset": 0
+            }
+          ]
+        },
+        "beta": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 10,
+              "position": 101,
+              "start_offset": 6
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "nested",
+      "terms": {
+        "alpha": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 5,
+              "position": 0,
+              "start_offset": 0
+            }
+          ]
+        },
+        "beta": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 10,
+              "position": 101,
+              "start_offset": 6
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "punctuation",
+      "terms": {
+        "alpha": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 5,
+              "position": 0,
+              "start_offset": 0
+            }
+          ]
+        },
+        "beta": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 14,
+              "position": 201,
+              "start_offset": 10
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "two_empty",
+      "terms": {
+        "alpha": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 5,
+              "position": 0,
+              "start_offset": 0
+            }
+          ]
+        },
+        "beta": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 12,
+              "position": 301,
+              "start_offset": 8
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "number",
+      "terms": {
+        "12": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 8,
+              "position": 101,
+              "start_offset": 6
+            }
+          ]
+        },
+        "alpha": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 5,
+              "position": 0,
+              "start_offset": 0
+            }
+          ]
+        },
+        "beta": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 13,
+              "position": 202,
+              "start_offset": 9
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "boolean",
+      "terms": {
+        "alpha": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 5,
+              "position": 0,
+              "start_offset": 0
+            }
+          ]
+        },
+        "beta": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 15,
+              "position": 202,
+              "start_offset": 11
+            }
+          ]
+        },
+        "true": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 10,
+              "position": 101,
+              "start_offset": 6
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "leading_null",
+      "terms": {
+        "alpha": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 5,
+              "position": 0,
+              "start_offset": 0
+            }
+          ]
+        },
+        "beta": {
+          "term_freq": 1,
+          "tokens": [
+            {
+              "end_offset": 10,
+              "position": 101,
+              "start_offset": 6
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "repeat",
+      "terms": {
+        "alpha": {
+          "term_freq": 2,
+          "tokens": [
+            {
+              "end_offset": 5,
+              "position": 0,
+              "start_offset": 0
+            },
+            {
+              "end_offset": 16,
+              "position": 102,
+              "start_offset": 11
+            }
+          ]
+        },
+        "beta": {
+          "term_freq": 2,
+          "tokens": [
+            {
+              "end_offset": 10,
+              "position": 1,
+              "start_offset": 6
+            },
+            {
+              "end_offset": 21,
+              "position": 103,
+              "start_offset": 17
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "null_only",
+      "terms": {}
+    },
+    {
+      "id": "empty_only",
+      "terms": {}
+    }
+  ]
+}

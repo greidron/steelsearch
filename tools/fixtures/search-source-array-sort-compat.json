@@ -1,0 +1,1706 @@
+{
+  "indices": [
+    {
+      "name": "sort-source-arrays-1",
+      "body": {
+        "settings": {
+          "number_of_shards": 1,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "long"
+            },
+            "tie": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "sort-source-arrays-3",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "long"
+            },
+            "tie": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "bulk": [
+    {
+      "index": "sort-source-arrays-1",
+      "documents": [
+        {
+          "_id": "doc-0",
+          "_source": {
+            "value": [
+              null,
+              9,
+              2,
+              5
+            ],
+            "tie": 0
+          }
+        },
+        {
+          "_id": "doc-1",
+          "_source": {
+            "value": 4,
+            "tie": 1
+          }
+        },
+        {
+          "_id": "doc-2",
+          "_source": {
+            "value": null,
+            "tie": 2
+          }
+        },
+        {
+          "_id": "doc-3",
+          "_source": {
+            "value": [],
+            "tie": 3
+          }
+        },
+        {
+          "_id": "doc-4",
+          "_source": {
+            "value": [
+              null
+            ],
+            "tie": 4
+          }
+        },
+        {
+          "_id": "doc-5",
+          "_source": {
+            "tie": 5
+          }
+        },
+        {
+          "_id": "doc-6",
+          "_source": {
+            "value": [
+              7,
+              1
+            ],
+            "tie": 6
+          }
+        },
+        {
+          "_id": "doc-7",
+          "_source": {
+            "value": [
+              -3,
+              8
+            ],
+            "tie": 7
+          }
+        }
+      ]
+    },
+    {
+      "index": "sort-source-arrays-3",
+      "documents": [
+        {
+          "_id": "doc-0",
+          "_source": {
+            "value": [
+              null,
+              9,
+              2,
+              5
+            ],
+            "tie": 0
+          }
+        },
+        {
+          "_id": "doc-1",
+          "_source": {
+            "value": 4,
+            "tie": 1
+          }
+        },
+        {
+          "_id": "doc-2",
+          "_source": {
+            "value": null,
+            "tie": 2
+          }
+        },
+        {
+          "_id": "doc-3",
+          "_source": {
+            "value": [],
+            "tie": 3
+          }
+        },
+        {
+          "_id": "doc-4",
+          "_source": {
+            "value": [
+              null
+            ],
+            "tie": 4
+          }
+        },
+        {
+          "_id": "doc-5",
+          "_source": {
+            "tie": 5
+          }
+        },
+        {
+          "_id": "doc-6",
+          "_source": {
+            "value": [
+              7,
+              1
+            ],
+            "tie": 6
+          }
+        },
+        {
+          "_id": "doc-7",
+          "_source": {
+            "value": [
+              -3,
+              8
+            ],
+            "tie": 7
+          }
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "sort-source-1-asc-native",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-1/_search",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": "asc"
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-1-asc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-1/_search?ignore_unavailable=false",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": "asc"
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-1-desc-native",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-1/_search",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": "desc"
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-1-desc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-1/_search?ignore_unavailable=false",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": "desc"
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-1-min-native",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-1/_search",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "min"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-1-min-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-1/_search?ignore_unavailable=false",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "min"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-1-max-native",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-1/_search",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "max"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-1-max-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-1/_search?ignore_unavailable=false",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "max"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-1-avg-native",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-1/_search",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-1-avg-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-1/_search?ignore_unavailable=false",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-1-sum-native",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-1/_search",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "sum"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-1-sum-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-1/_search?ignore_unavailable=false",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "sum"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-1-median-native",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-1/_search",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-1-median-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-1/_search?ignore_unavailable=false",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-1-missing-first-native",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-1/_search",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "missing": "_first"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-1-missing-first-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-1/_search?ignore_unavailable=false",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "missing": "_first"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-1-missing-value-native",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-1/_search",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "missing": 6
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-1-missing-value-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-1/_search?ignore_unavailable=false",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "missing": 6
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-1-page-native",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-1/_search",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "from": 2,
+            "sort": [
+              {
+                "value": "asc"
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-1-page-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-1/_search?ignore_unavailable=false",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "from": 2,
+            "sort": [
+              {
+                "value": "asc"
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-1-zero-native",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-1/_search",
+          "body": {
+            "size": 0,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": "asc"
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-1-zero-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-1/_search?ignore_unavailable=false",
+          "body": {
+            "size": 0,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": "asc"
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-1-past-end-native",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-1/_search",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "from": 20,
+            "sort": [
+              {
+                "value": "desc"
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-1-past-end-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-1/_search?ignore_unavailable=false",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "from": 20,
+            "sort": [
+              {
+                "value": "desc"
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-1-search-after-native",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-1/_search",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": "asc"
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              2,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-1-search-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-1/_search?ignore_unavailable=false",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": "asc"
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              2,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-3-asc-native",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-3/_search",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": "asc"
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-3-asc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-3/_search?ignore_unavailable=false",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": "asc"
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-3-desc-native",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-3/_search",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": "desc"
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-3-desc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-3/_search?ignore_unavailable=false",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": "desc"
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-3-min-native",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-3/_search",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "min"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-3-min-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-3/_search?ignore_unavailable=false",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "min"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-3-max-native",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-3/_search",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "max"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-3-max-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-3/_search?ignore_unavailable=false",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "max"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-3-avg-native",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-3/_search",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-3-avg-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-3/_search?ignore_unavailable=false",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-3-sum-native",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-3/_search",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "sum"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-3-sum-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-3/_search?ignore_unavailable=false",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "sum"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-3-median-native",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-3/_search",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-3-median-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-3/_search?ignore_unavailable=false",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-3-missing-first-native",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-3/_search",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "missing": "_first"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-3-missing-first-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-3/_search?ignore_unavailable=false",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "missing": "_first"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-3-missing-value-native",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-3/_search",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "missing": 6
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-3-missing-value-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-3/_search?ignore_unavailable=false",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "missing": 6
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-3-page-native",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-3/_search",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "from": 2,
+            "sort": [
+              {
+                "value": "asc"
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-3-page-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-3/_search?ignore_unavailable=false",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "from": 2,
+            "sort": [
+              {
+                "value": "asc"
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-3-zero-native",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-3/_search",
+          "body": {
+            "size": 0,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": "asc"
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-3-zero-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-3/_search?ignore_unavailable=false",
+          "body": {
+            "size": 0,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": "asc"
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-3-past-end-native",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-3/_search",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "from": 20,
+            "sort": [
+              {
+                "value": "desc"
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-3-past-end-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-3/_search?ignore_unavailable=false",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "from": 20,
+            "sort": [
+              {
+                "value": "desc"
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-3-search-after-native",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-3/_search",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": "asc"
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              2,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-source-3-search-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-source-arrays-3/_search?ignore_unavailable=false",
+          "body": {
+            "size": 20,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": "asc"
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              2,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    }
+  ]
+}

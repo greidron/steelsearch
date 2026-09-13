@@ -1,0 +1,208 @@
+{
+  "indices": [
+    {
+      "name": "bm25-length-norms",
+      "body": {
+        "settings": {
+          "number_of_shards": 1,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "title": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "bulk": [
+    {
+      "index": "bm25-length-norms",
+      "documents": [
+        {
+          "_id": "len-1",
+          "_source": {
+            "title": "alpha"
+          }
+        },
+        {
+          "_id": "len-40",
+          "_source": {
+            "title": "alpha other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other"
+          }
+        },
+        {
+          "_id": "len-41",
+          "_source": {
+            "title": "alpha other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other"
+          }
+        },
+        {
+          "_id": "len-42",
+          "_source": {
+            "title": "alpha other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other"
+          }
+        },
+        {
+          "_id": "len-1000",
+          "_source": {
+            "title": "alpha other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other"
+          }
+        },
+        {
+          "_id": "missing",
+          "_source": {}
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "length-norm-match",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "expected_status": 200,
+          "path": "/bm25-length-norms/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match": {
+                "title": "alpha"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "length-norm-bool-match",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "expected_status": 200,
+          "path": "/bm25-length-norms/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "bool": {
+                "must": {
+                  "match": {
+                    "title": "alpha"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "length-norm-multi-match",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "expected_status": 200,
+          "path": "/bm25-length-norms/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "multi_match": {
+                "query": "alpha",
+                "fields": [
+                  "title^2"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "length-norm-bool-multi-match",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "expected_status": 200,
+          "path": "/bm25-length-norms/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "bool": {
+                "must": {
+                  "multi_match": {
+                    "query": "alpha",
+                    "fields": [
+                      "title^2"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "length-norm-fallback-match",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "expected_status": 200,
+          "path": "/bm25-length-norms/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match": {
+                "title": "alpha"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "length-norm-fallback-bool-match",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "expected_status": 200,
+          "path": "/bm25-length-norms/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "bool": {
+                "must": {
+                  "match": {
+                    "title": "alpha"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

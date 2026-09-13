@@ -1,0 +1,16 @@
+{
+  "indices": [{"name":"fallback-bool","body":{"settings":{"number_of_shards":3,"number_of_replicas":0},"mappings":{"properties":{"tenant":{"type":"keyword"}}}}}],
+  "bulk": [{"index":"fallback-bool","documents":[{"_id":"red","_source":{"tenant":"red"}},{"_id":"blue","_source":{"tenant":"blue"}}]}],
+  "cases": [
+    {"name":"empty-bool","area":"search","family":"lexical","method":"POST","path":"/fallback-bool/_search?ignore_unavailable=false","body":{"size":0,"query":{"bool":{}}},"extract":"search_total"},
+    {"name":"empty-positive-minimum","area":"search","family":"lexical","method":"POST","path":"/fallback-bool/_search?ignore_unavailable=false","body":{"size":0,"query":{"bool":{"minimum_should_match":1}}},"extract":"search_total"},
+    {"name":"empty-percentage-minimum","area":"search","family":"lexical","method":"POST","path":"/fallback-bool/_search?ignore_unavailable=false","body":{"size":0,"query":{"bool":{"minimum_should_match":"200%"}}},"extract":"search_total"},
+    {"name":"empty-arrays","area":"search","family":"lexical","method":"POST","path":"/fallback-bool/_search?ignore_unavailable=false","body":{"size":0,"query":{"bool":{"must":[],"filter":[],"must_not":[],"should":[],"minimum_should_match":2}}},"extract":"search_total"},
+    {"name":"empty-must-optional-default","area":"search","family":"lexical","method":"POST","path":"/fallback-bool/_search?ignore_unavailable=false","body":{"size":0,"query":{"bool":{"must":[],"should":[{"term":{"tenant":"red"}}]}}},"extract":"search_total"},
+    {"name":"empty-must-optional-zero","area":"search","family":"lexical","method":"POST","path":"/fallback-bool/_search?ignore_unavailable=false","body":{"size":0,"query":{"bool":{"must":[],"should":[{"term":{"tenant":"red"}}],"minimum_should_match":0}}},"extract":"search_total"},
+    {"name":"empty-filter-optional-zero","area":"search","family":"lexical","method":"POST","path":"/fallback-bool/_search?ignore_unavailable=false","body":{"size":0,"query":{"bool":{"filter":[],"should":[{"term":{"tenant":"red"}}],"minimum_should_match":0}}},"extract":"search_total"},
+    {"name":"required-clause-optional-default","area":"search","family":"lexical","method":"POST","path":"/fallback-bool/_search?ignore_unavailable=false","body":{"size":0,"query":{"bool":{"must":{"match_all":{}},"should":[{"term":{"tenant":"red"}}]}}},"extract":"search_total"},
+    {"name":"optional-minimum-exceeds-count","area":"search","family":"lexical","method":"POST","path":"/fallback-bool/_search?ignore_unavailable=false","body":{"size":0,"query":{"bool":{"must":[],"should":[{"term":{"tenant":"red"}}],"minimum_should_match":2}}},"extract":"search_total"},
+    {"name":"negative-and-optional-default","area":"search","family":"lexical","method":"POST","path":"/fallback-bool/_search?ignore_unavailable=false","body":{"size":0,"query":{"bool":{"must":[],"must_not":[{"term":{"tenant":"green"}}],"should":[{"term":{"tenant":"red"}}]}}},"extract":"search_total"}
+  ]
+}

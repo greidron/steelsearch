@@ -11,6 +11,7 @@ pub mod data_stream_route_registration;
 pub mod delete_index_route_registration;
 pub mod get_index_route_registration;
 pub mod head_index_route_registration;
+mod integer_sort_mode;
 pub mod legacy_template_route_registration;
 pub mod mapping_route_registration;
 pub mod optimistic_concurrency_semantics;

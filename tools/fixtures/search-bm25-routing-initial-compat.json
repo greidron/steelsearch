@@ -1,0 +1,606 @@
+{
+  "indices": [
+    {
+      "name": "bm25-routing-scope",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "title": {
+              "type": "text"
+            },
+            "order": {
+              "type": "long"
+            }
+          }
+        },
+        "aliases": {
+          "bm25-routing-scope-filtered": {
+            "filter": {
+              "range": {
+                "order": {
+                  "lte": 3
+                }
+              }
+            }
+          },
+          "bm25-routing-scope-routed": {
+            "search_routing": "tenant-a",
+            "filter": {
+              "range": {
+                "order": {
+                  "lte": 3
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "bulk": [],
+  "cases": [
+    {
+      "name": "initial-bm25-routing-match-from-0",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "PUT",
+          "path": "/bm25-routing-scope/_doc/a?routing=tenant-a",
+          "expected_status": [
+            200,
+            201
+          ],
+          "body": {
+            "title": "alpha other other other other",
+            "order": 0
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/bm25-routing-scope/_doc/b?routing=tenant-a",
+          "expected_status": [
+            200,
+            201
+          ],
+          "body": {
+            "title": "alpha other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other",
+            "order": 1
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/bm25-routing-scope/_doc/c?routing=tenant-b",
+          "expected_status": [
+            200,
+            201
+          ],
+          "body": {
+            "title": "alpha other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other",
+            "order": 2
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/bm25-routing-scope/_doc/d?routing=tenant-b",
+          "expected_status": [
+            200,
+            201
+          ],
+          "body": {
+            "title": "other other other other other other other other other other",
+            "order": 3
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/bm25-routing-scope/_doc/e?routing=tenant-c",
+          "expected_status": [
+            200,
+            201
+          ],
+          "body": {
+            "title": "alpha other other other",
+            "order": 4
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/bm25-routing-scope/_doc/f?routing=tenant-c",
+          "expected_status": [
+            200,
+            201
+          ],
+          "body": {
+            "title": null,
+            "order": 5
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/bm25-routing-scope/_refresh",
+          "expected_status": 200,
+          "body": {}
+        },
+        {
+          "method": "POST",
+          "path": "/bm25-routing-scope/_search?routing=tenant-a",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "match": {
+                "title": "alpha"
+              }
+            },
+            "from": 0,
+            "size": 10
+          }
+        }
+      ]
+    },
+    {
+      "name": "initial-bm25-routing-match-from-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/bm25-routing-scope/_search?routing=tenant-a",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "match": {
+                "title": "alpha"
+              }
+            },
+            "from": 1,
+            "size": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "initial-bm25-alias-match-from-0",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/bm25-routing-scope-filtered/_search",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "match": {
+                "title": "alpha"
+              }
+            },
+            "from": 0,
+            "size": 10
+          }
+        }
+      ]
+    },
+    {
+      "name": "initial-bm25-alias-match-from-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/bm25-routing-scope-filtered/_search",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "match": {
+                "title": "alpha"
+              }
+            },
+            "from": 1,
+            "size": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "initial-bm25-routed-alias-match-from-0",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/bm25-routing-scope-routed/_search",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "match": {
+                "title": "alpha"
+              }
+            },
+            "from": 0,
+            "size": 10
+          }
+        }
+      ]
+    },
+    {
+      "name": "initial-bm25-routed-alias-match-from-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/bm25-routing-scope-routed/_search",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "match": {
+                "title": "alpha"
+              }
+            },
+            "from": 1,
+            "size": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "initial-bm25-routing-boost-from-0",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/bm25-routing-scope/_search?routing=tenant-a",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": {
+                  "match": {
+                    "title": {
+                      "query": "alpha",
+                      "boost": 0.5
+                    }
+                  }
+                }
+              }
+            },
+            "from": 0,
+            "size": 10
+          }
+        }
+      ]
+    },
+    {
+      "name": "initial-bm25-routing-boost-from-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/bm25-routing-scope/_search?routing=tenant-a",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": {
+                  "match": {
+                    "title": {
+                      "query": "alpha",
+                      "boost": 0.5
+                    }
+                  }
+                }
+              }
+            },
+            "from": 1,
+            "size": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "initial-bm25-alias-boost-from-0",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/bm25-routing-scope-filtered/_search",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": {
+                  "match": {
+                    "title": {
+                      "query": "alpha",
+                      "boost": 0.5
+                    }
+                  }
+                }
+              }
+            },
+            "from": 0,
+            "size": 10
+          }
+        }
+      ]
+    },
+    {
+      "name": "initial-bm25-alias-boost-from-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/bm25-routing-scope-filtered/_search",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": {
+                  "match": {
+                    "title": {
+                      "query": "alpha",
+                      "boost": 0.5
+                    }
+                  }
+                }
+              }
+            },
+            "from": 1,
+            "size": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "initial-bm25-routed-alias-boost-from-0",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/bm25-routing-scope-routed/_search",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": {
+                  "match": {
+                    "title": {
+                      "query": "alpha",
+                      "boost": 0.5
+                    }
+                  }
+                }
+              }
+            },
+            "from": 0,
+            "size": 10
+          }
+        }
+      ]
+    },
+    {
+      "name": "initial-bm25-routed-alias-boost-from-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/bm25-routing-scope-routed/_search",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": {
+                  "match": {
+                    "title": {
+                      "query": "alpha",
+                      "boost": 0.5
+                    }
+                  }
+                }
+              }
+            },
+            "from": 1,
+            "size": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "initial-bm25-routing-multi-match-from-0",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/bm25-routing-scope/_search?routing=tenant-a",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": {
+                  "multi_match": {
+                    "query": "alpha",
+                    "fields": [
+                      "title^2"
+                    ]
+                  }
+                }
+              }
+            },
+            "from": 0,
+            "size": 10
+          }
+        }
+      ]
+    },
+    {
+      "name": "initial-bm25-routing-multi-match-from-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/bm25-routing-scope/_search?routing=tenant-a",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": {
+                  "multi_match": {
+                    "query": "alpha",
+                    "fields": [
+                      "title^2"
+                    ]
+                  }
+                }
+              }
+            },
+            "from": 1,
+            "size": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "initial-bm25-alias-multi-match-from-0",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/bm25-routing-scope-filtered/_search",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": {
+                  "multi_match": {
+                    "query": "alpha",
+                    "fields": [
+                      "title^2"
+                    ]
+                  }
+                }
+              }
+            },
+            "from": 0,
+            "size": 10
+          }
+        }
+      ]
+    },
+    {
+      "name": "initial-bm25-alias-multi-match-from-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/bm25-routing-scope-filtered/_search",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": {
+                  "multi_match": {
+                    "query": "alpha",
+                    "fields": [
+                      "title^2"
+                    ]
+                  }
+                }
+              }
+            },
+            "from": 1,
+            "size": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "initial-bm25-routed-alias-multi-match-from-0",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/bm25-routing-scope-routed/_search",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": {
+                  "multi_match": {
+                    "query": "alpha",
+                    "fields": [
+                      "title^2"
+                    ]
+                  }
+                }
+              }
+            },
+            "from": 0,
+            "size": 10
+          }
+        }
+      ]
+    },
+    {
+      "name": "initial-bm25-routed-alias-multi-match-from-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/bm25-routing-scope-routed/_search",
+          "expected_status": 200,
+          "body": {
+            "query": {
+              "bool": {
+                "must": {
+                  "multi_match": {
+                    "query": "alpha",
+                    "fields": [
+                      "title^2"
+                    ]
+                  }
+                }
+              }
+            },
+            "from": 1,
+            "size": 1
+          }
+        }
+      ]
+    }
+  ]
+}

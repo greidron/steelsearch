@@ -1,0 +1,2178 @@
+{
+  "reference_version": "3.7.0-SNAPSHOT",
+  "reference_build_hash": "f991609d190dfd91c8a09902053a7bbfe0c27b3e",
+  "scope": "stored term vector positions from actual reference; positions/norm tests do not certify HTTP termvectors compatibility",
+  "rows": [
+    {
+      "name": "default-positions-scalar",
+      "index": "native-array-gap-default",
+      "id": "scalar",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          1
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "default-positions-array",
+      "index": "native-array-gap-default",
+      "id": "array",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          101
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "default-positions-leading_empty",
+      "index": "native-array-gap-default",
+      "id": "leading_empty",
+      "terms": {
+        "alpha": [
+          100
+        ],
+        "beta": [
+          201
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "default-positions-middle_empty",
+      "index": "native-array-gap-default",
+      "id": "middle_empty",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          201
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "default-positions-trailing_empty",
+      "index": "native-array-gap-default",
+      "id": "trailing_empty",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          101
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "default-positions-middle_null",
+      "index": "native-array-gap-default",
+      "id": "middle_null",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          101
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "default-positions-empty_array",
+      "index": "native-array-gap-default",
+      "id": "empty_array",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          101
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "default-positions-nested",
+      "index": "native-array-gap-default",
+      "id": "nested",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          101
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "default-positions-punctuation",
+      "index": "native-array-gap-default",
+      "id": "punctuation",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          201
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "default-positions-two_empty",
+      "index": "native-array-gap-default",
+      "id": "two_empty",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          301
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "default-positions-number",
+      "index": "native-array-gap-default",
+      "id": "number",
+      "terms": {
+        "12": [
+          101
+        ],
+        "alpha": [
+          0
+        ],
+        "beta": [
+          202
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "default-positions-boolean",
+      "index": "native-array-gap-default",
+      "id": "boolean",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          202
+        ],
+        "true": [
+          101
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "default-positions-leading_null",
+      "index": "native-array-gap-default",
+      "id": "leading_null",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          101
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "default-positions-repeat",
+      "index": "native-array-gap-default",
+      "id": "repeat",
+      "terms": {
+        "alpha": [
+          0,
+          102
+        ],
+        "beta": [
+          1,
+          103
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "default-positions-null_only",
+      "index": "native-array-gap-default",
+      "id": "null_only",
+      "terms": {},
+      "field_statistics": null
+    },
+    {
+      "name": "default-positions-empty_only",
+      "index": "native-array-gap-default",
+      "id": "empty_only",
+      "terms": {},
+      "field_statistics": null
+    },
+    {
+      "name": "zero-positions-scalar",
+      "index": "native-array-gap-zero",
+      "id": "scalar",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          1
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "zero-positions-array",
+      "index": "native-array-gap-zero",
+      "id": "array",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          1
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "zero-positions-leading_empty",
+      "index": "native-array-gap-zero",
+      "id": "leading_empty",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          1
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "zero-positions-middle_empty",
+      "index": "native-array-gap-zero",
+      "id": "middle_empty",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          1
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "zero-positions-trailing_empty",
+      "index": "native-array-gap-zero",
+      "id": "trailing_empty",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          1
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "zero-positions-middle_null",
+      "index": "native-array-gap-zero",
+      "id": "middle_null",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          1
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "zero-positions-empty_array",
+      "index": "native-array-gap-zero",
+      "id": "empty_array",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          1
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "zero-positions-nested",
+      "index": "native-array-gap-zero",
+      "id": "nested",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          1
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "zero-positions-punctuation",
+      "index": "native-array-gap-zero",
+      "id": "punctuation",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          1
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "zero-positions-two_empty",
+      "index": "native-array-gap-zero",
+      "id": "two_empty",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          1
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "zero-positions-number",
+      "index": "native-array-gap-zero",
+      "id": "number",
+      "terms": {
+        "12": [
+          1
+        ],
+        "alpha": [
+          0
+        ],
+        "beta": [
+          2
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "zero-positions-boolean",
+      "index": "native-array-gap-zero",
+      "id": "boolean",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          2
+        ],
+        "true": [
+          1
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "zero-positions-leading_null",
+      "index": "native-array-gap-zero",
+      "id": "leading_null",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          1
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "zero-positions-repeat",
+      "index": "native-array-gap-zero",
+      "id": "repeat",
+      "terms": {
+        "alpha": [
+          0,
+          2
+        ],
+        "beta": [
+          1,
+          3
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "zero-positions-null_only",
+      "index": "native-array-gap-zero",
+      "id": "null_only",
+      "terms": {},
+      "field_statistics": null
+    },
+    {
+      "name": "zero-positions-empty_only",
+      "index": "native-array-gap-zero",
+      "id": "empty_only",
+      "terms": {},
+      "field_statistics": null
+    },
+    {
+      "name": "one-positions-scalar",
+      "index": "native-array-gap-one",
+      "id": "scalar",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          1
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "one-positions-array",
+      "index": "native-array-gap-one",
+      "id": "array",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          2
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "one-positions-leading_empty",
+      "index": "native-array-gap-one",
+      "id": "leading_empty",
+      "terms": {
+        "alpha": [
+          1
+        ],
+        "beta": [
+          3
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "one-positions-middle_empty",
+      "index": "native-array-gap-one",
+      "id": "middle_empty",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          3
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "one-positions-trailing_empty",
+      "index": "native-array-gap-one",
+      "id": "trailing_empty",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          2
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "one-positions-middle_null",
+      "index": "native-array-gap-one",
+      "id": "middle_null",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          2
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "one-positions-empty_array",
+      "index": "native-array-gap-one",
+      "id": "empty_array",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          2
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "one-positions-nested",
+      "index": "native-array-gap-one",
+      "id": "nested",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          2
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "one-positions-punctuation",
+      "index": "native-array-gap-one",
+      "id": "punctuation",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          3
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "one-positions-two_empty",
+      "index": "native-array-gap-one",
+      "id": "two_empty",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          4
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "one-positions-number",
+      "index": "native-array-gap-one",
+      "id": "number",
+      "terms": {
+        "12": [
+          2
+        ],
+        "alpha": [
+          0
+        ],
+        "beta": [
+          4
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "one-positions-boolean",
+      "index": "native-array-gap-one",
+      "id": "boolean",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          4
+        ],
+        "true": [
+          2
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "one-positions-leading_null",
+      "index": "native-array-gap-one",
+      "id": "leading_null",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          2
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "one-positions-repeat",
+      "index": "native-array-gap-one",
+      "id": "repeat",
+      "terms": {
+        "alpha": [
+          0,
+          3
+        ],
+        "beta": [
+          1,
+          4
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "one-positions-null_only",
+      "index": "native-array-gap-one",
+      "id": "null_only",
+      "terms": {},
+      "field_statistics": null
+    },
+    {
+      "name": "one-positions-empty_only",
+      "index": "native-array-gap-one",
+      "id": "empty_only",
+      "terms": {},
+      "field_statistics": null
+    },
+    {
+      "name": "five-positions-scalar",
+      "index": "native-array-gap-five",
+      "id": "scalar",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          1
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "five-positions-array",
+      "index": "native-array-gap-five",
+      "id": "array",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          6
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "five-positions-leading_empty",
+      "index": "native-array-gap-five",
+      "id": "leading_empty",
+      "terms": {
+        "alpha": [
+          5
+        ],
+        "beta": [
+          11
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "five-positions-middle_empty",
+      "index": "native-array-gap-five",
+      "id": "middle_empty",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          11
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "five-positions-trailing_empty",
+      "index": "native-array-gap-five",
+      "id": "trailing_empty",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          6
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "five-positions-middle_null",
+      "index": "native-array-gap-five",
+      "id": "middle_null",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          6
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "five-positions-empty_array",
+      "index": "native-array-gap-five",
+      "id": "empty_array",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          6
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "five-positions-nested",
+      "index": "native-array-gap-five",
+      "id": "nested",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          6
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "five-positions-punctuation",
+      "index": "native-array-gap-five",
+      "id": "punctuation",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          11
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "five-positions-two_empty",
+      "index": "native-array-gap-five",
+      "id": "two_empty",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          16
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "five-positions-number",
+      "index": "native-array-gap-five",
+      "id": "number",
+      "terms": {
+        "12": [
+          6
+        ],
+        "alpha": [
+          0
+        ],
+        "beta": [
+          12
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "five-positions-boolean",
+      "index": "native-array-gap-five",
+      "id": "boolean",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          12
+        ],
+        "true": [
+          6
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "five-positions-leading_null",
+      "index": "native-array-gap-five",
+      "id": "leading_null",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          6
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "five-positions-repeat",
+      "index": "native-array-gap-five",
+      "id": "repeat",
+      "terms": {
+        "alpha": [
+          0,
+          7
+        ],
+        "beta": [
+          1,
+          8
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "five-positions-null_only",
+      "index": "native-array-gap-five",
+      "id": "null_only",
+      "terms": {},
+      "field_statistics": null
+    },
+    {
+      "name": "five-positions-empty_only",
+      "index": "native-array-gap-five",
+      "id": "empty_only",
+      "terms": {},
+      "field_statistics": null
+    },
+    {
+      "name": "string-positions-scalar",
+      "index": "native-array-gap-string",
+      "id": "scalar",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          1
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "string-positions-array",
+      "index": "native-array-gap-string",
+      "id": "array",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          101
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "string-positions-leading_empty",
+      "index": "native-array-gap-string",
+      "id": "leading_empty",
+      "terms": {
+        "alpha": [
+          100
+        ],
+        "beta": [
+          201
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "string-positions-middle_empty",
+      "index": "native-array-gap-string",
+      "id": "middle_empty",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          201
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "string-positions-trailing_empty",
+      "index": "native-array-gap-string",
+      "id": "trailing_empty",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          101
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "string-positions-middle_null",
+      "index": "native-array-gap-string",
+      "id": "middle_null",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          101
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "string-positions-empty_array",
+      "index": "native-array-gap-string",
+      "id": "empty_array",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          101
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "string-positions-nested",
+      "index": "native-array-gap-string",
+      "id": "nested",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          101
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "string-positions-punctuation",
+      "index": "native-array-gap-string",
+      "id": "punctuation",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          201
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "string-positions-two_empty",
+      "index": "native-array-gap-string",
+      "id": "two_empty",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          301
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "string-positions-number",
+      "index": "native-array-gap-string",
+      "id": "number",
+      "terms": {
+        "12": [
+          101
+        ],
+        "alpha": [
+          0
+        ],
+        "beta": [
+          202
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "string-positions-boolean",
+      "index": "native-array-gap-string",
+      "id": "boolean",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          202
+        ],
+        "true": [
+          101
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "string-positions-leading_null",
+      "index": "native-array-gap-string",
+      "id": "leading_null",
+      "terms": {
+        "alpha": [
+          0
+        ],
+        "beta": [
+          101
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "string-positions-repeat",
+      "index": "native-array-gap-string",
+      "id": "repeat",
+      "terms": {
+        "alpha": [
+          0,
+          102
+        ],
+        "beta": [
+          1,
+          103
+        ]
+      },
+      "field_statistics": {
+        "doc_count": 14,
+        "sum_doc_freq": 30,
+        "sum_ttf": 32
+      }
+    },
+    {
+      "name": "string-positions-null_only",
+      "index": "native-array-gap-string",
+      "id": "null_only",
+      "terms": {},
+      "field_statistics": null
+    },
+    {
+      "name": "string-positions-empty_only",
+      "index": "native-array-gap-string",
+      "id": "empty_only",
+      "terms": {},
+      "field_statistics": null
+    }
+  ],
+  "fixture_sha256": "3945d7aeb1110e3eff69227421a71007e22684af0516196b7d345f8a1497efe1",
+  "reference_report_sha256": "740fa81f217d0cfe1e8aeeccadf1c5b646b26f785ab7de71802cea879f27fd66",
+  "phrase_matches": [
+    {
+      "name": "default-phrase-slop-0",
+      "ids": [
+        "repeat",
+        "scalar"
+      ]
+    },
+    {
+      "name": "default-phrase-slop-1",
+      "ids": [
+        "repeat",
+        "scalar"
+      ]
+    },
+    {
+      "name": "default-phrase-slop-2",
+      "ids": [
+        "repeat",
+        "scalar"
+      ]
+    },
+    {
+      "name": "default-phrase-slop-5",
+      "ids": [
+        "repeat",
+        "scalar"
+      ]
+    },
+    {
+      "name": "default-phrase-slop-6",
+      "ids": [
+        "repeat",
+        "scalar"
+      ]
+    },
+    {
+      "name": "default-phrase-slop-99",
+      "ids": [
+        "repeat",
+        "scalar"
+      ]
+    },
+    {
+      "name": "default-phrase-slop-100",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null"
+      ]
+    },
+    {
+      "name": "default-phrase-slop-101",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null"
+      ]
+    },
+    {
+      "name": "default-phrase-slop-199",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null"
+      ]
+    },
+    {
+      "name": "default-phrase-slop-200",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null",
+        "middle_empty",
+        "punctuation"
+      ]
+    },
+    {
+      "name": "default-phrase-slop-300",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null",
+        "middle_empty",
+        "punctuation",
+        "number",
+        "boolean",
+        "two_empty"
+      ]
+    },
+    {
+      "name": "zero-phrase-slop-0",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "middle_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "punctuation",
+        "two_empty",
+        "leading_null"
+      ]
+    },
+    {
+      "name": "zero-phrase-slop-1",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "middle_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "punctuation",
+        "two_empty",
+        "leading_null",
+        "number",
+        "boolean"
+      ]
+    },
+    {
+      "name": "zero-phrase-slop-2",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "middle_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "punctuation",
+        "two_empty",
+        "leading_null",
+        "number",
+        "boolean"
+      ]
+    },
+    {
+      "name": "zero-phrase-slop-5",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "middle_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "punctuation",
+        "two_empty",
+        "leading_null",
+        "number",
+        "boolean"
+      ]
+    },
+    {
+      "name": "zero-phrase-slop-6",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "middle_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "punctuation",
+        "two_empty",
+        "leading_null",
+        "number",
+        "boolean"
+      ]
+    },
+    {
+      "name": "zero-phrase-slop-99",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "middle_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "punctuation",
+        "two_empty",
+        "leading_null",
+        "number",
+        "boolean"
+      ]
+    },
+    {
+      "name": "zero-phrase-slop-100",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "middle_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "punctuation",
+        "two_empty",
+        "leading_null",
+        "number",
+        "boolean"
+      ]
+    },
+    {
+      "name": "zero-phrase-slop-101",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "middle_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "punctuation",
+        "two_empty",
+        "leading_null",
+        "number",
+        "boolean"
+      ]
+    },
+    {
+      "name": "zero-phrase-slop-199",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "middle_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "punctuation",
+        "two_empty",
+        "leading_null",
+        "number",
+        "boolean"
+      ]
+    },
+    {
+      "name": "zero-phrase-slop-200",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "middle_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "punctuation",
+        "two_empty",
+        "leading_null",
+        "number",
+        "boolean"
+      ]
+    },
+    {
+      "name": "zero-phrase-slop-300",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "middle_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "punctuation",
+        "two_empty",
+        "leading_null",
+        "number",
+        "boolean"
+      ]
+    },
+    {
+      "name": "one-phrase-slop-0",
+      "ids": [
+        "repeat",
+        "scalar"
+      ]
+    },
+    {
+      "name": "one-phrase-slop-1",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null"
+      ]
+    },
+    {
+      "name": "one-phrase-slop-2",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null",
+        "middle_empty",
+        "punctuation"
+      ]
+    },
+    {
+      "name": "one-phrase-slop-5",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null",
+        "middle_empty",
+        "punctuation",
+        "two_empty",
+        "number",
+        "boolean"
+      ]
+    },
+    {
+      "name": "one-phrase-slop-6",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null",
+        "middle_empty",
+        "punctuation",
+        "two_empty",
+        "number",
+        "boolean"
+      ]
+    },
+    {
+      "name": "one-phrase-slop-99",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null",
+        "middle_empty",
+        "punctuation",
+        "two_empty",
+        "number",
+        "boolean"
+      ]
+    },
+    {
+      "name": "one-phrase-slop-100",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null",
+        "middle_empty",
+        "punctuation",
+        "two_empty",
+        "number",
+        "boolean"
+      ]
+    },
+    {
+      "name": "one-phrase-slop-101",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null",
+        "middle_empty",
+        "punctuation",
+        "two_empty",
+        "number",
+        "boolean"
+      ]
+    },
+    {
+      "name": "one-phrase-slop-199",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null",
+        "middle_empty",
+        "punctuation",
+        "two_empty",
+        "number",
+        "boolean"
+      ]
+    },
+    {
+      "name": "one-phrase-slop-200",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null",
+        "middle_empty",
+        "punctuation",
+        "two_empty",
+        "number",
+        "boolean"
+      ]
+    },
+    {
+      "name": "one-phrase-slop-300",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null",
+        "middle_empty",
+        "punctuation",
+        "two_empty",
+        "number",
+        "boolean"
+      ]
+    },
+    {
+      "name": "five-phrase-slop-0",
+      "ids": [
+        "repeat",
+        "scalar"
+      ]
+    },
+    {
+      "name": "five-phrase-slop-1",
+      "ids": [
+        "repeat",
+        "scalar"
+      ]
+    },
+    {
+      "name": "five-phrase-slop-2",
+      "ids": [
+        "repeat",
+        "scalar"
+      ]
+    },
+    {
+      "name": "five-phrase-slop-5",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null"
+      ]
+    },
+    {
+      "name": "five-phrase-slop-6",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null"
+      ]
+    },
+    {
+      "name": "five-phrase-slop-99",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null",
+        "middle_empty",
+        "punctuation",
+        "two_empty",
+        "number",
+        "boolean"
+      ]
+    },
+    {
+      "name": "five-phrase-slop-100",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null",
+        "middle_empty",
+        "punctuation",
+        "two_empty",
+        "number",
+        "boolean"
+      ]
+    },
+    {
+      "name": "five-phrase-slop-101",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null",
+        "middle_empty",
+        "punctuation",
+        "two_empty",
+        "number",
+        "boolean"
+      ]
+    },
+    {
+      "name": "five-phrase-slop-199",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null",
+        "middle_empty",
+        "punctuation",
+        "two_empty",
+        "number",
+        "boolean"
+      ]
+    },
+    {
+      "name": "five-phrase-slop-200",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null",
+        "middle_empty",
+        "punctuation",
+        "two_empty",
+        "number",
+        "boolean"
+      ]
+    },
+    {
+      "name": "five-phrase-slop-300",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null",
+        "middle_empty",
+        "punctuation",
+        "two_empty",
+        "number",
+        "boolean"
+      ]
+    },
+    {
+      "name": "string-phrase-slop-0",
+      "ids": [
+        "repeat",
+        "scalar"
+      ]
+    },
+    {
+      "name": "string-phrase-slop-1",
+      "ids": [
+        "repeat",
+        "scalar"
+      ]
+    },
+    {
+      "name": "string-phrase-slop-2",
+      "ids": [
+        "repeat",
+        "scalar"
+      ]
+    },
+    {
+      "name": "string-phrase-slop-5",
+      "ids": [
+        "repeat",
+        "scalar"
+      ]
+    },
+    {
+      "name": "string-phrase-slop-6",
+      "ids": [
+        "repeat",
+        "scalar"
+      ]
+    },
+    {
+      "name": "string-phrase-slop-99",
+      "ids": [
+        "repeat",
+        "scalar"
+      ]
+    },
+    {
+      "name": "string-phrase-slop-100",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null"
+      ]
+    },
+    {
+      "name": "string-phrase-slop-101",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null"
+      ]
+    },
+    {
+      "name": "string-phrase-slop-199",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null"
+      ]
+    },
+    {
+      "name": "string-phrase-slop-200",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null",
+        "middle_empty",
+        "punctuation"
+      ]
+    },
+    {
+      "name": "string-phrase-slop-300",
+      "ids": [
+        "repeat",
+        "scalar",
+        "array",
+        "leading_empty",
+        "trailing_empty",
+        "middle_null",
+        "empty_array",
+        "nested",
+        "leading_null",
+        "middle_empty",
+        "punctuation",
+        "number",
+        "boolean",
+        "two_empty"
+      ]
+    }
+  ]
+}

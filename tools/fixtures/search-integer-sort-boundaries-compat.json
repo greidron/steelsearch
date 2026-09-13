@@ -1,0 +1,6428 @@
+{
+  "indices": [
+    {
+      "name": "sort-mode-boundary-1-long",
+      "body": {
+        "settings": {
+          "number_of_shards": 1,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "long"
+            },
+            "tie": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "sort-mode-boundary-1-double",
+      "body": {
+        "settings": {
+          "number_of_shards": 1,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "double"
+            },
+            "tie": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "sort-mode-boundary-1-coerce",
+      "body": {
+        "settings": {
+          "number_of_shards": 1,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "long",
+              "coerce": true,
+              "null_value": 7
+            },
+            "tie": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "sort-mode-boundary-3-long",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "long"
+            },
+            "tie": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "sort-mode-boundary-3-double",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "double"
+            },
+            "tie": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "sort-mode-boundary-3-coerce",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "long",
+              "coerce": true,
+              "null_value": 7
+            },
+            "tie": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "bulk": [
+    {
+      "index": "sort-mode-boundary-1-long",
+      "documents": [
+        {
+          "_id": "long-0",
+          "_source": {
+            "value": [
+              -3,
+              0
+            ],
+            "tie": 0
+          }
+        },
+        {
+          "_id": "long-1",
+          "_source": {
+            "value": [
+              -2,
+              0
+            ],
+            "tie": 1
+          }
+        },
+        {
+          "_id": "long-2",
+          "_source": {
+            "value": [
+              1,
+              2
+            ],
+            "tie": 2
+          }
+        },
+        {
+          "_id": "long-3",
+          "_source": {
+            "value": [
+              2,
+              9
+            ],
+            "tie": 3
+          }
+        },
+        {
+          "_id": "long-4",
+          "_source": {
+            "value": null,
+            "tie": 4
+          }
+        }
+      ]
+    },
+    {
+      "index": "sort-mode-boundary-1-double",
+      "documents": [
+        {
+          "_id": "double-0",
+          "_source": {
+            "value": [
+              -3,
+              0
+            ],
+            "tie": 100
+          }
+        },
+        {
+          "_id": "double-1",
+          "_source": {
+            "value": [
+              -2,
+              0
+            ],
+            "tie": 101
+          }
+        },
+        {
+          "_id": "double-2",
+          "_source": {
+            "value": [
+              1,
+              2
+            ],
+            "tie": 102
+          }
+        },
+        {
+          "_id": "double-3",
+          "_source": {
+            "value": [
+              2,
+              9
+            ],
+            "tie": 103
+          }
+        },
+        {
+          "_id": "double-4",
+          "_source": {
+            "value": null,
+            "tie": 104
+          }
+        }
+      ]
+    },
+    {
+      "index": "sort-mode-boundary-1-coerce",
+      "documents": [
+        {
+          "_id": "coerce-0",
+          "_source": {
+            "value": [
+              "-3",
+              "0"
+            ],
+            "tie": 200
+          }
+        },
+        {
+          "_id": "coerce-1",
+          "_source": {
+            "value": [
+              -3.9,
+              0.9
+            ],
+            "tie": 201
+          }
+        },
+        {
+          "_id": "coerce-2",
+          "_source": {
+            "value": [
+              "2",
+              "9"
+            ],
+            "tie": 202
+          }
+        },
+        {
+          "_id": "coerce-3",
+          "_source": {
+            "value": null,
+            "tie": 203
+          }
+        },
+        {
+          "_id": "coerce-4",
+          "_source": {
+            "value": [
+              null,
+              2
+            ],
+            "tie": 204
+          }
+        }
+      ]
+    },
+    {
+      "index": "sort-mode-boundary-3-long",
+      "documents": [
+        {
+          "_id": "long-0",
+          "_source": {
+            "value": [
+              -3,
+              0
+            ],
+            "tie": 0
+          }
+        },
+        {
+          "_id": "long-1",
+          "_source": {
+            "value": [
+              -2,
+              0
+            ],
+            "tie": 1
+          }
+        },
+        {
+          "_id": "long-2",
+          "_source": {
+            "value": [
+              1,
+              2
+            ],
+            "tie": 2
+          }
+        },
+        {
+          "_id": "long-3",
+          "_source": {
+            "value": [
+              2,
+              9
+            ],
+            "tie": 3
+          }
+        },
+        {
+          "_id": "long-4",
+          "_source": {
+            "value": null,
+            "tie": 4
+          }
+        }
+      ]
+    },
+    {
+      "index": "sort-mode-boundary-3-double",
+      "documents": [
+        {
+          "_id": "double-0",
+          "_source": {
+            "value": [
+              -3,
+              0
+            ],
+            "tie": 100
+          }
+        },
+        {
+          "_id": "double-1",
+          "_source": {
+            "value": [
+              -2,
+              0
+            ],
+            "tie": 101
+          }
+        },
+        {
+          "_id": "double-2",
+          "_source": {
+            "value": [
+              1,
+              2
+            ],
+            "tie": 102
+          }
+        },
+        {
+          "_id": "double-3",
+          "_source": {
+            "value": [
+              2,
+              9
+            ],
+            "tie": 103
+          }
+        },
+        {
+          "_id": "double-4",
+          "_source": {
+            "value": null,
+            "tie": 104
+          }
+        }
+      ]
+    },
+    {
+      "index": "sort-mode-boundary-3-coerce",
+      "documents": [
+        {
+          "_id": "coerce-0",
+          "_source": {
+            "value": [
+              "-3",
+              "0"
+            ],
+            "tie": 200
+          }
+        },
+        {
+          "_id": "coerce-1",
+          "_source": {
+            "value": [
+              -3.9,
+              0.9
+            ],
+            "tie": 201
+          }
+        },
+        {
+          "_id": "coerce-2",
+          "_source": {
+            "value": [
+              "2",
+              "9"
+            ],
+            "tie": 202
+          }
+        },
+        {
+          "_id": "coerce-3",
+          "_source": {
+            "value": null,
+            "tie": 203
+          }
+        },
+        {
+          "_id": "coerce-4",
+          "_source": {
+            "value": [
+              null,
+              2
+            ],
+            "tie": 204
+          }
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "sort-boundary-1-long-avg-asc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-long-avg-desc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-long-avg-page-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long/_search",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-long-avg-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-long-avg-double-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-long-avg-long-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-long-avg-asc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-long-avg-desc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-long-avg-page-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long/_search?ignore_unavailable=false",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-long-avg-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-long-avg-double-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-long-avg-long-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-long-median-asc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-long-median-desc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-long-median-page-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long/_search",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-long-median-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-long-median-double-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-long-median-long-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-long-median-asc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-long-median-desc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-long-median-page-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long/_search?ignore_unavailable=false",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-long-median-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-long-median-double-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-long-median-long-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-double-avg-asc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-double-avg-desc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-double-avg-page-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-double/_search",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-double-avg-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-double-avg-double-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-double-avg-long-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-double-avg-asc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-double-avg-desc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-double-avg-page-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-double-avg-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-double-avg-double-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-double-avg-long-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-double-median-asc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-double-median-desc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-double-median-page-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-double/_search",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-double-median-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-double-median-double-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-double-median-long-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-double-median-asc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-double-median-desc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-double-median-page-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-double-median-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-double-median-double-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-double-median-long-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-coerce-avg-asc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-coerce/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-coerce-avg-desc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-coerce/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-coerce-avg-page-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-coerce/_search",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-coerce-avg-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-coerce/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-coerce-avg-double-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-coerce/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-coerce-avg-long-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-coerce/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-coerce-avg-asc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-coerce/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-coerce-avg-desc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-coerce/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-coerce-avg-page-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-coerce/_search?ignore_unavailable=false",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-coerce-avg-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-coerce/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-coerce-avg-double-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-coerce/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-coerce-avg-long-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-coerce/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-coerce-median-asc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-coerce/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-coerce-median-desc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-coerce/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-coerce-median-page-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-coerce/_search",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-coerce-median-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-coerce/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-coerce-median-double-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-coerce/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-coerce-median-long-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-coerce/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-coerce-median-asc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-coerce/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-coerce-median-desc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-coerce/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-coerce-median-page-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-coerce/_search?ignore_unavailable=false",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-coerce-median-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-coerce/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-coerce-median-double-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-coerce/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-coerce-median-long-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-coerce/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-mixed-avg-asc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long,sort-mode-boundary-1-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-mixed-avg-desc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long,sort-mode-boundary-1-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-mixed-avg-page-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long,sort-mode-boundary-1-double/_search",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-mixed-avg-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long,sort-mode-boundary-1-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-mixed-avg-double-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long,sort-mode-boundary-1-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-mixed-avg-long-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long,sort-mode-boundary-1-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-mixed-avg-asc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long,sort-mode-boundary-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-mixed-avg-desc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long,sort-mode-boundary-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-mixed-avg-page-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long,sort-mode-boundary-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-mixed-avg-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long,sort-mode-boundary-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-mixed-avg-double-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long,sort-mode-boundary-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-mixed-avg-long-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long,sort-mode-boundary-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-mixed-median-asc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long,sort-mode-boundary-1-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-mixed-median-desc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long,sort-mode-boundary-1-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-mixed-median-page-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long,sort-mode-boundary-1-double/_search",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-mixed-median-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long,sort-mode-boundary-1-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-mixed-median-double-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long,sort-mode-boundary-1-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-mixed-median-long-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long,sort-mode-boundary-1-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-mixed-median-asc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long,sort-mode-boundary-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-mixed-median-desc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long,sort-mode-boundary-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-mixed-median-page-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long,sort-mode-boundary-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-mixed-median-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long,sort-mode-boundary-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-mixed-median-double-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long,sort-mode-boundary-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-1-mixed-median-long-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-1-long,sort-mode-boundary-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-long-avg-asc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-long-avg-desc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-long-avg-page-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long/_search",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-long-avg-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-long-avg-double-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-long-avg-long-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-long-avg-asc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-long-avg-desc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-long-avg-page-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long/_search?ignore_unavailable=false",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-long-avg-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-long-avg-double-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-long-avg-long-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-long-median-asc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-long-median-desc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-long-median-page-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long/_search",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-long-median-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-long-median-double-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-long-median-long-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-long-median-asc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-long-median-desc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-long-median-page-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long/_search?ignore_unavailable=false",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-long-median-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-long-median-double-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-long-median-long-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-double-avg-asc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-double-avg-desc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-double-avg-page-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-double/_search",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-double-avg-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-double-avg-double-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-double-avg-long-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-double-avg-asc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-double-avg-desc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-double-avg-page-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-double-avg-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-double-avg-double-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-double-avg-long-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-double-median-asc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-double-median-desc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-double-median-page-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-double/_search",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-double-median-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-double-median-double-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-double-median-long-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-double-median-asc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-double-median-desc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-double-median-page-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-double-median-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-double-median-double-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-double-median-long-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-coerce-avg-asc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-coerce/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-coerce-avg-desc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-coerce/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-coerce-avg-page-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-coerce/_search",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-coerce-avg-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-coerce/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-coerce-avg-double-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-coerce/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-coerce-avg-long-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-coerce/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-coerce-avg-asc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-coerce/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-coerce-avg-desc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-coerce/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-coerce-avg-page-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-coerce/_search?ignore_unavailable=false",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-coerce-avg-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-coerce/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-coerce-avg-double-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-coerce/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-coerce-avg-long-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-coerce/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-coerce-median-asc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-coerce/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-coerce-median-desc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-coerce/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-coerce-median-page-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-coerce/_search",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-coerce-median-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-coerce/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-coerce-median-double-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-coerce/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-coerce-median-long-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-coerce/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-coerce-median-asc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-coerce/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-coerce-median-desc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-coerce/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-coerce-median-page-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-coerce/_search?ignore_unavailable=false",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-coerce-median-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-coerce/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-coerce-median-double-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-coerce/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-coerce-median-long-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-coerce/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-mixed-avg-asc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long,sort-mode-boundary-3-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-mixed-avg-desc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long,sort-mode-boundary-3-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-mixed-avg-page-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long,sort-mode-boundary-3-double/_search",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-mixed-avg-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long,sort-mode-boundary-3-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-mixed-avg-double-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long,sort-mode-boundary-3-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-mixed-avg-long-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long,sort-mode-boundary-3-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-mixed-avg-asc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long,sort-mode-boundary-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-mixed-avg-desc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long,sort-mode-boundary-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-mixed-avg-page-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long,sort-mode-boundary-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-mixed-avg-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long,sort-mode-boundary-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-mixed-avg-double-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long,sort-mode-boundary-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-mixed-avg-long-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long,sort-mode-boundary-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "avg",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-mixed-median-asc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long,sort-mode-boundary-3-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-mixed-median-desc-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long,sort-mode-boundary-3-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-mixed-median-page-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long,sort-mode-boundary-3-double/_search",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-mixed-median-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long,sort-mode-boundary-3-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-mixed-median-double-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long,sort-mode-boundary-3-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-mixed-median-long-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long,sort-mode-boundary-3-double/_search",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-mixed-median-asc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long,sort-mode-boundary-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-mixed-median-desc-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long,sort-mode-boundary-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "desc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-mixed-median-page-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long,sort-mode-boundary-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 3,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "from": 1
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-mixed-median-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long,sort-mode-boundary-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              -1,
+              0
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-mixed-median-double-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long,sort-mode-boundary-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "sort-boundary-3-mixed-median-long-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/sort-mode-boundary-3-long,sort-mode-boundary-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 30,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "order": "asc",
+                  "mode": "median",
+                  "numeric_type": "long"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    }
+  ]
+}

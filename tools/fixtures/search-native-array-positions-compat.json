@@ -1,0 +1,4042 @@
+{
+  "indices": [
+    {
+      "name": "native-array-gap-default",
+      "body": {
+        "settings": {
+          "number_of_shards": 1,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "body": {
+              "type": "text",
+              "term_vector": "with_positions_offsets"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "native-array-gap-zero",
+      "body": {
+        "settings": {
+          "number_of_shards": 1,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "body": {
+              "type": "text",
+              "term_vector": "with_positions_offsets",
+              "position_increment_gap": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "native-array-gap-one",
+      "body": {
+        "settings": {
+          "number_of_shards": 1,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "body": {
+              "type": "text",
+              "term_vector": "with_positions_offsets",
+              "position_increment_gap": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "native-array-gap-five",
+      "body": {
+        "settings": {
+          "number_of_shards": 1,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "body": {
+              "type": "text",
+              "term_vector": "with_positions_offsets",
+              "position_increment_gap": 5
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "native-array-gap-string",
+      "body": {
+        "settings": {
+          "number_of_shards": 1,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "body": {
+              "type": "text",
+              "term_vector": "with_positions_offsets",
+              "position_increment_gap": "100"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "bulk": [
+    {
+      "index": "native-array-gap-default",
+      "documents": [
+        {
+          "_id": "scalar",
+          "_source": {
+            "body": "alpha beta"
+          }
+        },
+        {
+          "_id": "array",
+          "_source": {
+            "body": [
+              "alpha",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "leading_empty",
+          "_source": {
+            "body": [
+              "",
+              "alpha",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "middle_empty",
+          "_source": {
+            "body": [
+              "alpha",
+              "",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "trailing_empty",
+          "_source": {
+            "body": [
+              "alpha",
+              "beta",
+              ""
+            ]
+          }
+        },
+        {
+          "_id": "middle_null",
+          "_source": {
+            "body": [
+              "alpha",
+              null,
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "empty_array",
+          "_source": {
+            "body": [
+              "alpha",
+              [],
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "nested",
+          "_source": {
+            "body": [
+              [
+                "alpha"
+              ],
+              [
+                "beta"
+              ]
+            ]
+          }
+        },
+        {
+          "_id": "punctuation",
+          "_source": {
+            "body": [
+              "alpha",
+              "!!!",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "two_empty",
+          "_source": {
+            "body": [
+              "alpha",
+              "",
+              "",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "number",
+          "_source": {
+            "body": [
+              "alpha",
+              12,
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "boolean",
+          "_source": {
+            "body": [
+              "alpha",
+              true,
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "leading_null",
+          "_source": {
+            "body": [
+              null,
+              "alpha",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "repeat",
+          "_source": {
+            "body": [
+              "alpha beta",
+              "alpha beta"
+            ]
+          }
+        },
+        {
+          "_id": "null_only",
+          "_source": {
+            "body": [
+              null,
+              null
+            ]
+          }
+        },
+        {
+          "_id": "empty_only",
+          "_source": {
+            "body": [
+              "",
+              ""
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "index": "native-array-gap-zero",
+      "documents": [
+        {
+          "_id": "scalar",
+          "_source": {
+            "body": "alpha beta"
+          }
+        },
+        {
+          "_id": "array",
+          "_source": {
+            "body": [
+              "alpha",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "leading_empty",
+          "_source": {
+            "body": [
+              "",
+              "alpha",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "middle_empty",
+          "_source": {
+            "body": [
+              "alpha",
+              "",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "trailing_empty",
+          "_source": {
+            "body": [
+              "alpha",
+              "beta",
+              ""
+            ]
+          }
+        },
+        {
+          "_id": "middle_null",
+          "_source": {
+            "body": [
+              "alpha",
+              null,
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "empty_array",
+          "_source": {
+            "body": [
+              "alpha",
+              [],
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "nested",
+          "_source": {
+            "body": [
+              [
+                "alpha"
+              ],
+              [
+                "beta"
+              ]
+            ]
+          }
+        },
+        {
+          "_id": "punctuation",
+          "_source": {
+            "body": [
+              "alpha",
+              "!!!",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "two_empty",
+          "_source": {
+            "body": [
+              "alpha",
+              "",
+              "",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "number",
+          "_source": {
+            "body": [
+              "alpha",
+              12,
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "boolean",
+          "_source": {
+            "body": [
+              "alpha",
+              true,
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "leading_null",
+          "_source": {
+            "body": [
+              null,
+              "alpha",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "repeat",
+          "_source": {
+            "body": [
+              "alpha beta",
+              "alpha beta"
+            ]
+          }
+        },
+        {
+          "_id": "null_only",
+          "_source": {
+            "body": [
+              null,
+              null
+            ]
+          }
+        },
+        {
+          "_id": "empty_only",
+          "_source": {
+            "body": [
+              "",
+              ""
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "index": "native-array-gap-one",
+      "documents": [
+        {
+          "_id": "scalar",
+          "_source": {
+            "body": "alpha beta"
+          }
+        },
+        {
+          "_id": "array",
+          "_source": {
+            "body": [
+              "alpha",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "leading_empty",
+          "_source": {
+            "body": [
+              "",
+              "alpha",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "middle_empty",
+          "_source": {
+            "body": [
+              "alpha",
+              "",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "trailing_empty",
+          "_source": {
+            "body": [
+              "alpha",
+              "beta",
+              ""
+            ]
+          }
+        },
+        {
+          "_id": "middle_null",
+          "_source": {
+            "body": [
+              "alpha",
+              null,
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "empty_array",
+          "_source": {
+            "body": [
+              "alpha",
+              [],
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "nested",
+          "_source": {
+            "body": [
+              [
+                "alpha"
+              ],
+              [
+                "beta"
+              ]
+            ]
+          }
+        },
+        {
+          "_id": "punctuation",
+          "_source": {
+            "body": [
+              "alpha",
+              "!!!",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "two_empty",
+          "_source": {
+            "body": [
+              "alpha",
+              "",
+              "",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "number",
+          "_source": {
+            "body": [
+              "alpha",
+              12,
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "boolean",
+          "_source": {
+            "body": [
+              "alpha",
+              true,
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "leading_null",
+          "_source": {
+            "body": [
+              null,
+              "alpha",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "repeat",
+          "_source": {
+            "body": [
+              "alpha beta",
+              "alpha beta"
+            ]
+          }
+        },
+        {
+          "_id": "null_only",
+          "_source": {
+            "body": [
+              null,
+              null
+            ]
+          }
+        },
+        {
+          "_id": "empty_only",
+          "_source": {
+            "body": [
+              "",
+              ""
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "index": "native-array-gap-five",
+      "documents": [
+        {
+          "_id": "scalar",
+          "_source": {
+            "body": "alpha beta"
+          }
+        },
+        {
+          "_id": "array",
+          "_source": {
+            "body": [
+              "alpha",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "leading_empty",
+          "_source": {
+            "body": [
+              "",
+              "alpha",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "middle_empty",
+          "_source": {
+            "body": [
+              "alpha",
+              "",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "trailing_empty",
+          "_source": {
+            "body": [
+              "alpha",
+              "beta",
+              ""
+            ]
+          }
+        },
+        {
+          "_id": "middle_null",
+          "_source": {
+            "body": [
+              "alpha",
+              null,
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "empty_array",
+          "_source": {
+            "body": [
+              "alpha",
+              [],
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "nested",
+          "_source": {
+            "body": [
+              [
+                "alpha"
+              ],
+              [
+                "beta"
+              ]
+            ]
+          }
+        },
+        {
+          "_id": "punctuation",
+          "_source": {
+            "body": [
+              "alpha",
+              "!!!",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "two_empty",
+          "_source": {
+            "body": [
+              "alpha",
+              "",
+              "",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "number",
+          "_source": {
+            "body": [
+              "alpha",
+              12,
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "boolean",
+          "_source": {
+            "body": [
+              "alpha",
+              true,
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "leading_null",
+          "_source": {
+            "body": [
+              null,
+              "alpha",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "repeat",
+          "_source": {
+            "body": [
+              "alpha beta",
+              "alpha beta"
+            ]
+          }
+        },
+        {
+          "_id": "null_only",
+          "_source": {
+            "body": [
+              null,
+              null
+            ]
+          }
+        },
+        {
+          "_id": "empty_only",
+          "_source": {
+            "body": [
+              "",
+              ""
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "index": "native-array-gap-string",
+      "documents": [
+        {
+          "_id": "scalar",
+          "_source": {
+            "body": "alpha beta"
+          }
+        },
+        {
+          "_id": "array",
+          "_source": {
+            "body": [
+              "alpha",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "leading_empty",
+          "_source": {
+            "body": [
+              "",
+              "alpha",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "middle_empty",
+          "_source": {
+            "body": [
+              "alpha",
+              "",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "trailing_empty",
+          "_source": {
+            "body": [
+              "alpha",
+              "beta",
+              ""
+            ]
+          }
+        },
+        {
+          "_id": "middle_null",
+          "_source": {
+            "body": [
+              "alpha",
+              null,
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "empty_array",
+          "_source": {
+            "body": [
+              "alpha",
+              [],
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "nested",
+          "_source": {
+            "body": [
+              [
+                "alpha"
+              ],
+              [
+                "beta"
+              ]
+            ]
+          }
+        },
+        {
+          "_id": "punctuation",
+          "_source": {
+            "body": [
+              "alpha",
+              "!!!",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "two_empty",
+          "_source": {
+            "body": [
+              "alpha",
+              "",
+              "",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "number",
+          "_source": {
+            "body": [
+              "alpha",
+              12,
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "boolean",
+          "_source": {
+            "body": [
+              "alpha",
+              true,
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "leading_null",
+          "_source": {
+            "body": [
+              null,
+              "alpha",
+              "beta"
+            ]
+          }
+        },
+        {
+          "_id": "repeat",
+          "_source": {
+            "body": [
+              "alpha beta",
+              "alpha beta"
+            ]
+          }
+        },
+        {
+          "_id": "null_only",
+          "_source": {
+            "body": [
+              null,
+              null
+            ]
+          }
+        },
+        {
+          "_id": "empty_only",
+          "_source": {
+            "body": [
+              "",
+              ""
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "default-positions-scalar",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-default/_termvectors/scalar",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "default-positions-array",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-default/_termvectors/array",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "default-positions-leading_empty",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-default/_termvectors/leading_empty",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "default-positions-middle_empty",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-default/_termvectors/middle_empty",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "default-positions-trailing_empty",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-default/_termvectors/trailing_empty",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "default-positions-middle_null",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-default/_termvectors/middle_null",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "default-positions-empty_array",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-default/_termvectors/empty_array",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "default-positions-nested",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-default/_termvectors/nested",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "default-positions-punctuation",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-default/_termvectors/punctuation",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "default-positions-two_empty",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-default/_termvectors/two_empty",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "default-positions-number",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-default/_termvectors/number",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "default-positions-boolean",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-default/_termvectors/boolean",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "default-positions-leading_null",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-default/_termvectors/leading_null",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "default-positions-repeat",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-default/_termvectors/repeat",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "default-positions-null_only",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-default/_termvectors/null_only",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "default-positions-empty_only",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-default/_termvectors/empty_only",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "default-phrase-slop-0",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-default/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 0
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "default-phrase-slop-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-default/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "default-phrase-slop-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-default/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "default-phrase-slop-5",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-default/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 5
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "default-phrase-slop-6",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-default/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 6
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "default-phrase-slop-99",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-default/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 99
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "default-phrase-slop-100",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-default/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 100
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "default-phrase-slop-101",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-default/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 101
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "default-phrase-slop-199",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-default/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 199
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "default-phrase-slop-200",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-default/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 200
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "default-phrase-slop-300",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-default/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 300
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "zero-positions-scalar",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-zero/_termvectors/scalar",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "zero-positions-array",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-zero/_termvectors/array",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "zero-positions-leading_empty",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-zero/_termvectors/leading_empty",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "zero-positions-middle_empty",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-zero/_termvectors/middle_empty",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "zero-positions-trailing_empty",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-zero/_termvectors/trailing_empty",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "zero-positions-middle_null",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-zero/_termvectors/middle_null",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "zero-positions-empty_array",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-zero/_termvectors/empty_array",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "zero-positions-nested",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-zero/_termvectors/nested",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "zero-positions-punctuation",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-zero/_termvectors/punctuation",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "zero-positions-two_empty",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-zero/_termvectors/two_empty",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "zero-positions-number",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-zero/_termvectors/number",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "zero-positions-boolean",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-zero/_termvectors/boolean",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "zero-positions-leading_null",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-zero/_termvectors/leading_null",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "zero-positions-repeat",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-zero/_termvectors/repeat",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "zero-positions-null_only",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-zero/_termvectors/null_only",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "zero-positions-empty_only",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-zero/_termvectors/empty_only",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "zero-phrase-slop-0",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-zero/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 0
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "zero-phrase-slop-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-zero/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "zero-phrase-slop-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-zero/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "zero-phrase-slop-5",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-zero/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 5
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "zero-phrase-slop-6",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-zero/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 6
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "zero-phrase-slop-99",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-zero/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 99
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "zero-phrase-slop-100",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-zero/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 100
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "zero-phrase-slop-101",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-zero/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 101
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "zero-phrase-slop-199",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-zero/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 199
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "zero-phrase-slop-200",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-zero/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 200
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "zero-phrase-slop-300",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-zero/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 300
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-positions-scalar",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-one/_termvectors/scalar",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-positions-array",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-one/_termvectors/array",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-positions-leading_empty",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-one/_termvectors/leading_empty",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-positions-middle_empty",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-one/_termvectors/middle_empty",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-positions-trailing_empty",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-one/_termvectors/trailing_empty",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-positions-middle_null",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-one/_termvectors/middle_null",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-positions-empty_array",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-one/_termvectors/empty_array",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-positions-nested",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-one/_termvectors/nested",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-positions-punctuation",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-one/_termvectors/punctuation",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-positions-two_empty",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-one/_termvectors/two_empty",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-positions-number",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-one/_termvectors/number",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-positions-boolean",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-one/_termvectors/boolean",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-positions-leading_null",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-one/_termvectors/leading_null",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-positions-repeat",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-one/_termvectors/repeat",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-positions-null_only",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-one/_termvectors/null_only",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-positions-empty_only",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-one/_termvectors/empty_only",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-phrase-slop-0",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-one/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 0
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-phrase-slop-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-one/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-phrase-slop-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-one/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-phrase-slop-5",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-one/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 5
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-phrase-slop-6",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-one/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 6
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-phrase-slop-99",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-one/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 99
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-phrase-slop-100",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-one/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 100
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-phrase-slop-101",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-one/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 101
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-phrase-slop-199",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-one/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 199
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-phrase-slop-200",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-one/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 200
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "one-phrase-slop-300",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-one/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 300
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "five-positions-scalar",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-five/_termvectors/scalar",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "five-positions-array",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-five/_termvectors/array",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "five-positions-leading_empty",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-five/_termvectors/leading_empty",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "five-positions-middle_empty",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-five/_termvectors/middle_empty",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "five-positions-trailing_empty",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-five/_termvectors/trailing_empty",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "five-positions-middle_null",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-five/_termvectors/middle_null",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "five-positions-empty_array",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-five/_termvectors/empty_array",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "five-positions-nested",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-five/_termvectors/nested",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "five-positions-punctuation",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-five/_termvectors/punctuation",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "five-positions-two_empty",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-five/_termvectors/two_empty",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "five-positions-number",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-five/_termvectors/number",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "five-positions-boolean",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-five/_termvectors/boolean",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "five-positions-leading_null",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-five/_termvectors/leading_null",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "five-positions-repeat",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-five/_termvectors/repeat",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "five-positions-null_only",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-five/_termvectors/null_only",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "five-positions-empty_only",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-five/_termvectors/empty_only",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "five-phrase-slop-0",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-five/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 0
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "five-phrase-slop-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-five/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "five-phrase-slop-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-five/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "five-phrase-slop-5",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-five/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 5
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "five-phrase-slop-6",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-five/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 6
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "five-phrase-slop-99",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-five/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 99
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "five-phrase-slop-100",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-five/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 100
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "five-phrase-slop-101",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-five/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 101
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "five-phrase-slop-199",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-five/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 199
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "five-phrase-slop-200",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-five/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 200
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "five-phrase-slop-300",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-five/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 300
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "string-positions-scalar",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-string/_termvectors/scalar",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "string-positions-array",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-string/_termvectors/array",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "string-positions-leading_empty",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-string/_termvectors/leading_empty",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "string-positions-middle_empty",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-string/_termvectors/middle_empty",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "string-positions-trailing_empty",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-string/_termvectors/trailing_empty",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "string-positions-middle_null",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-string/_termvectors/middle_null",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "string-positions-empty_array",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-string/_termvectors/empty_array",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "string-positions-nested",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-string/_termvectors/nested",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "string-positions-punctuation",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-string/_termvectors/punctuation",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "string-positions-two_empty",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-string/_termvectors/two_empty",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "string-positions-number",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-string/_termvectors/number",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "string-positions-boolean",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-string/_termvectors/boolean",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "string-positions-leading_null",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-string/_termvectors/leading_null",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "string-positions-repeat",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-string/_termvectors/repeat",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "string-positions-null_only",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-string/_termvectors/null_only",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "string-positions-empty_only",
+      "area": "search",
+      "family": "positions",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-string/_termvectors/empty_only",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": true,
+            "offsets": true,
+            "term_statistics": false,
+            "field_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "string-phrase-slop-0",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-string/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 0
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "string-phrase-slop-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-string/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "string-phrase-slop-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-string/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "string-phrase-slop-5",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-string/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 5
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "string-phrase-slop-6",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-string/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 6
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "string-phrase-slop-99",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-string/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 99
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "string-phrase-slop-100",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-string/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 100
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "string-phrase-slop-101",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-string/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 101
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "string-phrase-slop-199",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-string/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 199
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "string-phrase-slop-200",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-string/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 200
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "string-phrase-slop-300",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-array-gap-string/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 300
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

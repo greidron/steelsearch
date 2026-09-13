@@ -358,8 +358,8 @@ pub struct DateHistogramAggregation {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct DateHistogramBounds {
-    pub min: Option<String>,
-    pub max: Option<String>,
+    pub min: Option<Value>,
+    pub max: Option<Value>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1183,14 +1183,20 @@ fn parse_date_histogram_bounds(clause: &str, value: &Value) -> QueryDslResult<Da
         }
     }
     let parse_bound = |field: &'static str, value: &Value| {
-        value
-            .as_str()
-            .map(str::to_string)
-            .ok_or_else(|| QueryDslError::InvalidValue {
+        if value.is_string() || value.as_i64().is_some() {
+            Ok(value.clone())
+        } else if let Some(number) = value.as_f64().filter(|number| {
+            value.is_f64() && number.is_finite() && number.fract() == 0.0
+                && *number >= i64::MIN as f64 && *number < -(i64::MIN as f64)
+        }) {
+            Ok(Value::from(number as i64))
+        } else {
+            Err(QueryDslError::InvalidValue {
                 clause: "date_histogram".to_string(),
                 field: field.to_string(),
-                reason: "expected string date value".to_string(),
+                reason: "expected date string or signed 64-bit epoch milliseconds".to_string(),
             })
+        }
     };
     let min = object
         .get("min")
@@ -9198,6 +9204,33 @@ mod tests {
     }
 
     #[test]
+    fn date_histogram_bounds_preserve_integer_and_string_types() {
+        for value in [serde_json::json!(i64::MIN), serde_json::json!(i64::MAX), serde_json::json!(0), serde_json::json!("0"), serde_json::json!("1970-01-01T00:00:00Z")] {
+            for option in ["extended_bounds", "hard_bounds"] {
+                let mut config = serde_json::json!({"field": "date", "calendar_interval": "minute"});
+                config[option] = serde_json::json!({"min": value.clone(), "max": null});
+                let parsed = parse_search_aggregations(&serde_json::json!({"aggs": {"dates": {"date_histogram": config}}})).unwrap();
+                let Aggregation::DateHistogram(dates) = &parsed["dates"] else { panic!("expected histogram") };
+                let bounds = if option == "extended_bounds" {dates.extended_bounds.as_ref()} else {dates.hard_bounds.as_ref()}.unwrap();
+                assert_eq!(bounds.min.as_ref(), Some(&value));
+                assert_eq!(bounds.max, None);
+                let encoded = serde_json::to_value(bounds).unwrap();
+                assert_eq!(encoded["min"], value);
+                assert_eq!(serde_json::from_value::<DateHistogramBounds>(encoded).unwrap(), *bounds);
+            }
+        }
+        for (number, expected) in [(0.0, 0), (-60_000.0, -60_000), (i64::MIN as f64, i64::MIN)] {
+            let bounds = parse_date_histogram_bounds("date_histogram", &serde_json::json!({"min": number})).unwrap();
+            assert_eq!(bounds.min, Some(Value::from(expected)));
+        }
+        for invalid in [serde_json::json!(true), serde_json::json!([]), serde_json::json!({}), serde_json::json!(0.5), serde_json::json!(u64::MAX), serde_json::json!(i64::MAX as f64)] {
+            assert!(parse_search_aggregations(&serde_json::json!({"aggs": {"dates": {"date_histogram": {
+                "field": "date", "calendar_interval": "minute", "extended_bounds": {"min": invalid}
+            }}}})).is_err());
+        }
+    }
+
+    #[test]
     fn parses_date_histogram_aggregation_extended_bounds_option() {
         let aggregations = parse_search_aggregations(&serde_json::json!({
             "aggs": {
@@ -9227,8 +9260,8 @@ mod tests {
                 format: None,
                 min_doc_count: 0,
                 extended_bounds: Some(DateHistogramBounds {
-                    min: Some("2026-04-20T00:00:00Z".to_string()),
-                    max: Some("2026-04-24T00:00:00Z".to_string()),
+                    min: Some(Value::String("2026-04-20T00:00:00Z".to_string())),
+                    max: Some(Value::String("2026-04-24T00:00:00Z".to_string())),
                 }),
                 hard_bounds: None,
             })
@@ -9266,8 +9299,8 @@ mod tests {
                 min_doc_count: 0,
                 extended_bounds: None,
                 hard_bounds: Some(DateHistogramBounds {
-                    min: Some("2024-01-02T00:00:00Z".to_string()),
-                    max: Some("2024-01-03T00:00:00Z".to_string()),
+                    min: Some(Value::String("2024-01-02T00:00:00Z".to_string())),
+                    max: Some(Value::String("2024-01-03T00:00:00Z".to_string())),
                 }),
             })
         );

@@ -1,0 +1,586 @@
+{
+  "indices": [
+    {
+      "name": "routing-contract-index-conflict",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "keyword"
+            }
+          }
+        },
+        "aliases": {
+          "routing-contract-index-conflict-alias": {
+            "index_routing": "tenant"
+          }
+        }
+      }
+    },
+    {
+      "name": "routing-contract-create-conflict",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "keyword"
+            }
+          }
+        },
+        "aliases": {
+          "routing-contract-create-conflict-alias": {
+            "index_routing": "tenant"
+          }
+        }
+      }
+    },
+    {
+      "name": "routing-contract-update-conflict",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "keyword"
+            }
+          }
+        },
+        "aliases": {
+          "routing-contract-update-conflict-alias": {
+            "index_routing": "tenant"
+          }
+        }
+      }
+    },
+    {
+      "name": "routing-contract-delete-conflict",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "keyword"
+            }
+          }
+        },
+        "aliases": {
+          "routing-contract-delete-conflict-alias": {
+            "index_routing": "tenant"
+          }
+        }
+      }
+    },
+    {
+      "name": "routing-contract-get-conflict",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "keyword"
+            }
+          }
+        },
+        "aliases": {
+          "routing-contract-get-conflict-alias": {
+            "index_routing": "tenant"
+          }
+        }
+      }
+    },
+    {
+      "name": "routing-contract-source-conflict",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "keyword"
+            }
+          }
+        },
+        "aliases": {
+          "routing-contract-source-conflict-alias": {
+            "index_routing": "tenant"
+          }
+        }
+      }
+    },
+    {
+      "name": "routing-contract-get-empty",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "keyword"
+            }
+          }
+        },
+        "aliases": {
+          "routing-contract-get-empty-alias": {
+            "index_routing": "tenant"
+          }
+        }
+      }
+    },
+    {
+      "name": "routing-contract-source-empty",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "keyword"
+            }
+          }
+        },
+        "aliases": {
+          "routing-contract-source-empty-alias": {
+            "index_routing": "tenant"
+          }
+        }
+      }
+    }
+  ],
+  "bulk": [],
+  "cases": [
+    {
+      "name": "index-conflict",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "document_write_error",
+      "steps": [
+        {
+          "name": "seed",
+          "method": "PUT",
+          "path": "/routing-contract-index-conflict/_doc/one?routing=tenant&refresh=true",
+          "body": {
+            "value": "seed"
+          },
+          "expected_status": 201
+        },
+        {
+          "name": "reject-conflicting-routing",
+          "method": "PUT",
+          "path": "/routing-contract-index-conflict-alias/_doc/one?routing=other",
+          "body": {
+            "value": "changed"
+          },
+          "expected_status": 400
+        }
+      ]
+    },
+    {
+      "name": "index-conflict-state",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "publish-after-attempt",
+          "method": "POST",
+          "path": "/routing-contract-index-conflict/_refresh",
+          "expected_status": 200
+        },
+        {
+          "name": "verify-no-side-effects",
+          "method": "POST",
+          "path": "/routing-contract-index-conflict/_search",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "size": 10
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "create-conflict",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "document_write_error",
+      "steps": [
+        {
+          "name": "seed",
+          "method": "PUT",
+          "path": "/routing-contract-create-conflict/_doc/one?routing=tenant&refresh=true",
+          "body": {
+            "value": "seed"
+          },
+          "expected_status": 201
+        },
+        {
+          "name": "reject-conflicting-routing",
+          "method": "PUT",
+          "path": "/routing-contract-create-conflict-alias/_create/one?routing=other",
+          "body": {
+            "value": "changed"
+          },
+          "expected_status": 400
+        }
+      ]
+    },
+    {
+      "name": "create-conflict-state",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "publish-after-attempt",
+          "method": "POST",
+          "path": "/routing-contract-create-conflict/_refresh",
+          "expected_status": 200
+        },
+        {
+          "name": "verify-no-side-effects",
+          "method": "POST",
+          "path": "/routing-contract-create-conflict/_search",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "size": 10
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "update-conflict",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "document_write_error",
+      "steps": [
+        {
+          "name": "seed",
+          "method": "PUT",
+          "path": "/routing-contract-update-conflict/_doc/one?routing=tenant&refresh=true",
+          "body": {
+            "value": "seed"
+          },
+          "expected_status": 201
+        },
+        {
+          "name": "reject-conflicting-routing",
+          "method": "POST",
+          "path": "/routing-contract-update-conflict-alias/_update/one?routing=other",
+          "body": {
+            "doc": {
+              "value": "changed"
+            }
+          },
+          "expected_status": 400
+        }
+      ]
+    },
+    {
+      "name": "update-conflict-state",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "publish-after-attempt",
+          "method": "POST",
+          "path": "/routing-contract-update-conflict/_refresh",
+          "expected_status": 200
+        },
+        {
+          "name": "verify-no-side-effects",
+          "method": "POST",
+          "path": "/routing-contract-update-conflict/_search",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "size": 10
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "delete-conflict",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "document_write_error",
+      "steps": [
+        {
+          "name": "seed",
+          "method": "PUT",
+          "path": "/routing-contract-delete-conflict/_doc/one?routing=tenant&refresh=true",
+          "body": {
+            "value": "seed"
+          },
+          "expected_status": 201
+        },
+        {
+          "name": "reject-conflicting-routing",
+          "method": "DELETE",
+          "path": "/routing-contract-delete-conflict-alias/_doc/one?routing=other",
+          "expected_status": 400
+        }
+      ]
+    },
+    {
+      "name": "delete-conflict-state",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "publish-after-attempt",
+          "method": "POST",
+          "path": "/routing-contract-delete-conflict/_refresh",
+          "expected_status": 200
+        },
+        {
+          "name": "verify-no-side-effects",
+          "method": "POST",
+          "path": "/routing-contract-delete-conflict/_search",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "size": 10
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "get-conflict",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "document_write_error",
+      "steps": [
+        {
+          "name": "seed",
+          "method": "PUT",
+          "path": "/routing-contract-get-conflict/_doc/one?routing=tenant&refresh=true",
+          "body": {
+            "value": "seed"
+          },
+          "expected_status": 201
+        },
+        {
+          "name": "reject-conflicting-routing",
+          "method": "GET",
+          "path": "/routing-contract-get-conflict-alias/_doc/one?routing=other",
+          "expected_status": 400
+        }
+      ]
+    },
+    {
+      "name": "get-conflict-state",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "publish-after-attempt",
+          "method": "POST",
+          "path": "/routing-contract-get-conflict/_refresh",
+          "expected_status": 200
+        },
+        {
+          "name": "verify-no-side-effects",
+          "method": "POST",
+          "path": "/routing-contract-get-conflict/_search",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "size": 10
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "source-conflict",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "document_write_error",
+      "steps": [
+        {
+          "name": "seed",
+          "method": "PUT",
+          "path": "/routing-contract-source-conflict/_doc/one?routing=tenant&refresh=true",
+          "body": {
+            "value": "seed"
+          },
+          "expected_status": 201
+        },
+        {
+          "name": "reject-conflicting-routing",
+          "method": "GET",
+          "path": "/routing-contract-source-conflict-alias/_source/one?routing=other",
+          "expected_status": 400
+        }
+      ]
+    },
+    {
+      "name": "source-conflict-state",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "publish-after-attempt",
+          "method": "POST",
+          "path": "/routing-contract-source-conflict/_refresh",
+          "expected_status": 200
+        },
+        {
+          "name": "verify-no-side-effects",
+          "method": "POST",
+          "path": "/routing-contract-source-conflict/_search",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "size": 10
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "get-empty",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "document_write_error",
+      "steps": [
+        {
+          "name": "seed",
+          "method": "PUT",
+          "path": "/routing-contract-get-empty/_doc/one?routing=tenant&refresh=true",
+          "body": {
+            "value": "seed"
+          },
+          "expected_status": 201
+        },
+        {
+          "name": "reject-conflicting-routing",
+          "method": "GET",
+          "path": "/routing-contract-get-empty-alias/_doc/one?routing=",
+          "expected_status": 400
+        }
+      ]
+    },
+    {
+      "name": "get-empty-state",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "publish-after-attempt",
+          "method": "POST",
+          "path": "/routing-contract-get-empty/_refresh",
+          "expected_status": 200
+        },
+        {
+          "name": "verify-no-side-effects",
+          "method": "POST",
+          "path": "/routing-contract-get-empty/_search",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "size": 10
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "source-empty",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "document_write_error",
+      "steps": [
+        {
+          "name": "seed",
+          "method": "PUT",
+          "path": "/routing-contract-source-empty/_doc/one?routing=tenant&refresh=true",
+          "body": {
+            "value": "seed"
+          },
+          "expected_status": 201
+        },
+        {
+          "name": "reject-conflicting-routing",
+          "method": "GET",
+          "path": "/routing-contract-source-empty-alias/_source/one?routing=",
+          "expected_status": 400
+        }
+      ]
+    },
+    {
+      "name": "source-empty-state",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "publish-after-attempt",
+          "method": "POST",
+          "path": "/routing-contract-source-empty/_refresh",
+          "expected_status": 200
+        },
+        {
+          "name": "verify-no-side-effects",
+          "method": "POST",
+          "path": "/routing-contract-source-empty/_search",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "size": 10
+          },
+          "expected_status": 200
+        }
+      ]
+    }
+  ]
+}

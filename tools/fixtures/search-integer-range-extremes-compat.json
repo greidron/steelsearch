@@ -1,0 +1,61 @@
+{
+  "indices": [{
+    "name": "integer-range-extremes",
+    "body": {
+      "settings": {"number_of_shards": 3, "number_of_replicas": 0, "refresh_interval": "-1"},
+      "mappings": {"properties": {
+        "fast": {"type": "long"},
+        "tie": {"type": "keyword"},
+        "postings": {"type": "long", "doc_values": false}
+      }}
+    }
+  }],
+  "bulk": [{
+    "index": "integer-range-extremes",
+    "documents": [
+      {"_id": "min", "_source": {"tie": "min", "fast": -9223372036854775808, "postings": -9223372036854775808}},
+      {"_id": "zero", "_source": {"tie": "zero", "fast": 0, "postings": 0}},
+      {"_id": "max", "_source": {"tie": "max", "fast": 9223372036854775807, "postings": 9223372036854775807}},
+      {"_id": "null", "_source": {"tie": "null", "fast": null, "postings": null}},
+      {"_id": "missing", "_source": {"tie": "missing"}}
+    ]
+  }],
+  "cases": [
+    {"name": "fast-above-max", "area": "search", "family": "range", "extract": "search_hits_with_sort_values",
+      "steps": [{"method": "POST", "path": "/integer-range-extremes/_search", "expected_status": 200,
+        "body": {"size": 20, "query": {"range": {"fast": {"gt": 9223372036854775807}}}}}]},
+    {"name": "fast-below-min", "area": "search", "family": "range", "extract": "search_hits_with_sort_values",
+      "steps": [{"method": "POST", "path": "/integer-range-extremes/_search", "expected_status": 200,
+        "body": {"size": 20, "query": {"range": {"fast": {"lt": -9223372036854775808}}}}}]},
+    {"name": "postings-above-max", "area": "search", "family": "range", "extract": "search_hits_with_sort_values",
+      "steps": [{"method": "POST", "path": "/integer-range-extremes/_search", "expected_status": 200,
+        "body": {"size": 20, "query": {"range": {"postings": {"gt": 9223372036854775807}}}}}]},
+    {"name": "postings-below-min", "area": "search", "family": "range", "extract": "search_hits_with_sort_values",
+      "steps": [{"method": "POST", "path": "/integer-range-extremes/_search", "expected_status": 200,
+        "body": {"size": 20, "query": {"range": {"postings": {"lt": -9223372036854775808}}}}}]},
+    {"name": "fast-include-max", "area": "search", "family": "range", "extract": "search_hits_with_sort_values",
+      "steps": [{"method": "POST", "path": "/integer-range-extremes/_search", "expected_status": 200,
+        "body": {"size": 20, "query": {"range": {"fast": {"gte": 9223372036854775807}}}}}]},
+    {"name": "fast-include-min", "area": "search", "family": "range", "extract": "search_hits_with_sort_values",
+      "steps": [{"method": "POST", "path": "/integer-range-extremes/_search", "expected_status": 200,
+        "body": {"size": 20, "query": {"range": {"fast": {"lte": -9223372036854775808}}}}}]},
+    {"name": "postings-include-max", "area": "search", "family": "range", "extract": "search_hits_with_sort_values",
+      "steps": [{"method": "POST", "path": "/integer-range-extremes/_search", "expected_status": 200,
+        "body": {"size": 20, "query": {"range": {"postings": {"gte": 9223372036854775807}}}}}]},
+    {"name": "postings-include-min", "area": "search", "family": "range", "extract": "search_hits_with_sort_values",
+      "steps": [{"method": "POST", "path": "/integer-range-extremes/_search", "expected_status": 200,
+        "body": {"size": 20, "query": {"range": {"postings": {"lte": -9223372036854775808}}}}}]},
+    {"name": "bool-filter-above-max", "area": "search", "family": "range", "extract": "search_hits_with_sort_values",
+      "steps": [{"method": "POST", "path": "/integer-range-extremes/_search", "expected_status": 200,
+        "body": {"size": 20, "query": {"bool": {"must": {"match_all": {}}, "filter": {"range": {"fast": {"gt": 9223372036854775807}}}}}}}]},
+    {"name": "bool-filter-below-min", "area": "search", "family": "range", "extract": "search_hits_with_sort_values",
+      "steps": [{"method": "POST", "path": "/integer-range-extremes/_search", "expected_status": 200,
+        "body": {"size": 20, "query": {"bool": {"must": {"match_all": {}}, "filter": {"range": {"postings": {"lt": -9223372036854775808}}}}}}}]},
+    {"name": "bool-not-above-max", "area": "search", "family": "range", "extract": "search_hits_with_sort_values",
+      "steps": [{"method": "POST", "path": "/integer-range-extremes/_search", "expected_status": 200,
+        "body": {"size": 20, "sort": [{"tie": "asc"}], "query": {"bool": {"must_not": {"range": {"fast": {"gt": 9223372036854775807}}}}}}}]},
+    {"name": "bool-not-below-min", "area": "search", "family": "range", "extract": "search_hits_with_sort_values",
+      "steps": [{"method": "POST", "path": "/integer-range-extremes/_search", "expected_status": 200,
+        "body": {"size": 20, "sort": [{"tie": "asc"}], "query": {"bool": {"must_not": {"range": {"postings": {"lt": -9223372036854775808}}}}}}}]}
+  ]
+}

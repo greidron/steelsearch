@@ -46,6 +46,7 @@ os-engine-tantivy = { path = "../os-engine-tantivy" }
 os-ml-commons = { path = "../os-ml-commons" }
 os-node-rest-core = { path = "../os-node-rest-core" }
 os-plugin-knn = { path = "../os-plugin-knn" }
+os-query-dsl = { path = "../os-query-dsl" }
 os-rest = { path = "../os-rest" }
 os-stream = { path = "../os-stream" }
 os-transport = { path = "../os-transport" }
@@ -58,6 +59,7 @@ serde_json.workspace = true
 sha2 = "0.10"
 tokio.workspace = true
 tracing.workspace = true
+uuid = { version = "=1.8.0", features = ["v4"] }
 
 [dev-dependencies]
 indexmap = "=2.7.0"

@@ -1,0 +1,54 @@
+{
+  "indices": [{
+    "name": "multi-match-bool-scores",
+    "body": {
+      "settings": {"number_of_shards": 1, "number_of_replicas": 0, "refresh_interval": "-1"},
+      "mappings": {"properties": {
+        "title": {"type": "text"}, "message": {"type": "text"},
+        "service": {"type": "keyword"}, "latency": {"type": "long"}
+      }}
+    }
+  }],
+  "bulk": [{
+    "index": "multi-match-bool-scores",
+    "documents": [
+      {"_id": "a", "_source": {"title": "alpha other other other other", "message": "other", "service": "yes", "latency": 10}},
+      {"_id": "m", "_source": {"title": "alpha other", "message": "other", "service": "yes", "latency": 10}},
+      {"_id": "z", "_source": {"title": "alpha alpha alpha", "message": "other", "service": "yes", "latency": 10}}
+    ]
+  }],
+  "cases": [
+    {
+      "name": "standalone-best-fields-boosted-scores", "area": "search", "family": "ranking", "extract": "search_scores",
+      "steps": [{"method": "POST", "expected_status": 200, "path": "/multi-match-bool-scores/_search", "body": {
+        "size": 10, "query": {"multi_match": {"query": "alpha", "fields": ["title^2", "message"], "type": "best_fields"}}
+      }}]
+    },
+    {
+      "name": "bool-must-best-fields-scores", "area": "search", "family": "ranking", "extract": "search_scores",
+      "steps": [{"method": "POST", "expected_status": 200, "path": "/multi-match-bool-scores/_search", "body": {
+        "size": 10, "query": {"bool": {"must": [{"multi_match": {"query": "alpha", "fields": ["title^2", "message"], "type": "best_fields"}}]}}
+      }}]
+    },
+    {
+      "name": "bool-minimum-should-best-fields-scores", "area": "search", "family": "ranking", "extract": "search_scores",
+      "steps": [{"method": "POST", "expected_status": 200, "path": "/multi-match-bool-scores/_search", "body": {
+        "size": 10, "query": {"bool": {
+          "must": [{"multi_match": {"query": "alpha", "fields": ["title^2", "message"], "type": "best_fields"}}],
+          "should": [{"match_phrase": {"message": {"query": "absent", "slop": 1}}}, {"term": {"service": "yes"}}],
+          "minimum_should_match": 1, "filter": [{"range": {"latency": {"lte": 100}}}]
+        }}
+      }}]
+    },
+    {
+      "name": "fallback-bool-minimum-should-best-fields-scores", "area": "search", "family": "ranking", "extract": "search_scores",
+      "steps": [{"method": "POST", "expected_status": 200, "path": "/multi-match-bool-scores/_search?ignore_unavailable=false", "body": {
+        "size": 10, "query": {"bool": {
+          "must": [{"multi_match": {"query": "alpha", "fields": ["title^2", "message"], "type": "best_fields"}}],
+          "should": [{"match_phrase": {"message": {"query": "absent", "slop": 1}}}, {"term": {"service": "yes"}}],
+          "minimum_should_match": 1, "filter": [{"range": {"latency": {"lte": 100}}}]
+        }}
+      }}]
+    }
+  ]
+}

@@ -1,0 +1,2312 @@
+{
+  "indices": [
+    {
+      "name": "numeric-missing-after-1-long",
+      "body": {
+        "settings": {
+          "number_of_shards": 1,
+          "number_of_replicas": 0
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "long"
+            },
+            "tie": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "numeric-missing-after-1-double",
+      "body": {
+        "settings": {
+          "number_of_shards": 1,
+          "number_of_replicas": 0
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "double"
+            },
+            "tie": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "numeric-missing-after-3-long",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "long"
+            },
+            "tie": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "numeric-missing-after-3-double",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "double"
+            },
+            "tie": {
+              "type": "integer"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "bulk": [
+    {
+      "index": "numeric-missing-after-1-long",
+      "documents": [
+        {
+          "_id": "long-finite",
+          "_source": {
+            "value": [
+              1,
+              2
+            ],
+            "tie": 0
+          }
+        },
+        {
+          "_id": "long-missing",
+          "_source": {
+            "tie": 1
+          }
+        }
+      ]
+    },
+    {
+      "index": "numeric-missing-after-1-double",
+      "documents": [
+        {
+          "_id": "double-finite",
+          "_source": {
+            "value": [
+              1,
+              2
+            ],
+            "tie": 2
+          }
+        },
+        {
+          "_id": "double-missing",
+          "_source": {
+            "tie": 3
+          }
+        }
+      ]
+    },
+    {
+      "index": "numeric-missing-after-3-long",
+      "documents": [
+        {
+          "_id": "long-finite",
+          "_source": {
+            "value": [
+              1,
+              2
+            ],
+            "tie": 0
+          }
+        },
+        {
+          "_id": "long-missing",
+          "_source": {
+            "tie": 1
+          }
+        }
+      ]
+    },
+    {
+      "index": "numeric-missing-after-3-double",
+      "documents": [
+        {
+          "_id": "double-finite",
+          "_source": {
+            "value": [
+              1,
+              2
+            ],
+            "tie": 2
+          }
+        },
+        {
+          "_id": "double-missing",
+          "_source": {
+            "tie": 3
+          }
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "numeric-missing-1-double-asc-_first-all-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_first"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-double-asc-_first-all-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_first"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-double-asc-_first-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_first"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "-Infinity",
+              3
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-double-asc-_first-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_first"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "-Infinity",
+              3
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-double-asc-_last-all-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_last"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-double-asc-_last-all-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_last"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-double-asc-_last-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_last"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "Infinity",
+              3
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-double-asc-_last-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_last"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "Infinity",
+              3
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-double-desc-_first-all-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_first"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-double-desc-_first-all-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_first"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-double-desc-_first-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_first"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "Infinity",
+              3
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-double-desc-_first-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_first"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "Infinity",
+              3
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-double-desc-_last-all-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_last"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-double-desc-_last-all-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_last"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-double-desc-_last-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_last"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "-Infinity",
+              3
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-double-desc-_last-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_last"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "-Infinity",
+              3
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-mixed-asc-_first-all-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-long,numeric-missing-after-1-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_first",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-mixed-asc-_first-all-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-long,numeric-missing-after-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_first",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-mixed-asc-_first-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-long,numeric-missing-after-1-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_first",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "-Infinity",
+              1
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-mixed-asc-_first-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-long,numeric-missing-after-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_first",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "-Infinity",
+              1
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-mixed-asc-_last-all-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-long,numeric-missing-after-1-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_last",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-mixed-asc-_last-all-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-long,numeric-missing-after-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_last",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-mixed-asc-_last-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-long,numeric-missing-after-1-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_last",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "Infinity",
+              1
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-mixed-asc-_last-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-long,numeric-missing-after-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_last",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "Infinity",
+              1
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-mixed-desc-_first-all-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-long,numeric-missing-after-1-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_first",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-mixed-desc-_first-all-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-long,numeric-missing-after-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_first",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-mixed-desc-_first-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-long,numeric-missing-after-1-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_first",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "Infinity",
+              1
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-mixed-desc-_first-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-long,numeric-missing-after-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_first",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "Infinity",
+              1
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-mixed-desc-_last-all-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-long,numeric-missing-after-1-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_last",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-mixed-desc-_last-all-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-long,numeric-missing-after-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_last",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-mixed-desc-_last-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-long,numeric-missing-after-1-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_last",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "-Infinity",
+              1
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-1-mixed-desc-_last-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-1-long,numeric-missing-after-1-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_last",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "-Infinity",
+              1
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-double-asc-_first-all-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_first"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-double-asc-_first-all-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_first"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-double-asc-_first-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_first"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "-Infinity",
+              3
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-double-asc-_first-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_first"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "-Infinity",
+              3
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-double-asc-_last-all-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_last"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-double-asc-_last-all-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_last"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-double-asc-_last-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_last"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "Infinity",
+              3
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-double-asc-_last-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_last"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "Infinity",
+              3
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-double-desc-_first-all-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_first"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-double-desc-_first-all-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_first"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-double-desc-_first-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_first"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "Infinity",
+              3
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-double-desc-_first-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_first"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "Infinity",
+              3
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-double-desc-_last-all-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_last"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-double-desc-_last-all-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_last"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-double-desc-_last-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_last"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "-Infinity",
+              3
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-double-desc-_last-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_last"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "-Infinity",
+              3
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-mixed-asc-_first-all-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-long,numeric-missing-after-3-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_first",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-mixed-asc-_first-all-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-long,numeric-missing-after-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_first",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-mixed-asc-_first-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-long,numeric-missing-after-3-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_first",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "-Infinity",
+              1
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-mixed-asc-_first-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-long,numeric-missing-after-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_first",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "-Infinity",
+              1
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-mixed-asc-_last-all-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-long,numeric-missing-after-3-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_last",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-mixed-asc-_last-all-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-long,numeric-missing-after-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_last",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-mixed-asc-_last-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-long,numeric-missing-after-3-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_last",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "Infinity",
+              1
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-mixed-asc-_last-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-long,numeric-missing-after-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "asc",
+                  "missing": "_last",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "Infinity",
+              1
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-mixed-desc-_first-all-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-long,numeric-missing-after-3-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_first",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-mixed-desc-_first-all-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-long,numeric-missing-after-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_first",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-mixed-desc-_first-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-long,numeric-missing-after-3-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_first",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "Infinity",
+              1
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-mixed-desc-_first-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-long,numeric-missing-after-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_first",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "Infinity",
+              1
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-mixed-desc-_last-all-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-long,numeric-missing-after-3-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_last",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-mixed-desc-_last-all-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-long,numeric-missing-after-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_last",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-mixed-desc-_last-after-normal",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-long,numeric-missing-after-3-double/_search",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_last",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "-Infinity",
+              1
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "numeric-missing-3-mixed-desc-_last-after-fallback",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/numeric-missing-after-3-long,numeric-missing-after-3-double/_search?ignore_unavailable=false",
+          "body": {
+            "size": 10,
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value": {
+                  "mode": "avg",
+                  "order": "desc",
+                  "missing": "_last",
+                  "numeric_type": "double"
+                }
+              },
+              {
+                "tie": "asc"
+              }
+            ],
+            "search_after": [
+              "-Infinity",
+              1
+            ]
+          },
+          "expected_status": 200
+        }
+      ]
+    }
+  ]
+}

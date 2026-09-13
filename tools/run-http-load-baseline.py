@@ -18,6 +18,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from benchmark_timeline import DiagnosticTimeline, write_timeline_artifact
+
 
 DEFAULT_QUERY_MIX = "write=15,lexical=15,ranking=15,facet=15,sort_filter=10,nested=10,vector=15,hybrid=10,refresh=5"
 OPERATIONS = (
@@ -106,6 +108,8 @@ def main() -> int:
     parser.add_argument("--timeout-seconds", type=positive_float, default=10.0)
     parser.add_argument("--seed", type=int, default=13)
     parser.add_argument("--output", help="write JSON summary to this path")
+    parser.add_argument("--diagnostic-timeline", action="store_true",
+                        help="record bounded request/CPU timelines; invalid for performance acceptance")
     parser.add_argument("--dry-run", action="store_true", help="validate configuration without issuing HTTP requests")
     parser.add_argument("--no-reset", action="store_true", help="reuse an existing index instead of deleting it first")
     parser.add_argument("--process-pid", type=positive_int, help="sample daemon VmRSS from /proc/<pid>/status")
@@ -128,6 +132,8 @@ def main() -> int:
         ),
     )
     args = parser.parse_args()
+    if args.diagnostic_timeline and not args.output and not args.dry_run:
+        parser.error("--diagnostic-timeline requires --output for its bounded sidecar artifact")
 
     load_opt_in = os.environ.get("RUN_HTTP_LOAD_TESTS") == "1" or os.environ.get("RUN_HTTP_LOAD_COMPARISON") == "1"
     if not args.dry_run and not load_opt_in:
@@ -158,6 +164,7 @@ def main() -> int:
         "seed": args.seed,
         "reset": not args.no_reset,
         "operation_resource_deltas": args.operation_resource_deltas,
+        "diagnostic_timeline": args.diagnostic_timeline,
     }
 
     if args.dry_run:
@@ -192,6 +199,8 @@ def main() -> int:
         metrics_path=args.metrics_path,
     )
     summary = runner.run(probes)
+    if args.diagnostic_timeline:
+        summary["timeline"] = write_timeline_artifact(summary["timeline"], args.output)
     emit(summary, args.output)
     return 1 if summary["summary"]["error_count"] else 0
 
@@ -286,6 +295,7 @@ class LoadRunner:
         self.errors: dict[str, int] = defaultdict(int)
         self.error_examples: dict[str, list[str]] = defaultdict(list)
         self.operation_resource_deltas: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+        self.timeline = DiagnosticTimeline() if config.get("diagnostic_timeline") else None
 
     def client_base_url(self, client_id: int) -> str:
         return self.base_urls()[client_id % len(self.base_urls())]
@@ -299,23 +309,29 @@ class LoadRunner:
         self.seed_corpus()
 
         probes.start_peak_sampling()
+        if self.timeline is not None:
+            self.timeline.start()
         start = time.monotonic()
         deadline = start + self.config["duration_seconds"]
         threads = [
             threading.Thread(target=self.worker, args=(client_id, deadline, probes), daemon=True)
             for client_id in range(self.config["clients"])
         ]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join()
-        elapsed = time.monotonic() - start
+        try:
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+            elapsed = time.monotonic() - start
+        finally:
+            if self.timeline is not None:
+                self.timeline.stop()
 
         total_success = sum(self.success.values())
         total_errors = sum(self.errors.values())
         peak = probes.stop_peak_sampling()
         after = probes.sample()
-        return {
+        result = {
             "config": self.config,
             "summary": {
                 "elapsed_seconds": elapsed,
@@ -332,6 +348,10 @@ class LoadRunner:
                 if self.success[operation] or self.errors[operation]
             },
         }
+        if self.timeline is not None:
+            result.update(diagnostic_only=True, acceptance_established=False,
+                          timeline=self.timeline.snapshot())
+        return result
 
     def prepare_index(self) -> None:
         index = self.config["index"]
@@ -484,9 +504,12 @@ class LoadRunner:
             counter += 1
             before_operation = self.operation_resource_sample(probes)
             started = time.perf_counter()
+            status = None
+            elapsed_ms = None
             try:
                 response = self.run_operation(operation, client_id, counter, rng, base_url)
                 elapsed_ms = (time.perf_counter() - started) * 1000.0
+                status = response.get("status")
                 after_operation = self.operation_resource_sample(probes)
                 self.record_operation_resource_delta(operation, before_operation, after_operation)
                 self.record(operation, elapsed_ms, response)
@@ -495,6 +518,9 @@ class LoadRunner:
                 after_operation = self.operation_resource_sample(probes)
                 self.record_operation_resource_delta(operation, before_operation, after_operation)
                 self.record_exception(operation, elapsed_ms, error)
+            finally:
+                if self.timeline is not None and elapsed_ms is not None:
+                    self.timeline.record(operation, client_id, started, elapsed_ms, status)
 
     def run_operation(
         self,

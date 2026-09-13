@@ -1,0 +1,5986 @@
+{
+  "reference_version": "3.7.0-SNAPSHOT",
+  "reference_build_hash": "f991609d190dfd91c8a09902053a7bbfe0c27b3e",
+  "lucene_version": "10.4.0",
+  "fixture_sha256": "19baa426a3062a1abf13285478f38d70addf3767f3ab4cd2aa6b41546d8c60bc",
+  "reference_report_sha256": "7354c09f4f46067e734132829641700e68a921e9c2b9775404796eb3daf032eb",
+  "scope": "Actual reference phrase frequencies and scores; not candidate acceptance",
+  "rows": [
+    {
+      "name": "1-pair-slop-0-boost-1",
+      "hits": {
+        "long-repeat": {
+          "score": 0.14606501,
+          "frequencies": [
+            3
+          ]
+        },
+        "repeat": {
+          "score": 0.14157477,
+          "frequencies": [
+            2
+          ]
+        },
+        "array-repeat": {
+          "score": 0.14157477,
+          "frequencies": [
+            2
+          ]
+        },
+        "overlap": {
+          "score": 0.13191381,
+          "frequencies": [
+            2
+          ]
+        },
+        "exact": {
+          "score": 0.12962061,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.12348714,
+          "frequencies": [
+            2
+          ]
+        },
+        "three": {
+          "score": 0.11429321,
+          "frequencies": [
+            1
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.10220736,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.08436513,
+          "frequencies": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-pair-slop-0-boost-2",
+      "hits": {
+        "long-repeat": {
+          "score": 0.29213002,
+          "frequencies": [
+            3
+          ]
+        },
+        "repeat": {
+          "score": 0.28314954,
+          "frequencies": [
+            2
+          ]
+        },
+        "array-repeat": {
+          "score": 0.28314954,
+          "frequencies": [
+            2
+          ]
+        },
+        "overlap": {
+          "score": 0.26382762,
+          "frequencies": [
+            2
+          ]
+        },
+        "exact": {
+          "score": 0.25924122,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.24697427,
+          "frequencies": [
+            2
+          ]
+        },
+        "three": {
+          "score": 0.22858642,
+          "frequencies": [
+            1
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.20441473,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.16873026,
+          "frequencies": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-pair-slop-1-boost-1",
+      "hits": {
+        "long-repeat": {
+          "score": 0.14606501,
+          "frequencies": [
+            3
+          ]
+        },
+        "repeat": {
+          "score": 0.14157477,
+          "frequencies": [
+            2
+          ]
+        },
+        "array-repeat": {
+          "score": 0.14157477,
+          "frequencies": [
+            2
+          ]
+        },
+        "overlap": {
+          "score": 0.13191381,
+          "frequencies": [
+            2
+          ]
+        },
+        "exact": {
+          "score": 0.12962061,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.12348714,
+          "frequencies": [
+            2
+          ]
+        },
+        "three": {
+          "score": 0.11429321,
+          "frequencies": [
+            1
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.10220736,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.08436513,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-mixed": {
+          "score": 0.076010525,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-gap": {
+          "score": 0.065680236,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "two-gaps": {
+          "score": 0.0578219,
+          "frequencies": [
+            0.5
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-pair-slop-1-boost-2",
+      "hits": {
+        "long-repeat": {
+          "score": 0.29213002,
+          "frequencies": [
+            3
+          ]
+        },
+        "repeat": {
+          "score": 0.28314954,
+          "frequencies": [
+            2
+          ]
+        },
+        "array-repeat": {
+          "score": 0.28314954,
+          "frequencies": [
+            2
+          ]
+        },
+        "overlap": {
+          "score": 0.26382762,
+          "frequencies": [
+            2
+          ]
+        },
+        "exact": {
+          "score": 0.25924122,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.24697427,
+          "frequencies": [
+            2
+          ]
+        },
+        "three": {
+          "score": 0.22858642,
+          "frequencies": [
+            1
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.20441473,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.16873026,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-mixed": {
+          "score": 0.15202105,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-gap": {
+          "score": 0.13136047,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "two-gaps": {
+          "score": 0.1156438,
+          "frequencies": [
+            0.5
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-pair-slop-2-boost-1",
+      "hits": {
+        "long-repeat": {
+          "score": 0.14606501,
+          "frequencies": [
+            3
+          ]
+        },
+        "repeat": {
+          "score": 0.14157477,
+          "frequencies": [
+            2
+          ]
+        },
+        "array-repeat": {
+          "score": 0.14157477,
+          "frequencies": [
+            2
+          ]
+        },
+        "overlap": {
+          "score": 0.13191381,
+          "frequencies": [
+            2
+          ]
+        },
+        "exact": {
+          "score": 0.12962061,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.12348714,
+          "frequencies": [
+            2
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.11871243,
+          "frequencies": [
+            1.3333334
+          ]
+        },
+        "three": {
+          "score": 0.11429321,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.08436513,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-mixed": {
+          "score": 0.076010525,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "reverse": {
+          "score": 0.069161534,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-gap": {
+          "score": 0.065680236,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "two-gaps": {
+          "score": 0.0578219,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-reverse": {
+          "score": 0.056938797,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-pair-slop-2-boost-2",
+      "hits": {
+        "long-repeat": {
+          "score": 0.29213002,
+          "frequencies": [
+            3
+          ]
+        },
+        "repeat": {
+          "score": 0.28314954,
+          "frequencies": [
+            2
+          ]
+        },
+        "array-repeat": {
+          "score": 0.28314954,
+          "frequencies": [
+            2
+          ]
+        },
+        "overlap": {
+          "score": 0.26382762,
+          "frequencies": [
+            2
+          ]
+        },
+        "exact": {
+          "score": 0.25924122,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.24697427,
+          "frequencies": [
+            2
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.23742487,
+          "frequencies": [
+            1.3333334
+          ]
+        },
+        "three": {
+          "score": 0.22858642,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.16873026,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-mixed": {
+          "score": 0.15202105,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "reverse": {
+          "score": 0.13832307,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-gap": {
+          "score": 0.13136047,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "two-gaps": {
+          "score": 0.1156438,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-reverse": {
+          "score": 0.113877594,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-pair-slop-3-boost-1",
+      "hits": {
+        "long-repeat": {
+          "score": 0.14606501,
+          "frequencies": [
+            3
+          ]
+        },
+        "repeat": {
+          "score": 0.14157477,
+          "frequencies": [
+            2
+          ]
+        },
+        "array-repeat": {
+          "score": 0.14157477,
+          "frequencies": [
+            2
+          ]
+        },
+        "overlap": {
+          "score": 0.13191381,
+          "frequencies": [
+            2
+          ]
+        },
+        "exact": {
+          "score": 0.12962061,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.12348714,
+          "frequencies": [
+            2
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.11871243,
+          "frequencies": [
+            1.3333334
+          ]
+        },
+        "three": {
+          "score": 0.11429321,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.08436513,
+          "frequencies": [
+            1
+          ]
+        },
+        "two-gaps": {
+          "score": 0.07705793,
+          "frequencies": [
+            0.75
+          ]
+        },
+        "three-mixed": {
+          "score": 0.076010525,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "reverse": {
+          "score": 0.069161534,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-gap": {
+          "score": 0.065680236,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-reverse": {
+          "score": 0.056938797,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-pair-slop-3-boost-2",
+      "hits": {
+        "long-repeat": {
+          "score": 0.29213002,
+          "frequencies": [
+            3
+          ]
+        },
+        "repeat": {
+          "score": 0.28314954,
+          "frequencies": [
+            2
+          ]
+        },
+        "array-repeat": {
+          "score": 0.28314954,
+          "frequencies": [
+            2
+          ]
+        },
+        "overlap": {
+          "score": 0.26382762,
+          "frequencies": [
+            2
+          ]
+        },
+        "exact": {
+          "score": 0.25924122,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.24697427,
+          "frequencies": [
+            2
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.23742487,
+          "frequencies": [
+            1.3333334
+          ]
+        },
+        "three": {
+          "score": 0.22858642,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.16873026,
+          "frequencies": [
+            1
+          ]
+        },
+        "two-gaps": {
+          "score": 0.15411586,
+          "frequencies": [
+            0.75
+          ]
+        },
+        "three-mixed": {
+          "score": 0.15202105,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "reverse": {
+          "score": 0.13832307,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-gap": {
+          "score": 0.13136047,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-reverse": {
+          "score": 0.113877594,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-pair-slop-5-boost-1",
+      "hits": {
+        "long-repeat": {
+          "score": 0.14606501,
+          "frequencies": [
+            3
+          ]
+        },
+        "repeat": {
+          "score": 0.14157477,
+          "frequencies": [
+            2
+          ]
+        },
+        "array-repeat": {
+          "score": 0.14157477,
+          "frequencies": [
+            2
+          ]
+        },
+        "overlap": {
+          "score": 0.13191381,
+          "frequencies": [
+            2
+          ]
+        },
+        "exact": {
+          "score": 0.12962061,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.12348714,
+          "frequencies": [
+            2
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.11871243,
+          "frequencies": [
+            1.3333334
+          ]
+        },
+        "three": {
+          "score": 0.11429321,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.08436513,
+          "frequencies": [
+            1
+          ]
+        },
+        "two-gaps": {
+          "score": 0.07705793,
+          "frequencies": [
+            0.75
+          ]
+        },
+        "three-mixed": {
+          "score": 0.076010525,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "reverse": {
+          "score": 0.069161534,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-gap": {
+          "score": 0.065680236,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-reverse": {
+          "score": 0.056938797,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-pair-slop-5-boost-2",
+      "hits": {
+        "long-repeat": {
+          "score": 0.29213002,
+          "frequencies": [
+            3
+          ]
+        },
+        "repeat": {
+          "score": 0.28314954,
+          "frequencies": [
+            2
+          ]
+        },
+        "array-repeat": {
+          "score": 0.28314954,
+          "frequencies": [
+            2
+          ]
+        },
+        "overlap": {
+          "score": 0.26382762,
+          "frequencies": [
+            2
+          ]
+        },
+        "exact": {
+          "score": 0.25924122,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.24697427,
+          "frequencies": [
+            2
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.23742487,
+          "frequencies": [
+            1.3333334
+          ]
+        },
+        "three": {
+          "score": 0.22858642,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.16873026,
+          "frequencies": [
+            1
+          ]
+        },
+        "two-gaps": {
+          "score": 0.15411586,
+          "frequencies": [
+            0.75
+          ]
+        },
+        "three-mixed": {
+          "score": 0.15202105,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "reverse": {
+          "score": 0.13832307,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-gap": {
+          "score": 0.13136047,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-reverse": {
+          "score": 0.113877594,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-pair-slop-100-boost-1",
+      "hits": {
+        "long-repeat": {
+          "score": 0.14606501,
+          "frequencies": [
+            3
+          ]
+        },
+        "repeat": {
+          "score": 0.14157477,
+          "frequencies": [
+            2
+          ]
+        },
+        "array-repeat": {
+          "score": 0.14157477,
+          "frequencies": [
+            2
+          ]
+        },
+        "overlap": {
+          "score": 0.13191381,
+          "frequencies": [
+            2
+          ]
+        },
+        "exact": {
+          "score": 0.12962061,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.12348714,
+          "frequencies": [
+            2
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.11871243,
+          "frequencies": [
+            1.3333334
+          ]
+        },
+        "three": {
+          "score": 0.11429321,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.08436513,
+          "frequencies": [
+            1
+          ]
+        },
+        "two-gaps": {
+          "score": 0.07705793,
+          "frequencies": [
+            0.75
+          ]
+        },
+        "three-mixed": {
+          "score": 0.076010525,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "reverse": {
+          "score": 0.069161534,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-gap": {
+          "score": 0.065680236,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-reverse": {
+          "score": 0.056938797,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "array": {
+          "score": 0.0022251308,
+          "frequencies": [
+            0.00990099
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-pair-slop-100-boost-2",
+      "hits": {
+        "long-repeat": {
+          "score": 0.29213002,
+          "frequencies": [
+            3
+          ]
+        },
+        "repeat": {
+          "score": 0.28314954,
+          "frequencies": [
+            2
+          ]
+        },
+        "array-repeat": {
+          "score": 0.28314954,
+          "frequencies": [
+            2
+          ]
+        },
+        "overlap": {
+          "score": 0.26382762,
+          "frequencies": [
+            2
+          ]
+        },
+        "exact": {
+          "score": 0.25924122,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.24697427,
+          "frequencies": [
+            2
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.23742487,
+          "frequencies": [
+            1.3333334
+          ]
+        },
+        "three": {
+          "score": 0.22858642,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.16873026,
+          "frequencies": [
+            1
+          ]
+        },
+        "two-gaps": {
+          "score": 0.15411586,
+          "frequencies": [
+            0.75
+          ]
+        },
+        "three-mixed": {
+          "score": 0.15202105,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "reverse": {
+          "score": 0.13832307,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-gap": {
+          "score": 0.13136047,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-reverse": {
+          "score": 0.113877594,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "array": {
+          "score": 0.0044502616,
+          "frequencies": [
+            0.00990099
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-same-slop-0-boost-1",
+      "hits": {
+        "triple-repeat": {
+          "score": 0.035384208,
+          "frequencies": [
+            2
+          ]
+        },
+        "adjacent-repeat": {
+          "score": 0.03002385,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.019541387,
+          "frequencies": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-same-slop-0-boost-2",
+      "hits": {
+        "triple-repeat": {
+          "score": 0.070768416,
+          "frequencies": [
+            2
+          ]
+        },
+        "adjacent-repeat": {
+          "score": 0.0600477,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.039082773,
+          "frequencies": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-same-slop-1-boost-1",
+      "hits": {
+        "triple-repeat": {
+          "score": 0.035384208,
+          "frequencies": [
+            2
+          ]
+        },
+        "adjacent-repeat": {
+          "score": 0.03002385,
+          "frequencies": [
+            1
+          ]
+        },
+        "overlap": {
+          "score": 0.021410163,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.019541387,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.019541387,
+          "frequencies": [
+            1
+          ]
+        },
+        "separated-repeat": {
+          "score": 0.017606217,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "repeat": {
+          "score": 0.015213426,
+          "frequencies": [
+            0.5
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-same-slop-1-boost-2",
+      "hits": {
+        "triple-repeat": {
+          "score": 0.070768416,
+          "frequencies": [
+            2
+          ]
+        },
+        "adjacent-repeat": {
+          "score": 0.0600477,
+          "frequencies": [
+            1
+          ]
+        },
+        "overlap": {
+          "score": 0.042820327,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.039082773,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.039082773,
+          "frequencies": [
+            1
+          ]
+        },
+        "separated-repeat": {
+          "score": 0.035212435,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "repeat": {
+          "score": 0.030426852,
+          "frequencies": [
+            0.5
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-same-slop-2-boost-1",
+      "hits": {
+        "triple-repeat": {
+          "score": 0.035384208,
+          "frequencies": [
+            2
+          ]
+        },
+        "adjacent-repeat": {
+          "score": 0.03002385,
+          "frequencies": [
+            1
+          ]
+        },
+        "overlap": {
+          "score": 0.021410163,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.019541387,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.019541387,
+          "frequencies": [
+            1
+          ]
+        },
+        "separated-repeat": {
+          "score": 0.017606217,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "repeat": {
+          "score": 0.015213426,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.011207916,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-repeat": {
+          "score": 0.008619014,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-same-slop-2-boost-2",
+      "hits": {
+        "triple-repeat": {
+          "score": 0.070768416,
+          "frequencies": [
+            2
+          ]
+        },
+        "adjacent-repeat": {
+          "score": 0.0600477,
+          "frequencies": [
+            1
+          ]
+        },
+        "overlap": {
+          "score": 0.042820327,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.039082773,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.039082773,
+          "frequencies": [
+            1
+          ]
+        },
+        "separated-repeat": {
+          "score": 0.035212435,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "repeat": {
+          "score": 0.030426852,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.022415832,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-repeat": {
+          "score": 0.017238028,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-same-slop-3-boost-1",
+      "hits": {
+        "triple-repeat": {
+          "score": 0.035384208,
+          "frequencies": [
+            2
+          ]
+        },
+        "adjacent-repeat": {
+          "score": 0.03002385,
+          "frequencies": [
+            1
+          ]
+        },
+        "overlap": {
+          "score": 0.021410163,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.019541387,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.019541387,
+          "frequencies": [
+            1
+          ]
+        },
+        "separated-repeat": {
+          "score": 0.017606217,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "repeat": {
+          "score": 0.015213426,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.011207916,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-repeat": {
+          "score": 0.008619014,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "two-gaps": {
+          "score": 0.007658109,
+          "frequencies": [
+            0.25
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-same-slop-3-boost-2",
+      "hits": {
+        "triple-repeat": {
+          "score": 0.070768416,
+          "frequencies": [
+            2
+          ]
+        },
+        "adjacent-repeat": {
+          "score": 0.0600477,
+          "frequencies": [
+            1
+          ]
+        },
+        "overlap": {
+          "score": 0.042820327,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.039082773,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.039082773,
+          "frequencies": [
+            1
+          ]
+        },
+        "separated-repeat": {
+          "score": 0.035212435,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "repeat": {
+          "score": 0.030426852,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.022415832,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-repeat": {
+          "score": 0.017238028,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "two-gaps": {
+          "score": 0.015316218,
+          "frequencies": [
+            0.25
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-same-slop-5-boost-1",
+      "hits": {
+        "triple-repeat": {
+          "score": 0.035384208,
+          "frequencies": [
+            2
+          ]
+        },
+        "adjacent-repeat": {
+          "score": 0.03002385,
+          "frequencies": [
+            1
+          ]
+        },
+        "overlap": {
+          "score": 0.021410163,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.019541387,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.019541387,
+          "frequencies": [
+            1
+          ]
+        },
+        "separated-repeat": {
+          "score": 0.017606217,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "repeat": {
+          "score": 0.015213426,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.011207916,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-repeat": {
+          "score": 0.008619014,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "two-gaps": {
+          "score": 0.007658109,
+          "frequencies": [
+            0.25
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-same-slop-5-boost-2",
+      "hits": {
+        "triple-repeat": {
+          "score": 0.070768416,
+          "frequencies": [
+            2
+          ]
+        },
+        "adjacent-repeat": {
+          "score": 0.0600477,
+          "frequencies": [
+            1
+          ]
+        },
+        "overlap": {
+          "score": 0.042820327,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.039082773,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.039082773,
+          "frequencies": [
+            1
+          ]
+        },
+        "separated-repeat": {
+          "score": 0.035212435,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "repeat": {
+          "score": 0.030426852,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.022415832,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-repeat": {
+          "score": 0.017238028,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "two-gaps": {
+          "score": 0.015316218,
+          "frequencies": [
+            0.25
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-same-slop-100-boost-1",
+      "hits": {
+        "triple-repeat": {
+          "score": 0.035384208,
+          "frequencies": [
+            2
+          ]
+        },
+        "adjacent-repeat": {
+          "score": 0.03002385,
+          "frequencies": [
+            1
+          ]
+        },
+        "overlap": {
+          "score": 0.021410163,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.019541387,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.019541387,
+          "frequencies": [
+            1
+          ]
+        },
+        "separated-repeat": {
+          "score": 0.017606217,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "repeat": {
+          "score": 0.015213426,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.011207916,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-repeat": {
+          "score": 0.008619014,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "two-gaps": {
+          "score": 0.007658109,
+          "frequencies": [
+            0.25
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-same-slop-100-boost-2",
+      "hits": {
+        "triple-repeat": {
+          "score": 0.070768416,
+          "frequencies": [
+            2
+          ]
+        },
+        "adjacent-repeat": {
+          "score": 0.0600477,
+          "frequencies": [
+            1
+          ]
+        },
+        "overlap": {
+          "score": 0.042820327,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.039082773,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.039082773,
+          "frequencies": [
+            1
+          ]
+        },
+        "separated-repeat": {
+          "score": 0.035212435,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "repeat": {
+          "score": 0.030426852,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.022415832,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-repeat": {
+          "score": 0.017238028,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "two-gaps": {
+          "score": 0.015316218,
+          "frequencies": [
+            0.25
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-three-slop-0-boost-1",
+      "hits": {
+        "three-repeat": {
+          "score": 0.6987182,
+          "frequencies": [
+            2
+          ]
+        },
+        "three": {
+          "score": 0.64669687,
+          "frequencies": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-three-slop-0-boost-2",
+      "hits": {
+        "three-repeat": {
+          "score": 1.3974364,
+          "frequencies": [
+            2
+          ]
+        },
+        "three": {
+          "score": 1.2933937,
+          "frequencies": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-three-slop-1-boost-1",
+      "hits": {
+        "three-repeat": {
+          "score": 0.6987182,
+          "frequencies": [
+            2
+          ]
+        },
+        "three": {
+          "score": 0.64669687,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-gap": {
+          "score": 0.37163365,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "interleaved": {
+          "score": 0.29220808,
+          "frequencies": [
+            0.5
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-three-slop-1-boost-2",
+      "hits": {
+        "three-repeat": {
+          "score": 1.3974364,
+          "frequencies": [
+            2
+          ]
+        },
+        "three": {
+          "score": 1.2933937,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-gap": {
+          "score": 0.7432673,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "interleaved": {
+          "score": 0.58441615,
+          "frequencies": [
+            0.5
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-three-slop-2-boost-1",
+      "hits": {
+        "three-repeat": {
+          "score": 0.6987182,
+          "frequencies": [
+            2
+          ]
+        },
+        "three": {
+          "score": 0.64669687,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-gap": {
+          "score": 0.37163365,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-mixed": {
+          "score": 0.32217264,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "interleaved": {
+          "score": 0.29220808,
+          "frequencies": [
+            0.5
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-three-slop-2-boost-2",
+      "hits": {
+        "three-repeat": {
+          "score": 1.3974364,
+          "frequencies": [
+            2
+          ]
+        },
+        "three": {
+          "score": 1.2933937,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-gap": {
+          "score": 0.7432673,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-mixed": {
+          "score": 0.6443453,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "interleaved": {
+          "score": 0.58441615,
+          "frequencies": [
+            0.5
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-three-slop-3-boost-1",
+      "hits": {
+        "three-repeat": {
+          "score": 0.73667514,
+          "frequencies": [
+            2.25
+          ]
+        },
+        "three": {
+          "score": 0.64669687,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-gap": {
+          "score": 0.37163365,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-mixed": {
+          "score": 0.32217264,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "interleaved": {
+          "score": 0.29220808,
+          "frequencies": [
+            0.5
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-three-slop-3-boost-2",
+      "hits": {
+        "three-repeat": {
+          "score": 1.4733503,
+          "frequencies": [
+            2.25
+          ]
+        },
+        "three": {
+          "score": 1.2933937,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-gap": {
+          "score": 0.7432673,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-mixed": {
+          "score": 0.6443453,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "interleaved": {
+          "score": 0.58441615,
+          "frequencies": [
+            0.5
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-three-slop-5-boost-1",
+      "hits": {
+        "three-repeat": {
+          "score": 0.73667514,
+          "frequencies": [
+            2.25
+          ]
+        },
+        "three": {
+          "score": 0.64669687,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-gap": {
+          "score": 0.37163365,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-mixed": {
+          "score": 0.32217264,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "interleaved": {
+          "score": 0.29220808,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-reverse": {
+          "score": 0.21452177,
+          "frequencies": [
+            0.2
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-three-slop-5-boost-2",
+      "hits": {
+        "three-repeat": {
+          "score": 1.4733503,
+          "frequencies": [
+            2.25
+          ]
+        },
+        "three": {
+          "score": 1.2933937,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-gap": {
+          "score": 0.7432673,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-mixed": {
+          "score": 0.6443453,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "interleaved": {
+          "score": 0.58441615,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-reverse": {
+          "score": 0.42904353,
+          "frequencies": [
+            0.2
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-three-slop-100-boost-1",
+      "hits": {
+        "three-repeat": {
+          "score": 0.73667514,
+          "frequencies": [
+            2.25
+          ]
+        },
+        "three": {
+          "score": 0.64669687,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-gap": {
+          "score": 0.37163365,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-mixed": {
+          "score": 0.32217264,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "interleaved": {
+          "score": 0.29220808,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-reverse": {
+          "score": 0.21452177,
+          "frequencies": [
+            0.2
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-three-slop-100-boost-2",
+      "hits": {
+        "three-repeat": {
+          "score": 1.4733503,
+          "frequencies": [
+            2.25
+          ]
+        },
+        "three": {
+          "score": 1.2933937,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-gap": {
+          "score": 0.7432673,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-mixed": {
+          "score": 0.6443453,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "interleaved": {
+          "score": 0.58441615,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-reverse": {
+          "score": 0.42904353,
+          "frequencies": [
+            0.2
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-aba-slop-0-boost-1",
+      "hits": {
+        "overlap": {
+          "score": 0.14719132,
+          "frequencies": [
+            2
+          ]
+        },
+        "long-repeat": {
+          "score": 0.13778871,
+          "frequencies": [
+            2
+          ]
+        },
+        "repeat": {
+          "score": 0.11404444,
+          "frequencies": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-aba-slop-0-boost-2",
+      "hits": {
+        "overlap": {
+          "score": 0.29438263,
+          "frequencies": [
+            2
+          ]
+        },
+        "long-repeat": {
+          "score": 0.27557743,
+          "frequencies": [
+            2
+          ]
+        },
+        "repeat": {
+          "score": 0.22808889,
+          "frequencies": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-aba-slop-1-boost-1",
+      "hits": {
+        "overlap": {
+          "score": 0.14719132,
+          "frequencies": [
+            2
+          ]
+        },
+        "long-repeat": {
+          "score": 0.13778871,
+          "frequencies": [
+            2
+          ]
+        },
+        "repeat": {
+          "score": 0.11404444,
+          "frequencies": [
+            1
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.07328695,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-repeat": {
+          "score": 0.057624042,
+          "frequencies": [
+            0.5
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-aba-slop-1-boost-2",
+      "hits": {
+        "overlap": {
+          "score": 0.29438263,
+          "frequencies": [
+            2
+          ]
+        },
+        "long-repeat": {
+          "score": 0.27557743,
+          "frequencies": [
+            2
+          ]
+        },
+        "repeat": {
+          "score": 0.22808889,
+          "frequencies": [
+            1
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.1465739,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-repeat": {
+          "score": 0.115248084,
+          "frequencies": [
+            0.5
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-aba-slop-2-boost-1",
+      "hits": {
+        "long-repeat": {
+          "score": 0.14756426,
+          "frequencies": [
+            2.3333333
+          ]
+        },
+        "overlap": {
+          "score": 0.14719132,
+          "frequencies": [
+            2
+          ]
+        },
+        "repeat": {
+          "score": 0.11404444,
+          "frequencies": [
+            1
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.07328695,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-repeat": {
+          "score": 0.057624042,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "two-gaps": {
+          "score": 0.046941444,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "interleaved": {
+          "score": 0.041519985,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-aba-slop-2-boost-2",
+      "hits": {
+        "long-repeat": {
+          "score": 0.29512852,
+          "frequencies": [
+            2.3333333
+          ]
+        },
+        "overlap": {
+          "score": 0.29438263,
+          "frequencies": [
+            2
+          ]
+        },
+        "repeat": {
+          "score": 0.22808889,
+          "frequencies": [
+            1
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.1465739,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-repeat": {
+          "score": 0.115248084,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "two-gaps": {
+          "score": 0.09388289,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "interleaved": {
+          "score": 0.08303997,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-aba-slop-3-boost-1",
+      "hits": {
+        "long-repeat": {
+          "score": 0.14756426,
+          "frequencies": [
+            2.3333333
+          ]
+        },
+        "overlap": {
+          "score": 0.14719132,
+          "frequencies": [
+            2
+          ]
+        },
+        "repeat": {
+          "score": 0.11404444,
+          "frequencies": [
+            1
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.07328695,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-repeat": {
+          "score": 0.057624042,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "two-gaps": {
+          "score": 0.046941444,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "interleaved": {
+          "score": 0.041519985,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-aba-slop-3-boost-2",
+      "hits": {
+        "long-repeat": {
+          "score": 0.29512852,
+          "frequencies": [
+            2.3333333
+          ]
+        },
+        "overlap": {
+          "score": 0.29438263,
+          "frequencies": [
+            2
+          ]
+        },
+        "repeat": {
+          "score": 0.22808889,
+          "frequencies": [
+            1
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.1465739,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-repeat": {
+          "score": 0.115248084,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "two-gaps": {
+          "score": 0.09388289,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "interleaved": {
+          "score": 0.08303997,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-aba-slop-5-boost-1",
+      "hits": {
+        "long-repeat": {
+          "score": 0.14756426,
+          "frequencies": [
+            2.3333333
+          ]
+        },
+        "overlap": {
+          "score": 0.14719132,
+          "frequencies": [
+            2
+          ]
+        },
+        "repeat": {
+          "score": 0.11404444,
+          "frequencies": [
+            1
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.07328695,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-repeat": {
+          "score": 0.057624042,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "two-gaps": {
+          "score": 0.046941444,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "interleaved": {
+          "score": 0.041519985,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-aba-slop-5-boost-2",
+      "hits": {
+        "long-repeat": {
+          "score": 0.29512852,
+          "frequencies": [
+            2.3333333
+          ]
+        },
+        "overlap": {
+          "score": 0.29438263,
+          "frequencies": [
+            2
+          ]
+        },
+        "repeat": {
+          "score": 0.22808889,
+          "frequencies": [
+            1
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.1465739,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-repeat": {
+          "score": 0.115248084,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "two-gaps": {
+          "score": 0.09388289,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "interleaved": {
+          "score": 0.08303997,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-aba-slop-100-boost-1",
+      "hits": {
+        "long-repeat": {
+          "score": 0.14756426,
+          "frequencies": [
+            2.3333333
+          ]
+        },
+        "overlap": {
+          "score": 0.14719132,
+          "frequencies": [
+            2
+          ]
+        },
+        "repeat": {
+          "score": 0.11404444,
+          "frequencies": [
+            1
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.07328695,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-repeat": {
+          "score": 0.057624042,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "two-gaps": {
+          "score": 0.046941444,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "interleaved": {
+          "score": 0.041519985,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "array-repeat": {
+          "score": 0.0020144284,
+          "frequencies": [
+            0.00990099
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-aba-slop-100-boost-2",
+      "hits": {
+        "long-repeat": {
+          "score": 0.29512852,
+          "frequencies": [
+            2.3333333
+          ]
+        },
+        "overlap": {
+          "score": 0.29438263,
+          "frequencies": [
+            2
+          ]
+        },
+        "repeat": {
+          "score": 0.22808889,
+          "frequencies": [
+            1
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.1465739,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-repeat": {
+          "score": 0.115248084,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "two-gaps": {
+          "score": 0.09388289,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "interleaved": {
+          "score": 0.08303997,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "array-repeat": {
+          "score": 0.0040288568,
+          "frequencies": [
+            0.00990099
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-aab-slop-0-boost-1",
+      "hits": {
+        "interleaved": {
+          "score": 0.09413582,
+          "frequencies": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-aab-slop-0-boost-2",
+      "hits": {
+        "interleaved": {
+          "score": 0.18827164,
+          "frequencies": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-aab-slop-1-boost-1",
+      "hits": {
+        "interleaved": {
+          "score": 0.09413582,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.09413582,
+          "frequencies": [
+            1
+          ]
+        },
+        "repeat": {
+          "score": 0.07328695,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "overlap": {
+          "score": 0.0645185,
+          "frequencies": [
+            0.5
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-aab-slop-1-boost-2",
+      "hits": {
+        "interleaved": {
+          "score": 0.18827164,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.18827164,
+          "frequencies": [
+            1
+          ]
+        },
+        "repeat": {
+          "score": 0.1465739,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "overlap": {
+          "score": 0.129037,
+          "frequencies": [
+            0.5
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-aab-slop-2-boost-1",
+      "hits": {
+        "long-repeat": {
+          "score": 0.12609418,
+          "frequencies": [
+            1.6666667
+          ]
+        },
+        "overlap": {
+          "score": 0.11278243,
+          "frequencies": [
+            1.1666667
+          ]
+        },
+        "repeat": {
+          "score": 0.10262929,
+          "frequencies": [
+            0.8333334
+          ]
+        },
+        "interleaved": {
+          "score": 0.09413582,
+          "frequencies": [
+            1
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.053991377,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-repeat": {
+          "score": 0.041519985,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-aab-slop-2-boost-2",
+      "hits": {
+        "long-repeat": {
+          "score": 0.25218835,
+          "frequencies": [
+            1.6666667
+          ]
+        },
+        "overlap": {
+          "score": 0.22556487,
+          "frequencies": [
+            1.1666667
+          ]
+        },
+        "repeat": {
+          "score": 0.20525858,
+          "frequencies": [
+            0.8333334
+          ]
+        },
+        "interleaved": {
+          "score": 0.18827164,
+          "frequencies": [
+            1
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.107982755,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-repeat": {
+          "score": 0.08303997,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-aab-slop-3-boost-1",
+      "hits": {
+        "long-repeat": {
+          "score": 0.12609418,
+          "frequencies": [
+            1.6666667
+          ]
+        },
+        "overlap": {
+          "score": 0.11278243,
+          "frequencies": [
+            1.1666667
+          ]
+        },
+        "repeat": {
+          "score": 0.10262929,
+          "frequencies": [
+            0.8333334
+          ]
+        },
+        "interleaved": {
+          "score": 0.09413582,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.06480566,
+          "frequencies": [
+            0.5833334
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.053991377,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "two-gaps": {
+          "score": 0.036891073,
+          "frequencies": [
+            0.25
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-aab-slop-3-boost-2",
+      "hits": {
+        "long-repeat": {
+          "score": 0.25218835,
+          "frequencies": [
+            1.6666667
+          ]
+        },
+        "overlap": {
+          "score": 0.22556487,
+          "frequencies": [
+            1.1666667
+          ]
+        },
+        "repeat": {
+          "score": 0.20525858,
+          "frequencies": [
+            0.8333334
+          ]
+        },
+        "interleaved": {
+          "score": 0.18827164,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.12961131,
+          "frequencies": [
+            0.5833334
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.107982755,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "two-gaps": {
+          "score": 0.073782146,
+          "frequencies": [
+            0.25
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-aab-slop-5-boost-1",
+      "hits": {
+        "long-repeat": {
+          "score": 0.12609418,
+          "frequencies": [
+            1.6666667
+          ]
+        },
+        "overlap": {
+          "score": 0.11278243,
+          "frequencies": [
+            1.1666667
+          ]
+        },
+        "repeat": {
+          "score": 0.10262929,
+          "frequencies": [
+            0.8333334
+          ]
+        },
+        "interleaved": {
+          "score": 0.09413582,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.06480566,
+          "frequencies": [
+            0.5833334
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.053991377,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "two-gaps": {
+          "score": 0.036891073,
+          "frequencies": [
+            0.25
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-aab-slop-5-boost-2",
+      "hits": {
+        "long-repeat": {
+          "score": 0.25218835,
+          "frequencies": [
+            1.6666667
+          ]
+        },
+        "overlap": {
+          "score": 0.22556487,
+          "frequencies": [
+            1.1666667
+          ]
+        },
+        "repeat": {
+          "score": 0.20525858,
+          "frequencies": [
+            0.8333334
+          ]
+        },
+        "interleaved": {
+          "score": 0.18827164,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.12961131,
+          "frequencies": [
+            0.5833334
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.107982755,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "two-gaps": {
+          "score": 0.073782146,
+          "frequencies": [
+            0.25
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-aab-slop-100-boost-1",
+      "hits": {
+        "long-repeat": {
+          "score": 0.12609418,
+          "frequencies": [
+            1.6666667
+          ]
+        },
+        "overlap": {
+          "score": 0.11278243,
+          "frequencies": [
+            1.1666667
+          ]
+        },
+        "repeat": {
+          "score": 0.10262929,
+          "frequencies": [
+            0.8333334
+          ]
+        },
+        "interleaved": {
+          "score": 0.09413582,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.06480566,
+          "frequencies": [
+            0.5833334
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.053991377,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "two-gaps": {
+          "score": 0.036891073,
+          "frequencies": [
+            0.25
+          ]
+        }
+      }
+    },
+    {
+      "name": "1-aab-slop-100-boost-2",
+      "hits": {
+        "long-repeat": {
+          "score": 0.25218835,
+          "frequencies": [
+            1.6666667
+          ]
+        },
+        "overlap": {
+          "score": 0.22556487,
+          "frequencies": [
+            1.1666667
+          ]
+        },
+        "repeat": {
+          "score": 0.20525858,
+          "frequencies": [
+            0.8333334
+          ]
+        },
+        "interleaved": {
+          "score": 0.18827164,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.12961131,
+          "frequencies": [
+            0.5833334
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.107982755,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "two-gaps": {
+          "score": 0.073782146,
+          "frequencies": [
+            0.25
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-pair-slop-0-boost-1",
+      "hits": {
+        "interleaved": {
+          "score": 0.17435297,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.17315014,
+          "frequencies": [
+            3
+          ]
+        },
+        "repeat": {
+          "score": 0.1678872,
+          "frequencies": [
+            2
+          ]
+        },
+        "array-repeat": {
+          "score": 0.1678872,
+          "frequencies": [
+            2
+          ]
+        },
+        "overlap": {
+          "score": 0.15614104,
+          "frequencies": [
+            2
+          ]
+        },
+        "exact": {
+          "score": 0.15385763,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.14633575,
+          "frequencies": [
+            2
+          ]
+        },
+        "three": {
+          "score": 0.13522166,
+          "frequencies": [
+            1
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.120600194,
+          "frequencies": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-pair-slop-0-boost-2",
+      "hits": {
+        "interleaved": {
+          "score": 0.34870595,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.34630027,
+          "frequencies": [
+            3
+          ]
+        },
+        "repeat": {
+          "score": 0.3357744,
+          "frequencies": [
+            2
+          ]
+        },
+        "array-repeat": {
+          "score": 0.3357744,
+          "frequencies": [
+            2
+          ]
+        },
+        "overlap": {
+          "score": 0.3122821,
+          "frequencies": [
+            2
+          ]
+        },
+        "exact": {
+          "score": 0.30771527,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.2926715,
+          "frequencies": [
+            2
+          ]
+        },
+        "three": {
+          "score": 0.27044332,
+          "frequencies": [
+            1
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.24120039,
+          "frequencies": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-pair-slop-1-boost-1",
+      "hits": {
+        "interleaved": {
+          "score": 0.17435297,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.17315014,
+          "frequencies": [
+            3
+          ]
+        },
+        "repeat": {
+          "score": 0.1678872,
+          "frequencies": [
+            2
+          ]
+        },
+        "array-repeat": {
+          "score": 0.1678872,
+          "frequencies": [
+            2
+          ]
+        },
+        "overlap": {
+          "score": 0.15614104,
+          "frequencies": [
+            2
+          ]
+        },
+        "exact": {
+          "score": 0.15385763,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.14633575,
+          "frequencies": [
+            2
+          ]
+        },
+        "three-gap": {
+          "score": 0.13589278,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three": {
+          "score": 0.13522166,
+          "frequencies": [
+            1
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.120600194,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-mixed": {
+          "score": 0.089521706,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "two-gaps": {
+          "score": 0.067772865,
+          "frequencies": [
+            0.5
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-pair-slop-1-boost-2",
+      "hits": {
+        "interleaved": {
+          "score": 0.34870595,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.34630027,
+          "frequencies": [
+            3
+          ]
+        },
+        "repeat": {
+          "score": 0.3357744,
+          "frequencies": [
+            2
+          ]
+        },
+        "array-repeat": {
+          "score": 0.3357744,
+          "frequencies": [
+            2
+          ]
+        },
+        "overlap": {
+          "score": 0.3122821,
+          "frequencies": [
+            2
+          ]
+        },
+        "exact": {
+          "score": 0.30771527,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.2926715,
+          "frequencies": [
+            2
+          ]
+        },
+        "three-gap": {
+          "score": 0.27178556,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three": {
+          "score": 0.27044332,
+          "frequencies": [
+            1
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.24120039,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-mixed": {
+          "score": 0.17904341,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "two-gaps": {
+          "score": 0.13554573,
+          "frequencies": [
+            0.5
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-pair-slop-2-boost-1",
+      "hits": {
+        "interleaved": {
+          "score": 0.17435297,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.17315014,
+          "frequencies": [
+            3
+          ]
+        },
+        "repeat": {
+          "score": 0.1678872,
+          "frequencies": [
+            2
+          ]
+        },
+        "array-repeat": {
+          "score": 0.1678872,
+          "frequencies": [
+            2
+          ]
+        },
+        "overlap": {
+          "score": 0.15614104,
+          "frequencies": [
+            2
+          ]
+        },
+        "exact": {
+          "score": 0.15385763,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.14633575,
+          "frequencies": [
+            2
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.14036821,
+          "frequencies": [
+            1.3333334
+          ]
+        },
+        "three-gap": {
+          "score": 0.13589278,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three": {
+          "score": 0.13522166,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-mixed": {
+          "score": 0.089521706,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "reverse": {
+          "score": 0.08158773,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-reverse": {
+          "score": 0.06804147,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "two-gaps": {
+          "score": 0.067772865,
+          "frequencies": [
+            0.5
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-pair-slop-2-boost-2",
+      "hits": {
+        "interleaved": {
+          "score": 0.34870595,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.34630027,
+          "frequencies": [
+            3
+          ]
+        },
+        "repeat": {
+          "score": 0.3357744,
+          "frequencies": [
+            2
+          ]
+        },
+        "array-repeat": {
+          "score": 0.3357744,
+          "frequencies": [
+            2
+          ]
+        },
+        "overlap": {
+          "score": 0.3122821,
+          "frequencies": [
+            2
+          ]
+        },
+        "exact": {
+          "score": 0.30771527,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.2926715,
+          "frequencies": [
+            2
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.28073642,
+          "frequencies": [
+            1.3333334
+          ]
+        },
+        "three-gap": {
+          "score": 0.27178556,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three": {
+          "score": 0.27044332,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-mixed": {
+          "score": 0.17904341,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "reverse": {
+          "score": 0.16317546,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-reverse": {
+          "score": 0.13608295,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "two-gaps": {
+          "score": 0.13554573,
+          "frequencies": [
+            0.5
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-pair-slop-3-boost-1",
+      "hits": {
+        "interleaved": {
+          "score": 0.17435297,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.17315014,
+          "frequencies": [
+            3
+          ]
+        },
+        "repeat": {
+          "score": 0.1678872,
+          "frequencies": [
+            2
+          ]
+        },
+        "array-repeat": {
+          "score": 0.1678872,
+          "frequencies": [
+            2
+          ]
+        },
+        "overlap": {
+          "score": 0.15614104,
+          "frequencies": [
+            2
+          ]
+        },
+        "exact": {
+          "score": 0.15385763,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.14633575,
+          "frequencies": [
+            2
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.14036821,
+          "frequencies": [
+            1.3333334
+          ]
+        },
+        "three-gap": {
+          "score": 0.13589278,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three": {
+          "score": 0.13522166,
+          "frequencies": [
+            1
+          ]
+        },
+        "two-gaps": {
+          "score": 0.09054901,
+          "frequencies": [
+            0.75
+          ]
+        },
+        "three-mixed": {
+          "score": 0.089521706,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "reverse": {
+          "score": 0.08158773,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-reverse": {
+          "score": 0.06804147,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-pair-slop-3-boost-2",
+      "hits": {
+        "interleaved": {
+          "score": 0.34870595,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.34630027,
+          "frequencies": [
+            3
+          ]
+        },
+        "repeat": {
+          "score": 0.3357744,
+          "frequencies": [
+            2
+          ]
+        },
+        "array-repeat": {
+          "score": 0.3357744,
+          "frequencies": [
+            2
+          ]
+        },
+        "overlap": {
+          "score": 0.3122821,
+          "frequencies": [
+            2
+          ]
+        },
+        "exact": {
+          "score": 0.30771527,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.2926715,
+          "frequencies": [
+            2
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.28073642,
+          "frequencies": [
+            1.3333334
+          ]
+        },
+        "three-gap": {
+          "score": 0.27178556,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three": {
+          "score": 0.27044332,
+          "frequencies": [
+            1
+          ]
+        },
+        "two-gaps": {
+          "score": 0.18109801,
+          "frequencies": [
+            0.75
+          ]
+        },
+        "three-mixed": {
+          "score": 0.17904341,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "reverse": {
+          "score": 0.16317546,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-reverse": {
+          "score": 0.13608295,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-pair-slop-5-boost-1",
+      "hits": {
+        "interleaved": {
+          "score": 0.17435297,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.17315014,
+          "frequencies": [
+            3
+          ]
+        },
+        "repeat": {
+          "score": 0.1678872,
+          "frequencies": [
+            2
+          ]
+        },
+        "array-repeat": {
+          "score": 0.1678872,
+          "frequencies": [
+            2
+          ]
+        },
+        "overlap": {
+          "score": 0.15614104,
+          "frequencies": [
+            2
+          ]
+        },
+        "exact": {
+          "score": 0.15385763,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.14633575,
+          "frequencies": [
+            2
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.14036821,
+          "frequencies": [
+            1.3333334
+          ]
+        },
+        "three-gap": {
+          "score": 0.13589278,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three": {
+          "score": 0.13522166,
+          "frequencies": [
+            1
+          ]
+        },
+        "two-gaps": {
+          "score": 0.09054901,
+          "frequencies": [
+            0.75
+          ]
+        },
+        "three-mixed": {
+          "score": 0.089521706,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "reverse": {
+          "score": 0.08158773,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-reverse": {
+          "score": 0.06804147,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-pair-slop-5-boost-2",
+      "hits": {
+        "interleaved": {
+          "score": 0.34870595,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.34630027,
+          "frequencies": [
+            3
+          ]
+        },
+        "repeat": {
+          "score": 0.3357744,
+          "frequencies": [
+            2
+          ]
+        },
+        "array-repeat": {
+          "score": 0.3357744,
+          "frequencies": [
+            2
+          ]
+        },
+        "overlap": {
+          "score": 0.3122821,
+          "frequencies": [
+            2
+          ]
+        },
+        "exact": {
+          "score": 0.30771527,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.2926715,
+          "frequencies": [
+            2
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.28073642,
+          "frequencies": [
+            1.3333334
+          ]
+        },
+        "three-gap": {
+          "score": 0.27178556,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three": {
+          "score": 0.27044332,
+          "frequencies": [
+            1
+          ]
+        },
+        "two-gaps": {
+          "score": 0.18109801,
+          "frequencies": [
+            0.75
+          ]
+        },
+        "three-mixed": {
+          "score": 0.17904341,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "reverse": {
+          "score": 0.16317546,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-reverse": {
+          "score": 0.13608295,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-pair-slop-100-boost-1",
+      "hits": {
+        "interleaved": {
+          "score": 0.17435297,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.17315014,
+          "frequencies": [
+            3
+          ]
+        },
+        "repeat": {
+          "score": 0.1678872,
+          "frequencies": [
+            2
+          ]
+        },
+        "array-repeat": {
+          "score": 0.1678872,
+          "frequencies": [
+            2
+          ]
+        },
+        "overlap": {
+          "score": 0.15614104,
+          "frequencies": [
+            2
+          ]
+        },
+        "exact": {
+          "score": 0.15385763,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.14633575,
+          "frequencies": [
+            2
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.14036821,
+          "frequencies": [
+            1.3333334
+          ]
+        },
+        "three-gap": {
+          "score": 0.13589278,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three": {
+          "score": 0.13522166,
+          "frequencies": [
+            1
+          ]
+        },
+        "two-gaps": {
+          "score": 0.09054901,
+          "frequencies": [
+            0.75
+          ]
+        },
+        "three-mixed": {
+          "score": 0.089521706,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "reverse": {
+          "score": 0.08158773,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-reverse": {
+          "score": 0.06804147,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "array": {
+          "score": 0.0046447217,
+          "frequencies": [
+            0.00990099
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-pair-slop-100-boost-2",
+      "hits": {
+        "interleaved": {
+          "score": 0.34870595,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.34630027,
+          "frequencies": [
+            3
+          ]
+        },
+        "repeat": {
+          "score": 0.3357744,
+          "frequencies": [
+            2
+          ]
+        },
+        "array-repeat": {
+          "score": 0.3357744,
+          "frequencies": [
+            2
+          ]
+        },
+        "overlap": {
+          "score": 0.3122821,
+          "frequencies": [
+            2
+          ]
+        },
+        "exact": {
+          "score": 0.30771527,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.2926715,
+          "frequencies": [
+            2
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.28073642,
+          "frequencies": [
+            1.3333334
+          ]
+        },
+        "three-gap": {
+          "score": 0.27178556,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three": {
+          "score": 0.27044332,
+          "frequencies": [
+            1
+          ]
+        },
+        "two-gaps": {
+          "score": 0.18109801,
+          "frequencies": [
+            0.75
+          ]
+        },
+        "three-mixed": {
+          "score": 0.17904341,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "reverse": {
+          "score": 0.16317546,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-reverse": {
+          "score": 0.13608295,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "array": {
+          "score": 0.0092894435,
+          "frequencies": [
+            0.00990099
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-same-slop-0-boost-1",
+      "hits": {
+        "interleaved": {
+          "score": 0.079517365,
+          "frequencies": [
+            1
+          ]
+        },
+        "triple-repeat": {
+          "score": 0.05595348,
+          "frequencies": [
+            2
+          ]
+        },
+        "adjacent-repeat": {
+          "score": 0.047420185,
+          "frequencies": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-same-slop-0-boost-2",
+      "hits": {
+        "interleaved": {
+          "score": 0.15903473,
+          "frequencies": [
+            1
+          ]
+        },
+        "triple-repeat": {
+          "score": 0.11190696,
+          "frequencies": [
+            2
+          ]
+        },
+        "adjacent-repeat": {
+          "score": 0.09484037,
+          "frequencies": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-same-slop-1-boost-1",
+      "hits": {
+        "interleaved": {
+          "score": 0.079517365,
+          "frequencies": [
+            1
+          ]
+        },
+        "separated-repeat": {
+          "score": 0.07143086,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "triple-repeat": {
+          "score": 0.05595348,
+          "frequencies": [
+            2
+          ]
+        },
+        "adjacent-repeat": {
+          "score": 0.047420185,
+          "frequencies": [
+            1
+          ]
+        },
+        "overlap": {
+          "score": 0.033544526,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.030563459,
+          "frequencies": [
+            1
+          ]
+        },
+        "repeat": {
+          "score": 0.023776319,
+          "frequencies": [
+            0.5
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-same-slop-1-boost-2",
+      "hits": {
+        "interleaved": {
+          "score": 0.15903473,
+          "frequencies": [
+            1
+          ]
+        },
+        "separated-repeat": {
+          "score": 0.14286172,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "triple-repeat": {
+          "score": 0.11190696,
+          "frequencies": [
+            2
+          ]
+        },
+        "adjacent-repeat": {
+          "score": 0.09484037,
+          "frequencies": [
+            1
+          ]
+        },
+        "overlap": {
+          "score": 0.06708905,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.061126918,
+          "frequencies": [
+            1
+          ]
+        },
+        "repeat": {
+          "score": 0.047552638,
+          "frequencies": [
+            0.5
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-same-slop-2-boost-1",
+      "hits": {
+        "interleaved": {
+          "score": 0.079517365,
+          "frequencies": [
+            1
+          ]
+        },
+        "separated-repeat": {
+          "score": 0.07143086,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "triple-repeat": {
+          "score": 0.05595348,
+          "frequencies": [
+            2
+          ]
+        },
+        "adjacent-repeat": {
+          "score": 0.047420185,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.044884488,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "overlap": {
+          "score": 0.033544526,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.030563459,
+          "frequencies": [
+            1
+          ]
+        },
+        "repeat": {
+          "score": 0.023776319,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.01747828,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-same-slop-2-boost-2",
+      "hits": {
+        "interleaved": {
+          "score": 0.15903473,
+          "frequencies": [
+            1
+          ]
+        },
+        "separated-repeat": {
+          "score": 0.14286172,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "triple-repeat": {
+          "score": 0.11190696,
+          "frequencies": [
+            2
+          ]
+        },
+        "adjacent-repeat": {
+          "score": 0.09484037,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.089768976,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "overlap": {
+          "score": 0.06708905,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.061126918,
+          "frequencies": [
+            1
+          ]
+        },
+        "repeat": {
+          "score": 0.047552638,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.03495656,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-same-slop-3-boost-1",
+      "hits": {
+        "interleaved": {
+          "score": 0.079517365,
+          "frequencies": [
+            1
+          ]
+        },
+        "separated-repeat": {
+          "score": 0.07143086,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "triple-repeat": {
+          "score": 0.05595348,
+          "frequencies": [
+            2
+          ]
+        },
+        "adjacent-repeat": {
+          "score": 0.047420185,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.044884488,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "overlap": {
+          "score": 0.033544526,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.030563459,
+          "frequencies": [
+            1
+          ]
+        },
+        "repeat": {
+          "score": 0.023776319,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.01747828,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "two-gaps": {
+          "score": 0.011904784,
+          "frequencies": [
+            0.25
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-same-slop-3-boost-2",
+      "hits": {
+        "interleaved": {
+          "score": 0.15903473,
+          "frequencies": [
+            1
+          ]
+        },
+        "separated-repeat": {
+          "score": 0.14286172,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "triple-repeat": {
+          "score": 0.11190696,
+          "frequencies": [
+            2
+          ]
+        },
+        "adjacent-repeat": {
+          "score": 0.09484037,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.089768976,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "overlap": {
+          "score": 0.06708905,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.061126918,
+          "frequencies": [
+            1
+          ]
+        },
+        "repeat": {
+          "score": 0.047552638,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.03495656,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "two-gaps": {
+          "score": 0.023809567,
+          "frequencies": [
+            0.25
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-same-slop-5-boost-1",
+      "hits": {
+        "interleaved": {
+          "score": 0.079517365,
+          "frequencies": [
+            1
+          ]
+        },
+        "separated-repeat": {
+          "score": 0.07143086,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "triple-repeat": {
+          "score": 0.05595348,
+          "frequencies": [
+            2
+          ]
+        },
+        "adjacent-repeat": {
+          "score": 0.047420185,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.044884488,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "overlap": {
+          "score": 0.033544526,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.030563459,
+          "frequencies": [
+            1
+          ]
+        },
+        "repeat": {
+          "score": 0.023776319,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.01747828,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "two-gaps": {
+          "score": 0.011904784,
+          "frequencies": [
+            0.25
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-same-slop-5-boost-2",
+      "hits": {
+        "interleaved": {
+          "score": 0.15903473,
+          "frequencies": [
+            1
+          ]
+        },
+        "separated-repeat": {
+          "score": 0.14286172,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "triple-repeat": {
+          "score": 0.11190696,
+          "frequencies": [
+            2
+          ]
+        },
+        "adjacent-repeat": {
+          "score": 0.09484037,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.089768976,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "overlap": {
+          "score": 0.06708905,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.061126918,
+          "frequencies": [
+            1
+          ]
+        },
+        "repeat": {
+          "score": 0.047552638,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.03495656,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "two-gaps": {
+          "score": 0.023809567,
+          "frequencies": [
+            0.25
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-same-slop-100-boost-1",
+      "hits": {
+        "interleaved": {
+          "score": 0.079517365,
+          "frequencies": [
+            1
+          ]
+        },
+        "separated-repeat": {
+          "score": 0.07143086,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "triple-repeat": {
+          "score": 0.05595348,
+          "frequencies": [
+            2
+          ]
+        },
+        "adjacent-repeat": {
+          "score": 0.047420185,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.044884488,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "overlap": {
+          "score": 0.033544526,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.030563459,
+          "frequencies": [
+            1
+          ]
+        },
+        "repeat": {
+          "score": 0.023776319,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.01747828,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "two-gaps": {
+          "score": 0.011904784,
+          "frequencies": [
+            0.25
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-same-slop-100-boost-2",
+      "hits": {
+        "interleaved": {
+          "score": 0.15903473,
+          "frequencies": [
+            1
+          ]
+        },
+        "separated-repeat": {
+          "score": 0.14286172,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "triple-repeat": {
+          "score": 0.11190696,
+          "frequencies": [
+            2
+          ]
+        },
+        "adjacent-repeat": {
+          "score": 0.09484037,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.089768976,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "overlap": {
+          "score": 0.06708905,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.061126918,
+          "frequencies": [
+            1
+          ]
+        },
+        "repeat": {
+          "score": 0.047552638,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.03495656,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "two-gaps": {
+          "score": 0.023809567,
+          "frequencies": [
+            0.25
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-three-slop-0-boost-1",
+      "hits": {
+        "three-repeat": {
+          "score": 0.21950364,
+          "frequencies": [
+            2
+          ]
+        },
+        "three": {
+          "score": 0.20283249,
+          "frequencies": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-three-slop-0-boost-2",
+      "hits": {
+        "three-repeat": {
+          "score": 0.43900728,
+          "frequencies": [
+            2
+          ]
+        },
+        "three": {
+          "score": 0.40566498,
+          "frequencies": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-three-slop-1-boost-1",
+      "hits": {
+        "three-gap": {
+          "score": 0.3397596,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "interleaved": {
+          "score": 0.26864707,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-repeat": {
+          "score": 0.21950364,
+          "frequencies": [
+            2
+          ]
+        },
+        "three": {
+          "score": 0.20283249,
+          "frequencies": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-three-slop-1-boost-2",
+      "hits": {
+        "three-gap": {
+          "score": 0.6795192,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "interleaved": {
+          "score": 0.53729415,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-repeat": {
+          "score": 0.43900728,
+          "frequencies": [
+            2
+          ]
+        },
+        "three": {
+          "score": 0.40566498,
+          "frequencies": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-three-slop-2-boost-1",
+      "hits": {
+        "three-mixed": {
+          "score": 0.57071257,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-gap": {
+          "score": 0.3397596,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "interleaved": {
+          "score": 0.26864707,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-repeat": {
+          "score": 0.21950364,
+          "frequencies": [
+            2
+          ]
+        },
+        "three": {
+          "score": 0.20283249,
+          "frequencies": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-three-slop-2-boost-2",
+      "hits": {
+        "three-mixed": {
+          "score": 1.1414251,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-gap": {
+          "score": 0.6795192,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "interleaved": {
+          "score": 0.53729415,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-repeat": {
+          "score": 0.43900728,
+          "frequencies": [
+            2
+          ]
+        },
+        "three": {
+          "score": 0.40566498,
+          "frequencies": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-three-slop-3-boost-1",
+      "hits": {
+        "three-mixed": {
+          "score": 0.57071257,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-gap": {
+          "score": 0.3397596,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "interleaved": {
+          "score": 0.26864707,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-repeat": {
+          "score": 0.23111202,
+          "frequencies": [
+            2.25
+          ]
+        },
+        "three": {
+          "score": 0.20283249,
+          "frequencies": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-three-slop-3-boost-2",
+      "hits": {
+        "three-mixed": {
+          "score": 1.1414251,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-gap": {
+          "score": 0.6795192,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "interleaved": {
+          "score": 0.53729415,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-repeat": {
+          "score": 0.46222404,
+          "frequencies": [
+            2.25
+          ]
+        },
+        "three": {
+          "score": 0.40566498,
+          "frequencies": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-three-slop-5-boost-1",
+      "hits": {
+        "three-mixed": {
+          "score": 0.57071257,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-gap": {
+          "score": 0.3397596,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "interleaved": {
+          "score": 0.26864707,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-repeat": {
+          "score": 0.23111202,
+          "frequencies": [
+            2.25
+          ]
+        },
+        "three": {
+          "score": 0.20283249,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-reverse": {
+          "score": 0.06818625,
+          "frequencies": [
+            0.2
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-three-slop-5-boost-2",
+      "hits": {
+        "three-mixed": {
+          "score": 1.1414251,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-gap": {
+          "score": 0.6795192,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "interleaved": {
+          "score": 0.53729415,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-repeat": {
+          "score": 0.46222404,
+          "frequencies": [
+            2.25
+          ]
+        },
+        "three": {
+          "score": 0.40566498,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-reverse": {
+          "score": 0.1363725,
+          "frequencies": [
+            0.2
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-three-slop-100-boost-1",
+      "hits": {
+        "three-mixed": {
+          "score": 0.57071257,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-gap": {
+          "score": 0.3397596,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "interleaved": {
+          "score": 0.26864707,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-repeat": {
+          "score": 0.23111202,
+          "frequencies": [
+            2.25
+          ]
+        },
+        "three": {
+          "score": 0.20283249,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-reverse": {
+          "score": 0.06818625,
+          "frequencies": [
+            0.2
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-three-slop-100-boost-2",
+      "hits": {
+        "three-mixed": {
+          "score": 1.1414251,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-gap": {
+          "score": 0.6795192,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "interleaved": {
+          "score": 0.53729415,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "three-repeat": {
+          "score": 0.46222404,
+          "frequencies": [
+            2.25
+          ]
+        },
+        "three": {
+          "score": 0.40566498,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-reverse": {
+          "score": 0.1363725,
+          "frequencies": [
+            0.2
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-aba-slop-0-boost-1",
+      "hits": {
+        "overlap": {
+          "score": 0.180203,
+          "frequencies": [
+            2
+          ]
+        },
+        "long-repeat": {
+          "score": 0.16841958,
+          "frequencies": [
+            2
+          ]
+        },
+        "repeat": {
+          "score": 0.13918518,
+          "frequencies": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-aba-slop-0-boost-2",
+      "hits": {
+        "overlap": {
+          "score": 0.360406,
+          "frequencies": [
+            2
+          ]
+        },
+        "long-repeat": {
+          "score": 0.33683917,
+          "frequencies": [
+            2
+          ]
+        },
+        "repeat": {
+          "score": 0.27837035,
+          "frequencies": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-aba-slop-1-boost-1",
+      "hits": {
+        "overlap": {
+          "score": 0.180203,
+          "frequencies": [
+            2
+          ]
+        },
+        "long-repeat": {
+          "score": 0.16841958,
+          "frequencies": [
+            2
+          ]
+        },
+        "repeat": {
+          "score": 0.13918518,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.093161434,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.08903186,
+          "frequencies": [
+            0.5
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-aba-slop-1-boost-2",
+      "hits": {
+        "overlap": {
+          "score": 0.360406,
+          "frequencies": [
+            2
+          ]
+        },
+        "long-repeat": {
+          "score": 0.33683917,
+          "frequencies": [
+            2
+          ]
+        },
+        "repeat": {
+          "score": 0.27837035,
+          "frequencies": [
+            1
+          ]
+        },
+        "three-repeat": {
+          "score": 0.18632287,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.17806372,
+          "frequencies": [
+            0.5
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-aba-slop-2-boost-1",
+      "hits": {
+        "long-repeat": {
+          "score": 0.18058588,
+          "frequencies": [
+            2.3333333
+          ]
+        },
+        "overlap": {
+          "score": 0.180203,
+          "frequencies": [
+            2
+          ]
+        },
+        "repeat": {
+          "score": 0.13918518,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.09536067,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-repeat": {
+          "score": 0.093161434,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.08903186,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "two-gaps": {
+          "score": 0.056790024,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-aba-slop-2-boost-2",
+      "hits": {
+        "long-repeat": {
+          "score": 0.36117175,
+          "frequencies": [
+            2.3333333
+          ]
+        },
+        "overlap": {
+          "score": 0.360406,
+          "frequencies": [
+            2
+          ]
+        },
+        "repeat": {
+          "score": 0.27837035,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.19072133,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-repeat": {
+          "score": 0.18632287,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.17806372,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "two-gaps": {
+          "score": 0.11358005,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-aba-slop-3-boost-1",
+      "hits": {
+        "long-repeat": {
+          "score": 0.18058588,
+          "frequencies": [
+            2.3333333
+          ]
+        },
+        "overlap": {
+          "score": 0.180203,
+          "frequencies": [
+            2
+          ]
+        },
+        "repeat": {
+          "score": 0.13918518,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.09536067,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-repeat": {
+          "score": 0.093161434,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.08903186,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "two-gaps": {
+          "score": 0.056790024,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-aba-slop-3-boost-2",
+      "hits": {
+        "long-repeat": {
+          "score": 0.36117175,
+          "frequencies": [
+            2.3333333
+          ]
+        },
+        "overlap": {
+          "score": 0.360406,
+          "frequencies": [
+            2
+          ]
+        },
+        "repeat": {
+          "score": 0.27837035,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.19072133,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-repeat": {
+          "score": 0.18632287,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.17806372,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "two-gaps": {
+          "score": 0.11358005,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-aba-slop-5-boost-1",
+      "hits": {
+        "long-repeat": {
+          "score": 0.18058588,
+          "frequencies": [
+            2.3333333
+          ]
+        },
+        "overlap": {
+          "score": 0.180203,
+          "frequencies": [
+            2
+          ]
+        },
+        "repeat": {
+          "score": 0.13918518,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.09536067,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-repeat": {
+          "score": 0.093161434,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.08903186,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "two-gaps": {
+          "score": 0.056790024,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-aba-slop-5-boost-2",
+      "hits": {
+        "long-repeat": {
+          "score": 0.36117175,
+          "frequencies": [
+            2.3333333
+          ]
+        },
+        "overlap": {
+          "score": 0.360406,
+          "frequencies": [
+            2
+          ]
+        },
+        "repeat": {
+          "score": 0.27837035,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.19072133,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-repeat": {
+          "score": 0.18632287,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.17806372,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "two-gaps": {
+          "score": 0.11358005,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-aba-slop-100-boost-1",
+      "hits": {
+        "long-repeat": {
+          "score": 0.18058588,
+          "frequencies": [
+            2.3333333
+          ]
+        },
+        "overlap": {
+          "score": 0.180203,
+          "frequencies": [
+            2
+          ]
+        },
+        "repeat": {
+          "score": 0.13918518,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.09536067,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-repeat": {
+          "score": 0.093161434,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.08903186,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "two-gaps": {
+          "score": 0.056790024,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "array-repeat": {
+          "score": 0.0024276972,
+          "frequencies": [
+            0.00990099
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-aba-slop-100-boost-2",
+      "hits": {
+        "long-repeat": {
+          "score": 0.36117175,
+          "frequencies": [
+            2.3333333
+          ]
+        },
+        "overlap": {
+          "score": 0.360406,
+          "frequencies": [
+            2
+          ]
+        },
+        "repeat": {
+          "score": 0.27837035,
+          "frequencies": [
+            1
+          ]
+        },
+        "interleaved": {
+          "score": 0.19072133,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "three-repeat": {
+          "score": 0.18632287,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.17806372,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "two-gaps": {
+          "score": 0.11358005,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "array-repeat": {
+          "score": 0.0048553944,
+          "frequencies": [
+            0.00990099
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-aab-slop-0-boost-1",
+      "hits": {
+        "interleaved": {
+          "score": 0.21411166,
+          "frequencies": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-aab-slop-0-boost-2",
+      "hits": {
+        "interleaved": {
+          "score": 0.4282233,
+          "frequencies": [
+            1
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-aab-slop-1-boost-1",
+      "hits": {
+        "interleaved": {
+          "score": 0.21411166,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.1144467,
+          "frequencies": [
+            1
+          ]
+        },
+        "repeat": {
+          "score": 0.08903186,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "overlap": {
+          "score": 0.07821694,
+          "frequencies": [
+            0.5
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-aab-slop-1-boost-2",
+      "hits": {
+        "interleaved": {
+          "score": 0.4282233,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.2288934,
+          "frequencies": [
+            1
+          ]
+        },
+        "repeat": {
+          "score": 0.17806372,
+          "frequencies": [
+            0.5
+          ]
+        },
+        "overlap": {
+          "score": 0.15643388,
+          "frequencies": [
+            0.5
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-aab-slop-2-boost-1",
+      "hits": {
+        "interleaved": {
+          "score": 0.21411166,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.15390347,
+          "frequencies": [
+            1.6666667
+          ]
+        },
+        "overlap": {
+          "score": 0.1375124,
+          "frequencies": [
+            1.1666667
+          ]
+        },
+        "repeat": {
+          "score": 0.12509188,
+          "frequencies": [
+            0.8333334
+          ]
+        },
+        "three-repeat": {
+          "score": 0.067326754,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.06544846,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-aab-slop-2-boost-2",
+      "hits": {
+        "interleaved": {
+          "score": 0.4282233,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.30780694,
+          "frequencies": [
+            1.6666667
+          ]
+        },
+        "overlap": {
+          "score": 0.2750248,
+          "frequencies": [
+            1.1666667
+          ]
+        },
+        "repeat": {
+          "score": 0.25018376,
+          "frequencies": [
+            0.8333334
+          ]
+        },
+        "three-repeat": {
+          "score": 0.13465351,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.13089693,
+          "frequencies": [
+            0.33333334
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-aab-slop-3-boost-1",
+      "hits": {
+        "interleaved": {
+          "score": 0.21411166,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.15390347,
+          "frequencies": [
+            1.6666667
+          ]
+        },
+        "overlap": {
+          "score": 0.1375124,
+          "frequencies": [
+            1.1666667
+          ]
+        },
+        "repeat": {
+          "score": 0.12509188,
+          "frequencies": [
+            0.8333334
+          ]
+        },
+        "three-repeat": {
+          "score": 0.104632825,
+          "frequencies": [
+            0.5833334
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.06544846,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "two-gaps": {
+          "score": 0.044578195,
+          "frequencies": [
+            0.25
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-aab-slop-3-boost-2",
+      "hits": {
+        "interleaved": {
+          "score": 0.4282233,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.30780694,
+          "frequencies": [
+            1.6666667
+          ]
+        },
+        "overlap": {
+          "score": 0.2750248,
+          "frequencies": [
+            1.1666667
+          ]
+        },
+        "repeat": {
+          "score": 0.25018376,
+          "frequencies": [
+            0.8333334
+          ]
+        },
+        "three-repeat": {
+          "score": 0.20926565,
+          "frequencies": [
+            0.5833334
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.13089693,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "two-gaps": {
+          "score": 0.08915639,
+          "frequencies": [
+            0.25
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-aab-slop-5-boost-1",
+      "hits": {
+        "interleaved": {
+          "score": 0.21411166,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.15390347,
+          "frequencies": [
+            1.6666667
+          ]
+        },
+        "overlap": {
+          "score": 0.1375124,
+          "frequencies": [
+            1.1666667
+          ]
+        },
+        "repeat": {
+          "score": 0.12509188,
+          "frequencies": [
+            0.8333334
+          ]
+        },
+        "three-repeat": {
+          "score": 0.104632825,
+          "frequencies": [
+            0.5833334
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.06544846,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "two-gaps": {
+          "score": 0.044578195,
+          "frequencies": [
+            0.25
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-aab-slop-5-boost-2",
+      "hits": {
+        "interleaved": {
+          "score": 0.4282233,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.30780694,
+          "frequencies": [
+            1.6666667
+          ]
+        },
+        "overlap": {
+          "score": 0.2750248,
+          "frequencies": [
+            1.1666667
+          ]
+        },
+        "repeat": {
+          "score": 0.25018376,
+          "frequencies": [
+            0.8333334
+          ]
+        },
+        "three-repeat": {
+          "score": 0.20926565,
+          "frequencies": [
+            0.5833334
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.13089693,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "two-gaps": {
+          "score": 0.08915639,
+          "frequencies": [
+            0.25
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-aab-slop-100-boost-1",
+      "hits": {
+        "interleaved": {
+          "score": 0.21411166,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.15390347,
+          "frequencies": [
+            1.6666667
+          ]
+        },
+        "overlap": {
+          "score": 0.1375124,
+          "frequencies": [
+            1.1666667
+          ]
+        },
+        "repeat": {
+          "score": 0.12509188,
+          "frequencies": [
+            0.8333334
+          ]
+        },
+        "three-repeat": {
+          "score": 0.104632825,
+          "frequencies": [
+            0.5833334
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.06544846,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "two-gaps": {
+          "score": 0.044578195,
+          "frequencies": [
+            0.25
+          ]
+        }
+      }
+    },
+    {
+      "name": "3-aab-slop-100-boost-2",
+      "hits": {
+        "interleaved": {
+          "score": 0.4282233,
+          "frequencies": [
+            1
+          ]
+        },
+        "long-repeat": {
+          "score": 0.30780694,
+          "frequencies": [
+            1.6666667
+          ]
+        },
+        "overlap": {
+          "score": 0.2750248,
+          "frequencies": [
+            1.1666667
+          ]
+        },
+        "repeat": {
+          "score": 0.25018376,
+          "frequencies": [
+            0.8333334
+          ]
+        },
+        "three-repeat": {
+          "score": 0.20926565,
+          "frequencies": [
+            0.5833334
+          ]
+        },
+        "duplicate-middle": {
+          "score": 0.13089693,
+          "frequencies": [
+            0.33333334
+          ]
+        },
+        "two-gaps": {
+          "score": 0.08915639,
+          "frequencies": [
+            0.25
+          ]
+        }
+      }
+    }
+  ]
+}

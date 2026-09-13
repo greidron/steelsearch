@@ -11,6 +11,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PROMOTION_GATE_OUTPUT = REPO_ROOT / "target/promotion-gate-suite-current.json"
 RELEASE_EVIDENCE_CHECK_NAME = "release-evidence-inventory"
+COMPATIBILITY_PROFILES = ("legacy-full", "core-no-plugins")
+PLUGIN_CHECKS = frozenset({"vector", "knn-plugin", "ml"})
 
 CHECKS = [
     ("source-compatibility-drift", ["tools/check-source-compatibility-drift.sh"]),
@@ -217,12 +219,53 @@ def run_check(name: str, command: list[str]) -> dict[str, object]:
     return result
 
 
-def suite_summary(results: list[dict[str, object]]) -> dict[str, object]:
-    failed = [result for result in results if result["status"] != "ok"]
+def checks_for_profile(profile: str) -> tuple[list, list]:
+    if profile not in COMPATIBILITY_PROFILES:
+        raise ValueError(f"unknown compatibility profile: {profile}")
+    checks, excluded = [], []
+    for name, command in CHECKS:
+        if profile == "core-no-plugins" and name in PLUGIN_CHECKS:
+            excluded.append({"name": name, "command": " ".join(command), "status": "excluded",
+                             "reason": "OpenSearch plugins are outside core-no-plugins scope"})
+        else:
+            if profile == "core-no-plugins" and name == "broad-unified-e2e-sections":
+                command = [*command, "--compatibility-profile", profile]
+                command[1] = "target/unified-opensearch-e2e-core-current/unified-opensearch-e2e-report.json"
+            checks.append((name, command))
+    if not checks:
+        raise ValueError("profile must retain required non-plugin checks")
+    return checks, excluded
+
+
+def suite_summary(results: list[dict[str, object]], profile: str = "legacy-full") -> dict[str, object]:
+    if profile not in COMPATIBILITY_PROFILES:
+        raise ValueError(f"unknown compatibility profile: {profile}")
+    excluded = [result for result in results if result["status"] == "excluded"
+                and profile == "core-no-plugins" and result["name"] in PLUGIN_CHECKS]
+    failed = [result for result in results if result["status"] not in ("ok", "excluded")
+              or (result["status"] == "excluded" and
+                  (profile != "core-no-plugins" or result["name"] not in PLUGIN_CHECKS))]
+    passed = [result for result in results if result["status"] == "ok"]
+    errors = []
+    if not passed:
+        errors.append("no passing required checks")
+    if profile == "core-no-plugins":
+        names = [result["name"] for result in results]
+        expected = {name for name, _ in CHECKS}
+        missing = expected - {RELEASE_EVIDENCE_CHECK_NAME} - set(names)
+        if missing:
+            errors.append(f"missing required checks: {sorted(missing)}")
+        if len(names) != len(set(names)):
+            errors.append("duplicate checks")
+        if set(names) - expected:
+            errors.append("unknown checks")
     return {
-        "status": "failed" if failed else "ok",
-        "passed": len(results) - len(failed),
+        "status": "failed" if failed or errors else "ok",
+        "compatibility_profile": profile,
+        "passed": len(passed),
         "failed": len(failed),
+        "excluded": len(excluded),
+        "validation_errors": errors,
         "checks": results,
     }
 
@@ -237,32 +280,44 @@ def write_summary(path: Path, summary: dict[str, object]) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, help="Write the suite summary JSON to this path.")
+    parser.add_argument("--compatibility-profile", choices=COMPATIBILITY_PROFILES, default="legacy-full")
     args = parser.parse_args()
 
-    output = args.output or DEFAULT_PROMOTION_GATE_OUTPUT
+    profile = args.compatibility_profile
+    default_output = (DEFAULT_PROMOTION_GATE_OUTPUT if profile == "legacy-full" else
+                      REPO_ROOT / "target/core-no-plugins-promotion-gate-suite-current.json")
+    output = args.output or default_output
+    if profile == "core-no-plugins" and output.resolve() == DEFAULT_PROMOTION_GATE_OUTPUT.resolve():
+        parser.error("core profile must not overwrite the legacy full-profile summary")
+    selected, excluded = checks_for_profile(profile)
     release_check = next(
-        ((name, command) for name, command in CHECKS if name == RELEASE_EVIDENCE_CHECK_NAME),
+        ((name, command) for name, command in selected if name == RELEASE_EVIDENCE_CHECK_NAME),
         None,
     )
+    if profile == "core-no-plugins" and release_check is not None:
+        name, command = release_check
+        command = [*command, "--compatibility-profile", profile, "--promotion-gate-suite", str(output.resolve())]
+        command[command.index("--output") + 1] = str(REPO_ROOT / "target/core-no-plugins-release-evidence-inventory-current-check.json")
+        release_check = (name, command)
     regular_checks = [
-        (name, command) for name, command in CHECKS if name != RELEASE_EVIDENCE_CHECK_NAME
+        (name, command) for name, command in selected if name != RELEASE_EVIDENCE_CHECK_NAME
     ]
 
-    results = [run_check(name, command) for name, command in regular_checks]
-    pre_release_summary = suite_summary(results)
+    results = [run_check(name, command) for name, command in regular_checks] + excluded
+    pre_release_summary = suite_summary(results, profile)
     write_summary(output, pre_release_summary)
-    if output.resolve() != DEFAULT_PROMOTION_GATE_OUTPUT.resolve():
-        write_summary(DEFAULT_PROMOTION_GATE_OUTPUT, pre_release_summary)
+    if output.resolve() != default_output.resolve():
+        write_summary(default_output, pre_release_summary)
 
     if release_check is not None:
         results.append(run_check(*release_check))
 
-    summary = suite_summary(results)
+    summary = suite_summary(results, profile)
     rendered = write_summary(output, summary)
-    if output.resolve() != DEFAULT_PROMOTION_GATE_OUTPUT.resolve():
-        write_summary(DEFAULT_PROMOTION_GATE_OUTPUT, summary)
+    if output.resolve() != default_output.resolve():
+        write_summary(default_output, summary)
     print(rendered, end="")
-    return 1 if summary["failed"] else 0
+    return 1 if summary["status"] != "ok" else 0
 
 
 if __name__ == "__main__":

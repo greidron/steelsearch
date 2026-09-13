@@ -9,9 +9,12 @@ import shlex
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Sequence
+from unified_compatibility_scope import CORE_SUITES, PLUGIN_SUITES, PROFILES, validate_scope
+from core_security_fixture import write_projection
+from core_search_fixture import PROJECTED_SUITES, write_projection as write_search_projection
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -411,6 +414,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     parser.add_argument("--profile", default="broad-opensearch-e2e")
+    parser.add_argument("--compatibility-profile", choices=PROFILES, default="legacy-full")
     parser.add_argument("--steelsearch-url")
     parser.add_argument("--opensearch-url")
     parser.add_argument("--node-a-url")
@@ -435,9 +439,26 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    if args.compatibility_profile == "core-no-plugins" and args.case:
+        raise SystemExit("core profile does not allow partial --case selection")
     output_dir = Path(args.output_dir)
+    if args.compatibility_profile == "core-no-plugins" and output_dir.resolve() == DEFAULT_OUTPUT_DIR.resolve():
+        output_dir = ROOT / "target/unified-opensearch-e2e-core-current"
     output_dir.mkdir(parents=True, exist_ok=True)
-    suites = select_suites(args.suite)
+    suites = select_suites(args.suite, args.compatibility_profile)
+    projection = None
+    search_projection = None
+    if args.compatibility_profile == "core-no-plugins":
+        fixture_path = output_dir.resolve() / "core-fixtures/security-authz-compat.json"
+        projection = write_projection(fixture_path)
+        suites = tuple(replace(suite, fixture=str(fixture_path)) if suite.name == "security-authz" else suite
+                       for suite in suites)
+        if {suite.name for suite in suites if suite.fixture == "tools/fixtures/search-compat.json"} != PROJECTED_SUITES:
+            raise ValueError("core search fixture suite inventory drift")
+        search_fixture = output_dir.resolve() / "core-fixtures/search-compat.json"
+        search_projection = write_search_projection(search_fixture)
+        suites = tuple(replace(suite, fixture=str(search_fixture)) if suite.name in PROJECTED_SUITES else suite
+                       for suite in suites)
 
     suite_results = []
     if args.run:
@@ -468,7 +489,18 @@ def main() -> int:
                 )
             )
 
-    report = build_report(args.profile, suite_results)
+    if projection is not None:
+        for result in suite_results:
+            if result["name"] == "security-authz":
+                result["core_fixture_projection"] = projection
+            if result["name"] in PROJECTED_SUITES:
+                result["core_search_fixture_projection"] = search_projection
+            result["rerun"]["unified_command"] = shell_join_with_env([
+                sys.executable, "tools/run-unified-opensearch-e2e.py", "--run",
+                "--compatibility-profile", "core-no-plugins", "--output-dir", str(output_dir) + "-rerun",
+                "--steelsearch-url", "${STEELSEARCH_URL}", "--opensearch-url", "${OPENSEARCH_URL}",
+                "--node-a-url", "${STEELSEARCH_NODE_A_URL}", "--node-b-url", "${STEELSEARCH_NODE_B_URL}"])
+    report = build_report(args.profile, suite_results, args.compatibility_profile)
     report_path = output_dir / "unified-opensearch-e2e-report.json"
     markdown_path = output_dir / "unified-opensearch-e2e-report.md"
     report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -479,7 +511,15 @@ def main() -> int:
     return 0
 
 
-def select_suites(names: list[str] | None) -> tuple[Suite, ...]:
+def select_suites(names: list[str] | None, compatibility_profile: str = "legacy-full") -> tuple[Suite, ...]:
+    if compatibility_profile not in PROFILES:
+        raise SystemExit("unknown compatibility profile")
+    if compatibility_profile == "core-no-plugins":
+        if {suite.name for suite in SUITES} != CORE_SUITES | PLUGIN_SUITES:
+            raise SystemExit("unified suite scope inventory drift")
+        if names is not None and (set(names) != CORE_SUITES or len(names) != len(CORE_SUITES)):
+            raise SystemExit("core profile requires the complete core suite inventory")
+        return tuple(suite for suite in SUITES if suite.name in CORE_SUITES)
     if not names:
         return SUITES
     by_name = {suite.name: suite for suite in SUITES}
@@ -1245,7 +1285,9 @@ def collect_passed_cases(fixture_cases: list[dict[str, Any]], report_cases: list
     return sorted(passed)
 
 
-def build_report(profile: str, suite_results: list[dict[str, Any]]) -> dict[str, Any]:
+def build_report(profile: str, suite_results: list[dict[str, Any]], compatibility_profile: str = "legacy-full") -> dict[str, Any]:
+    if compatibility_profile not in PROFILES:
+        raise ValueError("unknown compatibility profile")
     sections = {
         name: section_summary(name, suite_results)
         for name in ("route_parity", "semantic_parity", "durability_parity", "security_parity", "distributed_parity")
@@ -1265,8 +1307,11 @@ def build_report(profile: str, suite_results: list[dict[str, Any]]) -> dict[str,
         0,
         effective_totals["known_gap_or_skipped"] - gap_resolution["skipped"]["resolved_by_other_suite_count"],
     )
-    return {
+    result = {
         "profile": profile,
+        "compatibility_profile": compatibility_profile,
+        "excluded_suites": [{"name": name, "status": "excluded", "reason": "OpenSearch plugins unsupported in core profile"}
+                            for name in sorted(PLUGIN_SUITES)] if compatibility_profile == "core-no-plugins" else [],
         "generated_at": int(time.time()),
         "status": status,
         **sections,
@@ -1281,6 +1326,10 @@ def build_report(profile: str, suite_results: list[dict[str, Any]]) -> dict[str,
         },
         "suite_results": suite_results,
     }
+    errors = validate_scope(result, compatibility_profile)
+    if errors:
+        raise ValueError("; ".join(errors))
+    return result
 
 
 def resolve_cross_suite_skips(suite_results: list[dict[str, Any]]) -> dict[str, Any]:

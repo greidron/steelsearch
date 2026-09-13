@@ -1,0 +1,35 @@
+{
+  "indices": [
+    {"name":"options-a","body":{"settings":{"number_of_shards":3,"number_of_replicas":0},"mappings":{"properties":{"tenant":{"type":"keyword"}}},"aliases":{"options-red":{"filter":{"term":{"tenant":"red"}}}}}},
+    {"name":"options-b","body":{"settings":{"number_of_shards":3,"number_of_replicas":0},"mappings":{"properties":{"tenant":{"type":"keyword"}}}}}
+  ],
+  "bulk": [
+    {"index":"options-a","documents":[{"_id":"r1","_source":{"tenant":"red"}},{"_id":"r2","_source":{"tenant":"red"}},{"_id":"b1","_source":{"tenant":"blue"}}]},
+    {"index":"options-b","documents":[{"_id":"r1","_source":{"tenant":"red"}},{"_id":"r2","_source":{"tenant":"red"}},{"_id":"b1","_source":{"tenant":"blue"}}]}
+  ],
+  "cases": [
+    {"name":"wildcard-default","area":"search","family":"lexical","method":"POST","path":"/options-missing*/_search","body":{"size":0},"extract":"search_total"},
+    {"name":"question-wildcard-default","area":"search","family":"lexical","method":"POST","path":"/options-missing%3F/_search","body":{"size":0},"extract":"search_total"},
+    {"name":"literal-default","area":"search","family":"lexical","method":"POST","path":"/options-missing/_search","body":{"size":0},"extract":"search_total"},
+    {"name":"literal-allow-empty","area":"search","family":"lexical","method":"POST","path":"/options-missing/_search?allow_no_indices=true","body":{"size":0},"extract":"search_total"},
+    {"name":"wildcard-forbid-empty","area":"search","family":"lexical","method":"POST","path":"/options-missing*/_search?allow_no_indices=false","body":{"size":0},"extract":"search_total"},
+    {"name":"wildcard-ignore-forbid-empty","area":"search","family":"lexical","method":"POST","path":"/options-missing*/_search?ignore_unavailable=true&allow_no_indices=false","body":{"size":0},"extract":"search_total"},
+    {"name":"literal-ignore","area":"search","family":"lexical","method":"POST","path":"/options-missing/_search?ignore_unavailable=true","body":{"size":0},"extract":"search_total"},
+    {"name":"literal-ignore-forbid-empty","area":"search","family":"lexical","method":"POST","path":"/options-missing/_search?ignore_unavailable=true&allow_no_indices=false","body":{"size":0},"extract":"search_total"},
+    {"name":"mixed-wildcard-default","area":"search","family":"lexical","method":"POST","path":"/options-a,options-missing*/_search","body":{"size":0},"extract":"search_total"},
+    {"name":"mixed-literal-default","area":"search","family":"lexical","method":"POST","path":"/options-a,options-missing/_search","body":{"size":0},"extract":"search_total"},
+    {"name":"mixed-literal-ignore-forbid-empty","area":"search","family":"lexical","method":"POST","path":"/options-a,options-missing/_search?ignore_unavailable=true&allow_no_indices=false","body":{"size":0},"extract":"search_total"},
+    {"name":"mixed-wildcard-ignore-forbid-empty","area":"search","family":"lexical","method":"POST","path":"/options-a,options-missing*/_search?ignore_unavailable=true&allow_no_indices=false","body":{"size":0},"extract":"search_total"},
+    {"name":"alias-wildcard-default","area":"search","family":"lexical","method":"POST","path":"/options-red,options-missing*/_search","body":{"size":0},"extract":"search_total"},
+    {"name":"alias-index-wildcard-default","area":"search","family":"lexical","method":"POST","path":"/options-red,options-b,options-missing*/_search","body":{"size":0},"extract":"search_total"},
+    {"name":"all-default","area":"search","family":"lexical","method":"POST","path":"/_all/_search","body":{"size":0},"extract":"search_total"},
+    {"name":"star-default","area":"search","family":"lexical","method":"POST","path":"/*/_search","body":{"size":0},"extract":"search_total"},
+    {"name":"wildcard-no-expansion","area":"search","family":"lexical","method":"POST","path":"/options-missing*/_search?expand_wildcards=none","body":{"size":0},"extract":"search_total"},
+    {"name":"literal-no-expansion","area":"search","family":"lexical","method":"POST","path":"/options-missing/_search?expand_wildcards=none","body":{"size":0},"extract":"search_total"},
+    {"name":"wildcard-no-expansion-forbid-empty","area":"search","family":"lexical","method":"POST","path":"/options-missing*/_search?expand_wildcards=none&allow_no_indices=false","body":{"size":0},"extract":"search_total"},
+    {"name":"mixed-no-expansion","area":"search","family":"lexical","method":"POST","path":"/options-a,options-missing*/_search?expand_wildcards=none","body":{"size":0},"extract":"search_total"},
+    {"name":"mixed-no-expansion-ignore","area":"search","family":"lexical","method":"POST","path":"/options-a,options-missing*/_search?expand_wildcards=none&ignore_unavailable=true","body":{"size":0},"extract":"search_total"},
+    {"name":"alias-no-expansion","area":"search","family":"lexical","method":"POST","path":"/options-red/_search?expand_wildcards=none","body":{"size":0},"extract":"search_total"},
+    {"name":"all-no-expansion","area":"search","family":"lexical","method":"POST","path":"/_all/_search?expand_wildcards=none","body":{"size":0},"extract":"search_total"}
+  ]
+}

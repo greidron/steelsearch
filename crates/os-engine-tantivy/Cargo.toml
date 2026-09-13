@@ -5,7 +5,11 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[features]
+diagnostic-lock-timing = []
+
 [dependencies]
+os-core = { path = "../os-core" }
 os-engine = { path = "../os-engine" }
 os-plugin-knn = { path = "../os-plugin-knn" }
 os-query-dsl = { path = "../os-query-dsl" }
@@ -15,6 +19,7 @@ serde = { workspace = true }
 serde_json.workspace = true
 tantivy = "=0.21.1"
 time = "=0.3.36"
+uuid = { version = "=1.8.0", features = ["v4"] }
 
 [[bench]]
 name = "deterministic_baselines"

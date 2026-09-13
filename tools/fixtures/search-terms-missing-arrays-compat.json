@@ -1,0 +1,17 @@
+{
+  "indices": [{"name":"terms-missing-arrays","body":{"settings":{"number_of_shards":3,"number_of_replicas":0},"mappings":{"properties":{"service":{"type":"keyword"}}}}}],
+  "bulk": [{"index":"terms-missing-arrays","documents":[
+    {"_id":"array","_source":{"service":["api","worker","api"]}},
+    {"_id":"scalar","_source":{"service":"api"}},
+    {"_id":"missing","_source":{}},
+    {"_id":"null","_source":{"service":null}},
+    {"_id":"empty","_source":{"service":[]}},
+    {"_id":"null-array","_source":{"service":[null,null]}}
+  ]}],
+  "cases": [
+    {"name":"terms-missing-array-native-zero","area":"aggregation","family":"aggregation","method":"POST","path":"/terms-missing-arrays/_search","body":{"size":0,"aggs":{"services":{"terms":{"field":"service","missing":"unknown","size":10}}}},"extract":"terms_aggregation"},
+    {"name":"terms-missing-array-native-hits","area":"aggregation","family":"aggregation","method":"POST","path":"/terms-missing-arrays/_search","body":{"size":10,"aggs":{"services":{"terms":{"field":"service","missing":"unknown","size":10}}}},"extract":"terms_aggregation"},
+    {"name":"terms-missing-array-fallback-zero","area":"aggregation","family":"aggregation","method":"POST","path":"/terms-missing-arrays/_search?ignore_unavailable=false","body":{"size":0,"aggs":{"services":{"terms":{"field":"service","missing":"unknown","size":10}}}},"extract":"terms_aggregation"},
+    {"name":"terms-missing-array-fallback-hits","area":"aggregation","family":"aggregation","method":"POST","path":"/terms-missing-arrays/_search?ignore_unavailable=false","body":{"size":10,"aggs":{"services":{"terms":{"field":"service","missing":"unknown","size":10}}}},"extract":"terms_aggregation"}
+  ]
+}

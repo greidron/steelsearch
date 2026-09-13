@@ -1,0 +1,640 @@
+{
+  "indices": [
+    {
+      "name": "native-agg-multi-1",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 1,
+            "number_of_replicas": 0,
+            "refresh_interval": "-1"
+          }
+        },
+        "mappings": {
+          "properties": {
+            "service": {
+              "type": "keyword"
+            },
+            "category": {
+              "type": "keyword"
+            },
+            "latency": {
+              "type": "long"
+            },
+            "event_time": {
+              "type": "date"
+            },
+            "message": {
+              "type": "text"
+            },
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "native-agg-multi-3",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 3,
+            "number_of_replicas": 0,
+            "refresh_interval": "-1"
+          }
+        },
+        "mappings": {
+          "properties": {
+            "service": {
+              "type": "keyword"
+            },
+            "category": {
+              "type": "keyword"
+            },
+            "latency": {
+              "type": "long"
+            },
+            "event_time": {
+              "type": "date"
+            },
+            "message": {
+              "type": "text"
+            },
+            "tenant": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "native-agg-day-boundaries",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 1,
+            "number_of_replicas": 0,
+            "refresh_interval": "-1"
+          }
+        },
+        "mappings": {
+          "properties": {
+            "event_time": {
+              "type": "date"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "bulk": [
+    {
+      "index": "native-agg-multi-1",
+      "documents": [
+        {
+          "_id": "a",
+          "_source": {
+            "service": [
+              "api",
+              "api"
+            ],
+            "category": "auth",
+            "latency": [
+              50,
+              50,
+              60
+            ],
+            "event_time": [
+              0,
+              0,
+              1000
+            ],
+            "message": "service search",
+            "tenant": "tenant-a"
+          }
+        },
+        {
+          "_id": "b",
+          "_source": {
+            "service": "api",
+            "category": "billing",
+            "latency": 150,
+            "event_time": 0,
+            "message": "service event",
+            "tenant": "tenant-a"
+          }
+        },
+        {
+          "_id": "c",
+          "_source": {
+            "service": "worker",
+            "category": "auth",
+            "latency": 300,
+            "event_time": 86400000,
+            "message": "analytics event",
+            "tenant": "tenant-b"
+          }
+        }
+      ]
+    },
+    {
+      "index": "native-agg-multi-3",
+      "documents": [
+        {
+          "_id": "a",
+          "_source": {
+            "service": [
+              "api",
+              "api"
+            ],
+            "category": "auth",
+            "latency": [
+              50,
+              50,
+              60
+            ],
+            "event_time": [
+              0,
+              0,
+              1000
+            ],
+            "message": "service search",
+            "tenant": "tenant-a"
+          }
+        },
+        {
+          "_id": "b",
+          "_source": {
+            "service": "api",
+            "category": "billing",
+            "latency": 150,
+            "event_time": 0,
+            "message": "service event",
+            "tenant": "tenant-a"
+          }
+        },
+        {
+          "_id": "c",
+          "_source": {
+            "service": "worker",
+            "category": "auth",
+            "latency": 300,
+            "event_time": 86400000,
+            "message": "analytics event",
+            "tenant": "tenant-b"
+          }
+        }
+      ]
+    },
+    {
+      "index": "native-agg-day-boundaries",
+      "documents": [
+        {
+          "_id": "0",
+          "_source": {
+            "event_time": -1
+          }
+        },
+        {
+          "_id": "1",
+          "_source": {
+            "event_time": 0
+          }
+        },
+        {
+          "_id": "2",
+          "_source": {
+            "event_time": 86399999
+          }
+        },
+        {
+          "_id": "3",
+          "_source": {
+            "event_time": 86400000
+          }
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "native-agg-multi-1-keyword-document-count",
+      "area": "aggregation",
+      "family": "native-aggregation-contract",
+      "method": "POST",
+      "path": "/native-agg-multi-1/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "services": {
+            "terms": {
+              "field": "service",
+              "size": 8,
+              "order": {
+                "_key": "asc"
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "native-agg-multi-1-numeric-document-count",
+      "area": "aggregation",
+      "family": "native-aggregation-contract",
+      "method": "POST",
+      "path": "/native-agg-multi-1/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "latencies": {
+            "terms": {
+              "field": "latency",
+              "size": 8,
+              "order": {
+                "_key": "asc"
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "native-agg-multi-1-range-document-count",
+      "area": "aggregation",
+      "family": "native-aggregation-contract",
+      "method": "POST",
+      "path": "/native-agg-multi-1/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "ranges": {
+            "range": {
+              "field": "latency",
+              "ranges": [
+                {
+                  "key": "low",
+                  "to": 100
+                },
+                {
+                  "key": "middle",
+                  "from": 100,
+                  "to": 300
+                },
+                {
+                  "key": "high",
+                  "from": 300
+                }
+              ]
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "native-agg-multi-1-fixed-day-document-count",
+      "area": "aggregation",
+      "family": "native-aggregation-contract",
+      "method": "POST",
+      "path": "/native-agg-multi-1/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "days": {
+            "date_histogram": {
+              "field": "event_time",
+              "fixed_interval": "1d"
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "native-agg-multi-1-calendar-day-document-count",
+      "area": "aggregation",
+      "family": "native-aggregation-contract",
+      "method": "POST",
+      "path": "/native-agg-multi-1/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "days": {
+            "date_histogram": {
+              "field": "event_time",
+              "calendar_interval": "day"
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "native-agg-multi-1-filtered-mixed",
+      "area": "aggregation",
+      "family": "native-aggregation-contract",
+      "method": "POST",
+      "path": "/native-agg-multi-1/_search",
+      "body": {
+        "size": 0,
+        "query": {
+          "bool": {
+            "must": [
+              {
+                "match": {
+                  "message": "service"
+                }
+              }
+            ],
+            "filter": [
+              {
+                "term": {
+                  "tenant": "tenant-a"
+                }
+              }
+            ]
+          }
+        },
+        "aggs": {
+          "services": {
+            "terms": {
+              "field": "service",
+              "size": 8,
+              "order": {
+                "_key": "asc"
+              }
+            }
+          },
+          "categories": {
+            "terms": {
+              "field": "category",
+              "size": 8,
+              "order": {
+                "_key": "asc"
+              }
+            }
+          },
+          "ranges": {
+            "range": {
+              "field": "latency",
+              "ranges": [
+                {
+                  "key": "low",
+                  "to": 100
+                },
+                {
+                  "key": "middle",
+                  "from": 100,
+                  "to": 300
+                },
+                {
+                  "key": "high",
+                  "from": 300
+                }
+              ]
+            }
+          },
+          "days": {
+            "date_histogram": {
+              "field": "event_time",
+              "calendar_interval": "day"
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "native-agg-multi-3-keyword-document-count",
+      "area": "aggregation",
+      "family": "native-aggregation-contract",
+      "method": "POST",
+      "path": "/native-agg-multi-3/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "services": {
+            "terms": {
+              "field": "service",
+              "size": 8,
+              "order": {
+                "_key": "asc"
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "native-agg-multi-3-numeric-document-count",
+      "area": "aggregation",
+      "family": "native-aggregation-contract",
+      "method": "POST",
+      "path": "/native-agg-multi-3/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "latencies": {
+            "terms": {
+              "field": "latency",
+              "size": 8,
+              "order": {
+                "_key": "asc"
+              }
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "native-agg-multi-3-range-document-count",
+      "area": "aggregation",
+      "family": "native-aggregation-contract",
+      "method": "POST",
+      "path": "/native-agg-multi-3/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "ranges": {
+            "range": {
+              "field": "latency",
+              "ranges": [
+                {
+                  "key": "low",
+                  "to": 100
+                },
+                {
+                  "key": "middle",
+                  "from": 100,
+                  "to": 300
+                },
+                {
+                  "key": "high",
+                  "from": 300
+                }
+              ]
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "native-agg-multi-3-fixed-day-document-count",
+      "area": "aggregation",
+      "family": "native-aggregation-contract",
+      "method": "POST",
+      "path": "/native-agg-multi-3/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "days": {
+            "date_histogram": {
+              "field": "event_time",
+              "fixed_interval": "1d"
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "native-agg-multi-3-calendar-day-document-count",
+      "area": "aggregation",
+      "family": "native-aggregation-contract",
+      "method": "POST",
+      "path": "/native-agg-multi-3/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "days": {
+            "date_histogram": {
+              "field": "event_time",
+              "calendar_interval": "day"
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "native-agg-multi-3-filtered-mixed",
+      "area": "aggregation",
+      "family": "native-aggregation-contract",
+      "method": "POST",
+      "path": "/native-agg-multi-3/_search",
+      "body": {
+        "size": 0,
+        "query": {
+          "bool": {
+            "must": [
+              {
+                "match": {
+                  "message": "service"
+                }
+              }
+            ],
+            "filter": [
+              {
+                "term": {
+                  "tenant": "tenant-a"
+                }
+              }
+            ]
+          }
+        },
+        "aggs": {
+          "services": {
+            "terms": {
+              "field": "service",
+              "size": 8,
+              "order": {
+                "_key": "asc"
+              }
+            }
+          },
+          "categories": {
+            "terms": {
+              "field": "category",
+              "size": 8,
+              "order": {
+                "_key": "asc"
+              }
+            }
+          },
+          "ranges": {
+            "range": {
+              "field": "latency",
+              "ranges": [
+                {
+                  "key": "low",
+                  "to": 100
+                },
+                {
+                  "key": "middle",
+                  "from": 100,
+                  "to": 300
+                },
+                {
+                  "key": "high",
+                  "from": 300
+                }
+              ]
+            }
+          },
+          "days": {
+            "date_histogram": {
+              "field": "event_time",
+              "calendar_interval": "day"
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "native-agg-day-boundaries-fixed-utc",
+      "area": "aggregation",
+      "family": "native-aggregation-contract",
+      "method": "POST",
+      "path": "/native-agg-day-boundaries/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "days": {
+            "date_histogram": {
+              "field": "event_time",
+              "fixed_interval": "1d"
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    },
+    {
+      "name": "native-agg-day-boundaries-calendar-utc",
+      "area": "aggregation",
+      "family": "native-aggregation-contract",
+      "method": "POST",
+      "path": "/native-agg-day-boundaries/_search",
+      "body": {
+        "size": 0,
+        "aggs": {
+          "days": {
+            "date_histogram": {
+              "field": "event_time",
+              "calendar_interval": "day"
+            }
+          }
+        }
+      },
+      "extract": "aggregations"
+    }
+  ]
+}

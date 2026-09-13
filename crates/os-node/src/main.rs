@@ -512,6 +512,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         name: config.node_name.clone(),
         version: OPENSEARCH_3_7_0_TRANSPORT,
     })
+    .with_authentication_users_file(
+        config.production_security_bootstrap.authentication_users_path.clone(),
+    )
     .with_rest_config(RestServerConfig {
         bind_host: config.host.to_string(),
         port: config.port,
@@ -18533,6 +18536,7 @@ fn build_transport_search_context_pit_id(
     version: Version,
 ) -> Option<String> {
     let mut shards = BTreeMap::new();
+    let session_id = format!("steelsearch-pit-session-{sequence}-{}", uuid::Uuid::new_v4().simple());
     let mut ordinal = 0_i64;
     for index in resolved_indices {
         for shard_id in 0..transport_pit_primary_shard_count(bindings, index) {
@@ -18548,7 +18552,7 @@ fn build_transport_search_context_pit_id(
                     cluster_alias: None,
                     search_context_id:
                         os_transport::action::OpenSearchShardSearchContextIdWire::new(
-                            format!("steelsearch-pit-session-{sequence}"),
+                            session_id.clone(),
                             (sequence as i64)
                                 .saturating_mul(1_000_000)
                                 .saturating_add(ordinal),
@@ -19312,9 +19316,11 @@ fn build_local_search_model_response(
     if request.validate_supported_execution_subset().is_err() {
         return build_empty_transport_response(request_id, header_version_id);
     }
-    let response = os_transport::action::SearchModelResponseWire {
-        search: local_transport_search_response_from_request(&request.search),
+    let search = match local_transport_search_response_from_request(&request.search) {
+        Ok(response) => response,
+        Err(reason) => return build_pit_alias_filter_error_response(request_id, header_version_id, reason),
     };
+    let response = os_transport::action::SearchModelResponseWire { search };
     os_transport::action::build_search_model_response_message(
         request_id,
         Version::from_id(header_version_id as i32),
@@ -19329,7 +19335,10 @@ fn build_search_response_from_request(
     header_version_id: u32,
     request: &os_transport::action::OpenSearchSearchRequestWire,
 ) -> Vec<u8> {
-    let response = local_transport_search_response_from_request(request);
+    let response = match local_transport_search_response_from_request(request) {
+        Ok(response) => response,
+        Err(reason) => return build_pit_alias_filter_error_response(request_id, header_version_id, reason),
+    };
     os_transport::action::build_opensearch_search_response_message(
         request_id,
         Version::from_id(header_version_id as i32),
@@ -19337,6 +19346,12 @@ fn build_search_response_from_request(
     )
     .map(|frame| frame.to_vec())
     .unwrap_or_else(|_| build_empty_transport_response(request_id, header_version_id))
+}
+
+fn build_pit_alias_filter_error_response(request_id: i64, header_version_id: u32, reason: &str) -> Vec<u8> {
+    let mut output = StreamOutput::new();
+    os_transport::error::write_illegal_argument_exception(&mut output, Some(reason));
+    build_transport_error_response_frame(request_id, header_version_id, output.freeze().to_vec())
 }
 
 fn search_request_supports_local_execution_subset(body: &[u8]) -> bool {
@@ -19546,7 +19561,10 @@ fn build_local_stream_search_response(
     if request.validate_supported_execution_subset().is_err() {
         return build_empty_transport_response(request_id, header_version_id);
     }
-    let response = local_transport_search_response_from_request(&request);
+    let response = match local_transport_search_response_from_request(&request) {
+        Ok(response) => response,
+        Err(reason) => return build_pit_alias_filter_error_response(request_id, header_version_id, reason),
+    };
     os_transport::action::build_opensearch_search_response_message(
         request_id,
         Version::from_id(header_version_id as i32),
@@ -19929,14 +19947,12 @@ fn build_local_multi_search_response(
     if request.validate_supported_execution_subset().is_err() {
         return build_empty_transport_response(request_id, header_version_id);
     }
-    let response = os_transport::action::OpenSearchMultiSearchResponseWire::success(
-        request
-            .requests
-            .iter()
-            .map(local_transport_search_response_from_request)
-            .collect(),
-        1,
-    );
+    let responses = match request.requests.iter().map(local_transport_search_response_from_request)
+        .collect::<Result<Vec<_>, _>>() {
+        Ok(responses) => responses,
+        Err(reason) => return build_pit_alias_filter_error_response(request_id, header_version_id, reason),
+    };
+    let response = os_transport::action::OpenSearchMultiSearchResponseWire::success(responses, 1);
     os_transport::action::build_opensearch_multi_search_response_message(
         request_id,
         Version::from_id(header_version_id as i32),
@@ -21028,7 +21044,7 @@ type LocalTransportSearchMatch = (String, String, String, Value, i64, i64, i64, 
 
 fn local_transport_search_response_from_request(
     request: &os_transport::action::OpenSearchSearchRequestWire,
-) -> os_transport::action::OpenSearchSearchResponseWire {
+) -> Result<os_transport::action::OpenSearchSearchResponseWire, &'static str> {
     let request_source = request.source.as_ref();
     let from = request_source
         .map(|source| source.from.max(0) as usize)
@@ -21055,11 +21071,30 @@ fn local_transport_search_response_from_request(
     let Some((documents, resolved_indices, point_in_time_id)) =
         transport_search_documents_for_request(request)
     else {
-        return os_transport::action::OpenSearchSearchResponseWire::empty_with_total_hits(0);
+        return Ok(os_transport::action::OpenSearchSearchResponseWire::empty_with_total_hits(0));
     };
     let pit_search_context_id = point_in_time_id.as_deref().and_then(|pit_id| {
         os_transport::action::OpenSearchSearchContextIdWire::decode(pit_id).ok()
     });
+    let mut json_alias_filters = BTreeMap::new();
+    if let Some(context) = pit_search_context_id.as_ref() {
+        for index in &resolved_indices {
+            if let Some(os_transport::action::OpenSearchQueryBuilderWire::Wrapper(wrapper)) =
+                context.alias_filter_for_index_name(index).and_then(|filter| filter.query.as_ref())
+            {
+                json_alias_filters.insert(index.clone(),
+                    os_node::standalone_runtime::parse_pit_alias_filter_json(&wrapper.source)?);
+            }
+        }
+    }
+    let alias_mappings = if json_alias_filters.is_empty() {
+        BTreeMap::new()
+    } else {
+        let manifest = dev_transport_pit_bindings().metadata_manifest.lock()
+            .expect("dev transport metadata manifest lock poisoned");
+        json_alias_filters.keys().map(|index|
+            (index.clone(), manifest["indices"][index]["mappings"].clone())).collect()
+    };
     let total_shards = transport_search_total_shards_for_request(
         request,
         point_in_time_id.as_deref(),
@@ -21075,7 +21110,7 @@ fn local_transport_search_response_from_request(
     let shard_failures =
         transport_pit_missing_reader_context_failures(&pit_missing_reader_contexts);
     if timed_out_before_execution {
-        return os_transport::action::OpenSearchSearchResponseWire {
+        return Ok(os_transport::action::OpenSearchSearchResponseWire {
             timed_out: true,
             total_shards,
             successful_shards,
@@ -21083,7 +21118,7 @@ fn local_transport_search_response_from_request(
             took_millis: 0,
             point_in_time_id,
             ..os_transport::action::OpenSearchSearchResponseWire::empty_with_total_hits(0)
-        };
+        });
     }
     let sorts = request_source.and_then(|source| source.sorts.as_deref());
     let rescores = request_source
@@ -21129,7 +21164,14 @@ fn local_transport_search_response_from_request(
             .as_ref()
             .and_then(|context_id| context_id.alias_filter_for_index_name(index))
         {
-            if !local_transport_query_matches(&record.source, id, alias_filter.query.as_ref()) {
+            let alias_matches = if let Some(filter) = json_alias_filters.get(index) {
+                os_node::standalone_runtime::pit_alias_filter_matches(
+                    &record.source, id, filter, alias_mappings.get(index).unwrap_or(&Value::Null),
+                )?
+            } else {
+                local_transport_query_matches(&record.source, id, alias_filter.query.as_ref())
+            };
+            if !alias_matches {
                 continue;
             }
         }
@@ -21235,7 +21277,7 @@ fn local_transport_search_response_from_request(
             )
         })
         .collect::<Vec<_>>();
-    os_transport::action::OpenSearchSearchResponseWire {
+    Ok(os_transport::action::OpenSearchSearchResponseWire {
         total_hits,
         total_hits_relation,
         max_score,
@@ -21255,7 +21297,7 @@ fn local_transport_search_response_from_request(
         ..os_transport::action::OpenSearchSearchResponseWire::empty_with_total_hits(
             actual_total_hits,
         )
-    }
+    })
 }
 
 fn local_transport_max_score(matches: &[LocalTransportSearchMatch], render_scores: bool) -> f32 {
@@ -22886,6 +22928,7 @@ fn transport_pit_missing_reader_context_failures(
                         session_id: context.search_context_id.session_id.clone(),
                         id: context.search_context_id.id,
                     }),
+                    max_buckets: None,
                 }),
             }
         })
@@ -37872,6 +37915,139 @@ Environment:\n\
 mod tests {
     use super::*;
     use std::sync::OnceLock as TestOnceLock;
+
+    #[test]
+    fn rest_alias_pit_transport_search_preserves_filter_after_alias_removal() {
+        let _lock = dev_transport_pit_test_lock().lock().unwrap();
+        for shards in [1, 3] {
+            for (target, expected) in [("red", 2), ("red,blue", 3), ("red,logs", 3), ("exclude-blue", 2)] {
+                let mut node = SteelNode::new(NodeInfo {
+                    name: "steel-node-id".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+                });
+                let create = node.handle_rest_request(os_rest::RestRequest::new(os_rest::RestMethod::Put, "/logs")
+                    .with_json_body(serde_json::json!({
+                        "settings": {"number_of_shards": shards},
+                        "mappings": {"properties": {"tenant": {"type": "keyword"}}},
+                        "aliases": {
+                            "red": {"filter": {"term": {"tenant": "red"}}},
+                            "blue": {"filter": {"term": {"tenant": "blue"}}},
+                            "exclude-blue": {"filter": {"bool": {"must_not": {
+                                "match_bool_prefix": {"tenant": "blu"}
+                            }}}}
+                        }
+                    })));
+                assert_eq!(create.status, 200, "{}", create.body);
+                for (id, tenant) in [("r1", "red"), ("r2", "red"), ("b1", "blue")] {
+                    assert_eq!(node.handle_rest_request(os_rest::RestRequest::new(os_rest::RestMethod::Put,
+                        format!("/logs/_doc/{id}"))
+                        .with_json_body(serde_json::json!({"tenant": tenant}))).status, 201);
+                }
+                assert_eq!(node.handle_rest_request(os_rest::RestRequest::new(os_rest::RestMethod::Post,
+                    "/logs/_refresh")).status, 200);
+                dev_transport_pit_bindings().reader_contexts.lock().unwrap().clear();
+                bind_dev_transport_pit_store_to_node(&mut node);
+                let opened = node.handle_rest_request(os_rest::RestRequest::new(os_rest::RestMethod::Post,
+                    format!("/{target}/_search/point_in_time?keep_alive=1m")));
+                assert_eq!(opened.status, 200, "{}", opened.body);
+                let pit_id = opened.body["pit_id"].as_str().unwrap().to_string();
+                node.metadata_manifest_state.lock().unwrap()["indices"]["logs"]["aliases"] = serde_json::json!({});
+                let rest = node.handle_rest_request(os_rest::RestRequest::new(os_rest::RestMethod::Post, "/_search")
+                    .with_json_body(serde_json::json!({"pit": {"id": pit_id}, "query": {"match_all": {}}})));
+                assert_eq!(rest.status, 200, "{target}: {}", rest.body);
+                assert_eq!(rest.body["hits"]["total"]["value"], expected, "REST {target}");
+                let request = os_transport::action::OpenSearchSearchRequestWire {
+                    source: Some(os_transport::action::OpenSearchSearchSourceBuilderWire {
+                        point_in_time: Some(os_transport::action::OpenSearchPointInTimeBuilderWire {
+                            id: pit_id.clone(), keep_alive: None,
+                        }),
+                        ..os_transport::action::OpenSearchSearchSourceBuilderWire::default()
+                    }),
+                    indices_options: os_transport::action::OpenSearchIndicesOptionsWire::point_in_time_search_prepared(),
+                    ccs_minimize_roundtrips: false,
+                    ..os_transport::action::OpenSearchSearchRequestWire::default()
+                };
+                let frame = os_transport::action::build_opensearch_search_request_message(
+                    304, OPENSEARCH_3_7_0_TRANSPORT, &request).unwrap();
+                assert!(search_request_supports_local_execution_subset(&frame[6..]), "{target}");
+                let response = build_local_search_response(304, OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &frame[6..]);
+                let mut bytes = BytesMut::from(response.as_slice());
+                let os_transport::frame::DecodedFrame::Message(message) =
+                    os_transport::frame::decode_frame(&mut bytes).unwrap().unwrap() else {
+                        panic!("expected PIT search response");
+                    };
+                let response = os_transport::action::read_opensearch_search_response_message(&message).unwrap();
+                assert_eq!(response.total_hits, Some(expected), "transport {target}/{shards}");
+                assert_eq!(response.point_in_time_id.as_deref(), Some(pit_id.as_str()));
+                let rest_ids = rest.body["hits"]["hits"].as_array().unwrap().iter()
+                    .map(|hit| hit["_id"].as_str().unwrap().to_string()).collect::<BTreeSet<_>>();
+                let wire_ids = response.hits.iter().map(|hit| hit.id.clone().unwrap()).collect::<BTreeSet<_>>();
+                assert_eq!(rest_ids, wire_ids, "{target}/{shards}");
+                if target == "red" && shards == 1 {
+                    for empty in [false, true] {
+                        for source in [b"not json".as_slice(),
+                            b"{\"bool\":{\"must_not\":{\"unknown_alias_query\":{}}}}".as_slice()] {
+                            let mut context_id = os_transport::action::OpenSearchSearchContextIdWire::decode(&pit_id).unwrap();
+                            let filter = context_id.alias_filters.values_mut().next().unwrap();
+                            let Some(os_transport::action::OpenSearchQueryBuilderWire::Wrapper(wrapper)) = filter.query.as_mut() else {
+                                panic!("expected JSON alias filter");
+                            };
+                            wrapper.source = source.to_vec().into();
+                            let bad_id = context_id.encode(OPENSEARCH_3_7_0_TRANSPORT).unwrap();
+                            let mut contexts = node.pit_contexts.lock().unwrap();
+                            let mut context = contexts[&pit_id].clone();
+                            if empty { context.documents = Arc::new(BTreeMap::new()); }
+                            contexts.insert(bad_id.clone(), context);
+                            drop(contexts);
+                            let mut bad_request = request.clone();
+                            bad_request.source.as_mut().unwrap().point_in_time.as_mut().unwrap().id = bad_id;
+                            let response = build_search_response_from_request(305,
+                                OPENSEARCH_3_7_0_TRANSPORT.id() as u32, &bad_request);
+                            let mut bytes = BytesMut::from(response.as_slice());
+                            let os_transport::frame::DecodedFrame::Message(message) =
+                                os_transport::frame::decode_frame(&mut bytes).unwrap().unwrap() else {
+                                    panic!("expected PIT filter error");
+                                };
+                            assert!(message.status.is_error(), "empty={empty}");
+                            let error = os_transport::error::TransportError::read(message.body.freeze()).unwrap().unwrap();
+                            assert_eq!(error.class_name, "java.lang.IllegalArgumentException");
+                            assert!(error.message.as_deref().unwrap().contains("PIT alias filter"));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn transport_pit_session_is_unique_when_sequence_restarts() {
+        let bindings = DevTransportPitBindings {
+            contexts: Arc::new(Mutex::new(BTreeMap::new())),
+            reader_contexts: Arc::new(Mutex::new(BTreeMap::new())),
+            next_id: Arc::new(Mutex::new(0)),
+            created_indices: Arc::new(Mutex::new(BTreeSet::from(["logs".to_string()]))),
+            documents: Arc::new(Mutex::new(BTreeMap::new())),
+            metadata_manifest: Arc::new(Mutex::new(serde_json::json!({"indices": {"logs": {
+                "settings": {"index": {"number_of_shards": "3", "uuid": "fixed-index-uuid"}}
+            }}}))),
+        };
+        let indices = vec!["logs".to_string()];
+        let first = build_transport_search_context_pit_id(&bindings, &indices, 1,
+            "same-node", OPENSEARCH_3_7_0_TRANSPORT).unwrap();
+        let second = build_transport_search_context_pit_id(&bindings, &indices, 1,
+            "same-node", OPENSEARCH_3_7_0_TRANSPORT).unwrap();
+        assert_ne!(first, second);
+        let first = os_transport::action::OpenSearchSearchContextIdWire::decode(&first).unwrap();
+        let second = os_transport::action::OpenSearchSearchContextIdWire::decode(&second).unwrap();
+        assert_eq!(first.shards.len(), 3);
+        assert_eq!(second.shards.len(), 3);
+        let sessions = |context: &os_transport::action::OpenSearchSearchContextIdWire| {
+            context.shards.values().map(|shard| shard.search_context_id.session_id.clone())
+                .collect::<BTreeSet<_>>()
+        };
+        assert_eq!(sessions(&first).len(), 1);
+        assert!(sessions(&first).is_disjoint(&sessions(&second)));
+        assert!(first.pit_context_ids().is_disjoint(&second.pit_context_ids()));
+    }
 
     fn dev_transport_scroll_test_lock() -> &'static Mutex<()> {
         static LOCK: TestOnceLock<Mutex<()>> = TestOnceLock::new();

@@ -1,0 +1,51 @@
+{
+  "indices": [{
+    "name": "multi-field-core-query-sort",
+    "body": {
+      "settings": {"number_of_shards": 1, "number_of_replicas": 0, "refresh_interval": "-1"},
+      "mappings": {"properties": {"value": {"type": "text", "fields": {
+        "raw": {"type": "keyword", "ignore_above": 8}
+      }}}}
+    }
+  }],
+  "bulk": [],
+  "cases": [
+    {
+      "name": "multi-field-keyword-sort-ascending", "area": "search", "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [
+        {"method": "PUT", "path": "/multi-field-core-query-sort/_doc/a", "body": {"value": "zulu"}, "expected_status": 201},
+        {"method": "PUT", "path": "/multi-field-core-query-sort/_doc/z", "body": {"value": "alpha"}, "expected_status": 201},
+        {"method": "PUT", "path": "/multi-field-core-query-sort/_doc/array", "body": {"value": ["beta", "Alpha", null]}, "expected_status": 201},
+        {"method": "PUT", "path": "/multi-field-core-query-sort/_doc/missing", "body": {"value": [null, "ignored long value"]}, "expected_status": 201},
+        {"method": "POST", "path": "/multi-field-core-query-sort/_refresh", "body": {}, "expected_status": 200},
+        {"method": "POST", "path": "/multi-field-core-query-sort/_search", "body": {"query": {"match_all": {}}, "sort": [{"value.raw": "asc"}]}, "expected_status": 200}
+      ]
+    },
+    {
+      "name": "multi-field-keyword-sort-descending", "area": "search", "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [{"method": "POST", "path": "/multi-field-core-query-sort/_search", "body": {"query": {"match_all": {}}, "sort": [{"value.raw": "desc"}]}, "expected_status": 200}]
+    },
+    {
+      "name": "multi-field-keyword-sort-fallback", "area": "search", "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [{"method": "POST", "path": "/multi-field-core-query-sort/_search?pre_filter_shard_size=1", "body": {"query": {"match_all": {}}, "sort": [{"value.raw": "asc"}]}, "expected_status": 200}]
+    },
+    {
+      "name": "multi-field-keyword-search-after", "area": "search", "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [{"method": "POST", "path": "/multi-field-core-query-sort/_search", "body": {"query": {"match_all": {}}, "sort": [{"value.raw": "asc"}], "search_after": ["alpha"]}, "expected_status": 200}]
+    },
+    {
+      "name": "multi-field-keyword-post-filter", "area": "search", "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [{"method": "POST", "path": "/multi-field-core-query-sort/_search", "body": {"post_filter": {"terms": {"value.raw": ["Alpha", "zulu"]}}, "sort": [{"value.raw": "asc"}]}, "expected_status": 200}]
+    },
+    {
+      "name": "multi-field-keyword-exists-ignores-long-values", "area": "search", "family": "mapping",
+      "extract": "search_hits_with_sort_values",
+      "steps": [{"method": "POST", "path": "/multi-field-core-query-sort/_search", "body": {"query": {"exists": {"field": "value.raw"}}, "sort": [{"value.raw": "asc"}]}, "expected_status": 200}]
+    }
+  ]
+}

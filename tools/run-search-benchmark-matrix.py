@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from benchmark_runtime_evidence import capture_runtime, require_stable_runtime
+
 
 ROOT = Path(__file__).resolve().parents[1]
 BASELINE = ROOT / "tools" / "run-http-load-baseline.py"
@@ -101,6 +103,8 @@ class ClusterHandle:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--capture-runtime-evidence", action="store_true",
+                        help="capture live process/container settings before and after each fresh scenario")
     parser.add_argument("--profile", choices=sorted(PROFILES), default=DEFAULT_PROFILE)
     parser.add_argument("--output-dir", default=str(ROOT / "target" / "search-benchmark-matrix"))
     parser.add_argument(
@@ -125,6 +129,8 @@ def main() -> int:
         help="reuse target/release/steelsearch instead of rebuilding Steelsearch before running scenarios",
     )
     parser.add_argument("--corpus-size", type=positive_int)
+    parser.add_argument("--diagnostic-timeline", action="store_true",
+                        help="capture bounded request/CPU timelines; diagnostic results only")
     parser.add_argument("--vector-dimension", type=positive_int)
     parser.add_argument(
         "--vector-source",
@@ -155,6 +161,8 @@ def main() -> int:
     )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+    if args.capture_runtime_evidence and (args.aggregate_only or args.skip_existing):
+        parser.error("runtime evidence requires fresh execution, not aggregate-only or skip-existing")
     profile = PROFILES[args.profile]
     if args.corpus_size is None:
         args.corpus_size = profile["corpus_size"]
@@ -192,6 +200,7 @@ def main() -> int:
             "seed": args.seed,
             "profile": args.profile,
             "operation_resource_deltas": args.operation_resource_deltas,
+            "diagnostic_timeline": args.diagnostic_timeline,
             "reuse_steelsearch_binary": args.reuse_steelsearch_binary,
         },
         "scenarios": [
@@ -251,12 +260,36 @@ def main() -> int:
             )
             handle = start_cluster(scenario, scenario_dir, steelsearch_binary_path)
             handles.append(handle)
-            wait_for_cluster(scenario, handle.base_url, args.timeout_seconds)
-            target_identity = http_json(f"{handle.base_url}/", args.timeout_seconds)
-            if scenario.engine == "opensearch":
-                clear_opensearch_cluster_blocks(handle.base_url, args.timeout_seconds)
-            resource_pids = resolve_resource_pids(handle)
-            result = run_baseline(scenario, handle, baseline_output, args, resource_pids)
+            try:
+                wait_for_cluster(scenario, handle.base_url, args.timeout_seconds)
+                target_identity = http_json(f"{handle.base_url}/", args.timeout_seconds)
+                resource_pids = resolve_resource_pids(handle, steelsearch_binary_path)
+                runtime_before = None
+                if args.capture_runtime_evidence:
+                    runtime_before = capture_runtime(resource_pids, handle.container_names,
+                                                     executable["sha256"] if executable else None,
+                                                     scenario.node_count)
+                safety_before = None
+                if scenario.engine == "opensearch":
+                    safety_before = require_opensearch_safety(
+                        handle.base_url, scenario_dir, args.timeout_seconds, "before")
+                result = run_baseline(scenario, handle, baseline_output, args, resource_pids)
+                if safety_before is not None:
+                    result["opensearch_safety"] = {
+                        "before": safety_before,
+                        "after": require_opensearch_safety(
+                            handle.base_url, scenario_dir, args.timeout_seconds, "after"),
+                    }
+            except Exception:
+                if scenario.engine == "opensearch":
+                    capture_opensearch_failure(handle.base_url, scenario_dir, args.timeout_seconds)
+                raise
+            if runtime_before is not None:
+                runtime_after = capture_runtime(resource_pids, handle.container_names,
+                                                executable["sha256"] if executable else None,
+                                                scenario.node_count)
+                require_stable_runtime(runtime_before, runtime_after)
+                result["runtime_evidence"] = {"before": runtime_before, "after": runtime_after}
             result["target_identity"] = target_identity
             if executable is not None:
                 if executable_evidence(steelsearch_binary_path) != executable:
@@ -274,6 +307,10 @@ def main() -> int:
         for handle in reversed(handles):
             handle.stop()
 
+    if args.diagnostic_timeline and any("timeline" not in item for item in results["scenarios"].values()):
+        raise ValueError("requested timeline missing; do not reuse a non-diagnostic result")
+    if args.diagnostic_timeline or any(item.get("diagnostic_only") for item in results["scenarios"].values()):
+        results.update(diagnostic_only=True, acceptance_established=False)
     results["native_telemetry_budgets"] = build_native_telemetry_budgets(results["scenarios"])
     results["comparisons"] = build_comparisons(results["scenarios"])
     summary_path.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
@@ -535,42 +572,145 @@ def free_port(host: str = "127.0.0.1") -> int:
 
 
 def wait_for_cluster(scenario: Scenario, base_url: str, timeout_seconds: float) -> None:
-    deadline = time.time() + max(180.0, timeout_seconds)
+    deadline = time.monotonic() + max(180.0, timeout_seconds)
     health_url = f"{base_url}/_cluster/health"
-    while time.time() < deadline:
+    blocks_url = f"{base_url}/_cluster/state/blocks"
+    while time.monotonic() < deadline:
         try:
             payload = http_json(health_url, timeout_seconds)
-            if isinstance(payload, dict) and int(payload.get("number_of_nodes", 0)) >= scenario.node_count:
+            has_expected_nodes = (
+                isinstance(payload, dict)
+                and int(payload.get("number_of_nodes", 0)) >= scenario.node_count
+            )
+            if scenario.engine != "opensearch" and has_expected_nodes:
+                return
+            if (scenario.engine == "opensearch"
+                    and has_expected_nodes
+                    and payload.get("status") == "green"
+                    and opensearch_cluster_blocks_ready(http_json(blocks_url, timeout_seconds))):
                 return
         except Exception:
             pass
         time.sleep(0.5)
-    raise RuntimeError(f"{scenario.label} did not reach {scenario.node_count} nodes")
+    if scenario.engine != "opensearch":
+        raise RuntimeError(f"{scenario.label} did not reach {scenario.node_count} nodes")
+    raise RuntimeError(f"{scenario.label} did not become ready before the benchmark")
 
 
-def clear_opensearch_cluster_blocks(base_url: str, timeout_seconds: float) -> None:
-    payload = {
-        "persistent": {
-            "cluster.blocks.create_index": False,
-            "cluster.routing.allocation.disk.threshold_enabled": False,
-        },
-        "transient": {
-            "cluster.blocks.create_index": False,
-            "cluster.routing.allocation.disk.threshold_enabled": False,
-        },
+def opensearch_cluster_blocks_ready(payload: Any) -> bool:
+    """Accept only the empty, documented cluster-block state for benchmark startup."""
+    if not isinstance(payload, dict):
+        return False
+    blocks = payload.get("blocks")
+    if not isinstance(blocks, dict):
+        return False
+    if not blocks:
+        return True
+    if set(blocks) - {"global", "indices"}:
+        return False
+    global_blocks = blocks.get("global", {})
+    index_blocks = blocks.get("indices", {})
+    if not isinstance(global_blocks, dict) or not isinstance(index_blocks, dict):
+        return False
+    return not global_blocks and not index_blocks
+
+
+def capture_opensearch_failure(base_url: str, output_dir: Path, timeout_seconds: float) -> None:
+    evidence: dict[str, Any] = {"diagnostic_only": True, "acceptance_established": False}
+    endpoints = {
+        "health": "/_cluster/health",
+        "settings": "/_cluster/settings?flat_settings=true&filter_path=persistent.cluster.blocks.*,transient.cluster.blocks.*,persistent.cluster.routing.allocation.disk.*,transient.cluster.routing.allocation.disk.*",
+        "blocks": "/_cluster/state/blocks",
+        "allocation_explain": "/_cluster/allocation/explain",
+        "filesystem": "/_nodes/stats/fs?filter_path=nodes.*.fs.total",
     }
-    http_json(
-        f"{base_url}/_cluster/settings",
-        timeout_seconds,
-        method="PUT",
-        payload=payload,
-    )
+    for name, endpoint in endpoints.items():
+        try:
+            evidence[name] = http_json(base_url + endpoint, min(timeout_seconds, 5.0))
+        except Exception as error:
+            evidence[name] = {"capture_error": str(error)}
+    try:
+        (output_dir / "failure-diagnostics.json").write_text(json.dumps(evidence, indent=2) + "\n")
+    except OSError as error:
+        print(f"Unable to preserve OpenSearch failure diagnostics: {error}", file=sys.stderr)
 
 
-def resolve_resource_pids(handle: ClusterHandle) -> list[int]:
+def require_opensearch_safety(base_url: str, output_dir: Path,
+                              timeout_seconds: float, stage: str) -> dict[str, Any]:
+    evidence = {
+        "settings": http_json(base_url + "/_cluster/settings?include_defaults=true", timeout_seconds),
+        "nodes": http_json(base_url + "/_nodes/settings", timeout_seconds),
+        "blocks": http_json(base_url + "/_cluster/state/blocks", timeout_seconds),
+    }
+    (output_dir / f"opensearch-safety-{stage}.json").write_text(json.dumps(evidence, indent=2) + "\n")
+
+    def lookup(settings: dict[str, Any], key: str) -> Any:
+        if key in settings:
+            return settings[key]
+        value: Any = settings
+        for part in key.split("."):
+            if not isinstance(value, dict) or part not in value:
+                return None
+            value = value[part]
+        return value
+
+    settings = evidence["settings"]
+    if not isinstance(settings, dict):
+        raise RuntimeError("OpenSearch safety check has malformed cluster settings")
+    for layer_name in ("transient", "persistent", "defaults"):
+        if not isinstance(settings.get(layer_name), dict):
+            raise RuntimeError(f"OpenSearch safety check has malformed {layer_name} settings")
+
+    node_response = evidence["nodes"]
+    if not isinstance(node_response, dict):
+        raise RuntimeError("OpenSearch safety check has malformed node settings response")
+    node_counts = node_response.get("_nodes")
+    nodes = node_response.get("nodes")
+    if not isinstance(node_counts, dict) or not isinstance(nodes, dict) or not nodes:
+        raise RuntimeError("OpenSearch safety check has no complete node settings")
+    total = node_counts.get("total")
+    successful = node_counts.get("successful")
+    failed = node_counts.get("failed")
+    if (any(not isinstance(count, int) or isinstance(count, bool)
+            for count in (total, successful, failed))
+            or total != len(nodes) or successful != total or failed != 0):
+        raise RuntimeError("OpenSearch safety check has incomplete node settings")
+    for node_id, node in nodes.items():
+        if not isinstance(node_id, str) or not isinstance(node, dict) or not isinstance(node.get("settings"), dict):
+            raise RuntimeError("OpenSearch safety check has malformed node settings")
+        layers = [settings.get("transient", {}), settings.get("persistent", {}),
+                  node["settings"], settings.get("defaults", {})]
+        enabled = next((value for layer in layers
+                        if (value := lookup(layer, "cluster.routing.allocation.disk.threshold_enabled"))
+                        is not None), None)
+        if enabled is not True and enabled != "true":
+            raise RuntimeError(f"OpenSearch disk protection is disabled or unverified on node {node_id}")
+        for key in ("cluster.blocks.create_index", "cluster.blocks.read_only",
+                    "cluster.blocks.read_only_allow_delete"):
+            value = next((value for layer in layers if (value := lookup(layer, key)) is not None), None)
+            if value is True or value == "true":
+                raise RuntimeError(f"OpenSearch safety block is active: {key}")
+    block_response = evidence["blocks"]
+    if not isinstance(block_response, dict):
+        raise RuntimeError("OpenSearch safety check has malformed cluster block state")
+    blocks = block_response.get("blocks")
+    if not isinstance(blocks, dict):
+        raise RuntimeError("OpenSearch safety check has no cluster block state")
+    global_blocks = blocks.get("global", {})
+    index_blocks = blocks.get("indices", {})
+    if not isinstance(global_blocks, dict) or not isinstance(index_blocks, dict):
+        raise RuntimeError("OpenSearch safety check has malformed cluster block state")
+    if global_blocks or index_blocks:
+        raise RuntimeError("OpenSearch cluster/index blocks prevent benchmark acceptance")
+    return evidence
+
+
+def resolve_resource_pids(handle: ClusterHandle, binary: Path | None) -> list[int]:
     if handle.container_names:
         return docker_container_pids(handle.container_names)
-    return steelsearch_resource_pids(handle.process.pid)
+    if binary is None:
+        raise ValueError("selected Steelsearch executable required for process discovery")
+    return steelsearch_resource_pids(handle.process.pid, binary)
 
 
 def docker_container_pids(container_names: list[str]) -> list[int]:
@@ -594,15 +734,16 @@ def docker_container_pids(container_names: list[str]) -> list[int]:
     return dedupe_ints(pids)
 
 
-def steelsearch_resource_pids(root_pid: int) -> list[int]:
+def steelsearch_resource_pids(root_pid: int, binary: Path) -> list[int]:
     candidates = [root_pid, *descendant_pids(root_pid)]
-    steelsearch_pids = [
-        pid for pid in candidates
-        if process_cmdline(pid) and Path(process_cmdline(pid)[0]).name == "steelsearch"
-    ]
-    if steelsearch_pids:
-        return dedupe_ints(steelsearch_pids)
-    return dedupe_ints([pid for pid in candidates if Path(f"/proc/{pid}/status").exists()])
+    selected = binary.resolve()
+    steelsearch_pids = []
+    for pid in candidates:
+        args = process_cmdline(pid)
+        if args and Path(args[0]).resolve() == selected:
+            steelsearch_pids.append(pid)
+    # An empty match must fail node validation, not count launchers as servers.
+    return dedupe_ints(steelsearch_pids)
 
 
 def descendant_pids(root_pid: int) -> list[int]:
@@ -693,6 +834,8 @@ def run_baseline(
         command.extend(["--operation-log-path", str(handle.operation_log_path)])
     if args.operation_resource_deltas:
         command.append("--operation-resource-deltas")
+    if getattr(args, "diagnostic_timeline", False):
+        command.append("--diagnostic-timeline")
     completed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, env=os.environ.copy(), check=False)
     if completed.returncode != 0:
         if output_path.exists():

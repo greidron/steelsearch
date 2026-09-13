@@ -2,6 +2,29 @@
 
 //! Tantivy-backed engine placeholder.
 
+#[cfg(feature = "diagnostic-lock-timing")]
+mod diagnostic_lock;
+mod refresh_directory;
+mod bucket_budget;
+mod field_cache;
+mod native_bm25;
+mod native_text_compatibility;
+mod native_phrase;
+mod native_phrase_positions;
+#[cfg(test)]
+mod multi_match_field_tests;
+#[cfg(test)]
+mod native_ranking_audit_tests;
+#[cfg(test)]
+mod native_array_position_tests;
+#[cfg(test)]
+mod refreshed_document_tests;
+
+use bucket_budget::BucketAllocationBudget;
+use field_cache::FieldCache;
+
+use os_core::index_routing::IndexRouting;
+use os_core::bm25::{inverse_document_frequency, normalized_term_frequency as opensearch_bm25_tf};
 use os_engine::{
     load_shard_manifest, persist_shard_manifest, ConditionalDeleteDocumentRequest,
     ConditionalIndexDocumentRequest, ConditionalUpdateDocumentRequest, CreateIndexRequest,
@@ -33,7 +56,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::ops::Bound;
 use std::path::Path;
 use std::sync::{
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicI64, AtomicU64, Ordering},
     Arc, Mutex, RwLock,
 };
 #[cfg(test)]
@@ -50,6 +73,7 @@ use tantivy::schema::{
 };
 use tantivy::time::format_description::well_known::Rfc3339;
 use tantivy::time::OffsetDateTime;
+use tantivy::tokenizer::TokenStream;
 use tantivy::{
     DateTime as TantivyDateTime, DateTimePrecision, DocAddress as TantivyDocAddress,
     Document as TantivyDocument, Index as TantivyIndexHandle, IndexReader, IndexWriter,
@@ -60,6 +84,7 @@ const SHARD_OPERATIONS_FILE_NAME: &str = "steelsearch-operations.jsonl";
 const MAX_KNN_CACHE_ENTRIES_PER_FIELD: usize = 16;
 const MAX_KNN_CACHE_BYTES_PER_FIELD: usize = 256 * 1024;
 const TANTIVY_WRITER_HEAP_BYTES: usize = 16 * 1024 * 1024;
+const TANTIVY_MERGE_MIN_LAYER_DOCS: u32 = 512;
 
 type FetchSubphaseResult = SearchFetchSubphaseResult;
 type IndexedField = TantivyIndexedField;
@@ -67,6 +92,7 @@ type RefreshedDocumentMap = Arc<BTreeMap<String, Arc<StoredDocument>>>;
 type SearchShardScope = BTreeMap<String, BTreeSet<u32>>;
 
 const INTERNAL_SEARCH_SHARD_SCOPE_FIELD: &str = "_steelsearch_shard_scope";
+const INTERNAL_SEARCH_ALIAS_FILTERS_FIELD: &str = "_steelsearch_alias_filters";
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct TantivyIndexSchema {
@@ -74,6 +100,22 @@ pub struct TantivyIndexSchema {
     pub number_of_replicas: u32,
     pub dynamic: bool,
     pub fields: Vec<TantivyFieldMapping>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routing: Option<IndexRouting>,
+}
+
+impl TantivyIndexSchema {
+    pub fn index_routing(&self) -> EngineResult<IndexRouting> {
+        if let Some(routing) = self.routing {
+            if routing.primary_shards() != self.number_of_shards {
+                return Err(invalid_request("routing layout primary shard count does not match schema"));
+            }
+            return Ok(routing);
+        }
+        // Schemas predating routing metadata retain their original shard placement and hash.
+        IndexRouting::new(self.number_of_shards, Some(self.number_of_shards), 1)
+            .map_err(|error| invalid_request(error.to_string()))
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -85,6 +127,96 @@ pub struct TantivyFieldMapping {
     pub fast: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub knn_vector: Option<KnnVectorMapping>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub multi_field_source: Option<MultiFieldSource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_options: Option<Box<TantivyTextOptions>>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct TantivyTextOptions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub analyzer: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub search_analyzer: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub search_quote_analyzer: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position_increment_gap: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub norms: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub index_options: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub similarity: Option<Value>,
+}
+
+impl TantivyTextOptions {
+    fn supports_native_exact_phrase(&self) -> bool {
+        [&self.analyzer, &self.search_analyzer, &self.search_quote_analyzer].iter()
+            .all(|value| value.as_ref().map_or(true, |value| value.as_str() == Some("standard")))
+            && self.position_increment_gap.as_ref().map_or(true, |gap| {
+                gap.as_u64().and_then(|value| u32::try_from(value).ok()).is_some()
+                    || gap.as_str().and_then(|value| value.parse::<u32>().ok()).is_some()
+            })
+            && self.norms.as_ref().map_or(true, |value| value.as_bool() == Some(true))
+            && self.index_options.as_ref().map_or(true, |value| value.as_str() == Some("positions"))
+            && self.similarity.as_ref().map_or(true, |value| value.as_str() == Some("BM25"))
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct MultiFieldSource {
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ignore_above: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub normalizer: Option<String>,
+}
+
+impl MultiFieldSource {
+    /// Finds an explicitly mapped keyword multi-field without leaf-name fallback.
+    pub fn for_keyword_field(mappings: &Value, field: &str) -> EngineResult<Option<Self>> {
+        let Some(mut properties) = mappings.get("properties") else { return Ok(None); };
+        let mut source_path: Option<String> = None;
+        let mut path = String::new();
+        let mut segments = field.split('.').peekable();
+        while let Some(segment) = segments.next() {
+            let Some(mapping) = properties.get(segment) else { return Ok(None); };
+            if !path.is_empty() { path.push('.'); }
+            path.push_str(segment);
+            if segments.peek().is_none() {
+                return match source_path {
+                    Some(source_path) if mapping.get("type").and_then(Value::as_str) == Some("keyword") =>
+                        read_multi_field_source(&source_path, mapping).map(Some),
+                    _ => Ok(None),
+                };
+            }
+            if let Some(children) = mapping.get("properties") {
+                properties = children;
+            } else if let Some(children) = mapping.get("fields") {
+                source_path.get_or_insert_with(|| path.clone());
+                properties = children;
+            } else {
+                return Ok(None);
+            }
+        }
+        Ok(None)
+    }
+
+    /// Resolves keyword indexing values without adding synthetic fields to `_source`.
+    /// Unsupported normalization and invalid values remain errors, not missing values.
+    pub fn keyword_values(&self, source: &Value) -> EngineResult<Vec<Value>> {
+        if self.normalizer.is_some() {
+            return Err(invalid_request("multi-field normalizer execution is not implemented"));
+        }
+        let mut values = Vec::new();
+        for value in source_values_for_tantivy_field_path(source, &self.path) {
+            visit_multi_field_keyword_values(value, self.ignore_above,
+                &mut |text| values.push(Value::String(text.to_string())))?;
+        }
+        Ok(values)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -105,11 +237,19 @@ pub enum TantivyFieldType {
 pub fn map_opensearch_index_to_tantivy_schema(
     request: &CreateIndexRequest,
 ) -> EngineResult<TantivyIndexSchema> {
+    let number_of_shards = read_u32_setting(&request.settings, "number_of_shards", 1)?;
+    let default_routing = IndexRouting::new(number_of_shards, None, 1)
+        .map_err(|error| invalid_request(error.to_string()))?;
+    let routing_shards = read_u32_setting(&request.settings, "number_of_routing_shards", default_routing.routing_shards())?;
+    let partition_size = read_u32_setting(&request.settings, "routing_partition_size", 1)?;
+    let routing = IndexRouting::new(number_of_shards, Some(routing_shards), partition_size)
+        .map_err(|error| invalid_request(error.to_string()))?;
     Ok(TantivyIndexSchema {
-        number_of_shards: read_u32_setting(&request.settings, "number_of_shards", 1)?,
+        number_of_shards,
         number_of_replicas: read_u32_setting(&request.settings, "number_of_replicas", 1)?,
         dynamic: read_dynamic_mapping(&request.mappings)?,
         fields: read_field_mappings(&request.mappings)?,
+        routing: Some(routing),
     })
 }
 
@@ -127,6 +267,9 @@ struct EngineStore {
 #[derive(Debug)]
 struct StoredIndex {
     index_name: String,
+    refresh_lock: Arc<Mutex<()>>,
+    requested_refresh_seq_no: Arc<AtomicI64>,
+    persistence_lock: Arc<Mutex<PersistenceState>>,
     index_uuid: String,
     allocation_id: String,
     schema: TantivyIndexSchema,
@@ -145,11 +288,57 @@ struct StoredIndex {
     refresh_tantivy_commit_nanos: Arc<AtomicU64>,
     refresh_tantivy_reload_nanos: Arc<AtomicU64>,
     refresh_tantivy_doc_id_lookup_nanos: Arc<AtomicU64>,
-    bm25_stats_cache: Arc<Mutex<BTreeMap<String, CachedBm25FieldStats>>>,
+    bm25_stats_cache: Arc<Mutex<Bm25FieldCache>>,
     nested_child_index: NestedChildIndex,
     search_state: Option<TantivySearchState>,
     append_only_since_refresh: bool,
     incremental_refresh_in_progress: bool,
+}
+
+type Bm25FieldCache = BTreeMap<u32, BTreeMap<String, CachedBm25FieldStats>>;
+
+#[derive(Default, Debug)]
+struct PersistenceState {
+    checkpoints: BTreeMap<std::path::PathBuf, PersistenceCheckpoint>,
+}
+
+#[derive(Debug)]
+struct PersistenceCheckpoint {
+    shard_id: Option<u32>,
+    max_sequence_number: i64,
+    rewrite_generations: Vec<(u32, u64)>,
+}
+
+const MAX_PREPARED_SOURCE_BM25_SCORES: usize = 16_384;
+
+#[derive(Default)]
+struct Bm25Context {
+    fields: Bm25FieldCache,
+    query_tokens: BTreeMap<String, Arc<Vec<String>>>,
+    native_matches: Vec<PreparedSourceBm25Match>,
+    complete_source_phrases: Vec<Query>,
+    deferred_bool_must: Vec<BoolQuery>,
+}
+
+struct PreparedSourceBm25Match {
+    field: String,
+    query: Value,
+    scores: BTreeMap<u32, std::collections::HashMap<String, f32>>,
+}
+
+impl Bm25Context {
+    fn tokens(&mut self, query: &Value) -> Option<Arc<Vec<String>>> {
+        let text = match query.as_str() {
+            Some(text) => std::borrow::Cow::Borrowed(text),
+            None => std::borrow::Cow::Owned(json_value_to_query_text(query).ok()?),
+        };
+        if let Some(tokens) = self.query_tokens.get(text.as_ref()) {
+            return Some(Arc::clone(tokens));
+        }
+        let tokens = Arc::new(tokenize_phrase_text(&text));
+        self.query_tokens.insert(text.into_owned(), Arc::clone(&tokens));
+        Some(tokens)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -157,7 +346,9 @@ struct CachedBm25FieldStats {
     refreshed_seq_no: i64,
     doc_count: usize,
     avg_field_len: f32,
-    term_doc_counts: BTreeMap<String, usize>,
+    term_doc_counts: Arc<BTreeMap<String, usize>>,
+    native_tokens_compatible: bool,
+    native_phrase_values_compatible: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -167,15 +358,16 @@ struct StoredDocument {
     routing: Option<String>,
     source: Value,
     top_level_scalar_fields: BTreeMap<String, Value>,
-    top_level_string_fields: BTreeMap<String, String>,
-    top_level_f64_fields: BTreeMap<String, f64>,
-    top_level_date_millis_fields: BTreeMap<String, i64>,
+    top_level_string_fields: FieldCache<String>,
+    top_level_f64_fields: FieldCache<f64>,
+    top_level_date_millis_fields: FieldCache<i64>,
     vector_fields: BTreeMap<String, StoredVectorField>,
 }
 
 #[derive(Clone, Debug)]
 struct ShardedDocuments {
     shard_count: u32,
+    routing: IndexRouting,
     shards: BTreeMap<u32, StoredShard>,
 }
 
@@ -186,11 +378,13 @@ struct StoredShard {
     ids_by_seq_no: BTreeMap<i64, String>,
     refreshed_seq_no: i64,
     persisted_seq_no: i64,
+    persistence_rewrite_generation: u64,
     nested_child_index: NestedChildIndex,
     search_state: Option<TantivySearchState>,
     refreshed_documents_by_id: RefreshedDocumentMap,
     refreshed_vector_columns: BTreeMap<String, Arc<RefreshedVectorColumn>>,
     append_only_since_refresh: bool,
+    non_append_generation: u64,
     incremental_refresh_in_progress: bool,
 }
 
@@ -260,11 +454,13 @@ impl StoredShard {
             ids_by_seq_no: BTreeMap::new(),
             refreshed_seq_no: -1,
             persisted_seq_no: -1,
+            persistence_rewrite_generation: 0,
             nested_child_index: NestedChildIndex::default(),
             search_state: None,
             refreshed_documents_by_id: Arc::new(BTreeMap::new()),
             refreshed_vector_columns: BTreeMap::new(),
             append_only_since_refresh: true,
+            non_append_generation: 0,
             incremental_refresh_in_progress: false,
         }
     }
@@ -285,15 +481,16 @@ impl StoredShard {
 
     fn insert(&mut self, id: String, document: StoredDocument) -> Option<StoredDocument> {
         let seq_no = document.metadata.seq_no;
+        if seq_no <= self.max_sequence_number() {
+            self.require_persistence_rewrite();
+        }
         let previous = self.documents.insert(id.clone(), Arc::new(document));
         if let Some(previous) = previous.as_ref() {
             self.ids_by_seq_no.remove(&previous.metadata.seq_no);
         }
         self.ids_by_seq_no.insert(seq_no, id);
         if previous.is_some() {
-            self.search_state = None;
-            self.refreshed_vector_columns.clear();
-            self.append_only_since_refresh = false;
+            self.require_full_refresh();
         }
         previous.map(|document| document.as_ref().clone())
     }
@@ -301,18 +498,29 @@ impl StoredShard {
     fn remove(&mut self, id: &str) -> Option<StoredDocument> {
         let previous = self.documents.remove(id);
         if previous.is_some() {
+            self.require_persistence_rewrite();
             if let Some(previous) = previous.as_ref() {
                 self.ids_by_seq_no.remove(&previous.metadata.seq_no);
             }
-            self.search_state = None;
-            self.refreshed_vector_columns.clear();
-            self.append_only_since_refresh = false;
+            self.require_full_refresh();
         }
         previous.map(|document| document.as_ref().clone())
     }
 
     fn len(&self) -> usize {
         self.documents.len()
+    }
+
+    fn require_persistence_rewrite(&mut self) {
+        self.persistence_rewrite_generation = self.persistence_rewrite_generation.checked_add(1)
+            .expect("shard persistence generation exhausted");
+    }
+
+    fn require_full_refresh(&mut self) {
+        // Pending writes must not invalidate the already published search snapshot.
+        self.append_only_since_refresh = false;
+        self.non_append_generation = self.non_append_generation.checked_add(1)
+            .expect("shard mutation generation exhausted");
     }
 
     fn is_empty(&self) -> bool {
@@ -398,6 +606,7 @@ impl StoredShard {
             ids_by_seq_no: BTreeMap::new(),
             refreshed_seq_no: self.refreshed_seq_no,
             persisted_seq_no: self.persisted_seq_no,
+            persistence_rewrite_generation: self.persistence_rewrite_generation,
             nested_child_index: if include_nested_index {
                 self.nested_child_index.clone()
             } else {
@@ -407,26 +616,28 @@ impl StoredShard {
             refreshed_documents_by_id: Arc::clone(&self.refreshed_documents_by_id),
             refreshed_vector_columns: BTreeMap::new(),
             append_only_since_refresh: self.append_only_since_refresh,
+            non_append_generation: self.non_append_generation,
             incremental_refresh_in_progress: self.incremental_refresh_in_progress,
         }
     }
 }
 
 impl ShardedDocuments {
-    fn new(shard_count: u32) -> Self {
-        let shard_count = shard_count.max(1);
+    fn new(routing: IndexRouting) -> Self {
+        let shard_count = routing.primary_shards();
         let mut shards = BTreeMap::new();
         for shard_id in 0..shard_count {
             shards.insert(shard_id, StoredShard::new(shard_id));
         }
         Self {
             shard_count,
+            routing,
             shards,
         }
     }
 
-    fn from_flat(shard_count: u32, documents: BTreeMap<String, StoredDocument>) -> Self {
-        let mut sharded = Self::new(shard_count);
+    fn from_flat(routing: IndexRouting, documents: BTreeMap<String, StoredDocument>) -> Self {
+        let mut sharded = Self::new(routing);
         for (id, document) in documents {
             let routing = document.routing.clone();
             sharded.insert_with_routing(id, routing.as_deref(), document);
@@ -435,11 +646,11 @@ impl ShardedDocuments {
     }
 
     fn from_single_shard(
-        shard_count: u32,
+        routing: IndexRouting,
         shard_id: u32,
         documents: BTreeMap<String, StoredDocument>,
     ) -> Self {
-        let mut sharded = Self::new(shard_count);
+        let mut sharded = Self::new(routing);
         let shard = sharded
             .shards
             .entry(shard_id)
@@ -450,18 +661,10 @@ impl ShardedDocuments {
         sharded
     }
 
-    fn shard_id_for_document_id(&self, id: &str) -> u32 {
-        opensearch_routing_shard(id, self.shard_count as usize) as u32
-    }
-
-    fn shard_id_for_routing(&self, routing: &str) -> u32 {
-        opensearch_routing_shard(routing, self.shard_count as usize) as u32
-    }
-
     fn shard_id_for_write(&self, id: &str, routing: Option<&str>) -> u32 {
-        routing
-            .map(|routing| self.shard_id_for_routing(routing))
-            .unwrap_or_else(|| self.shard_id_for_document_id(id))
+        let routing_hash = opensearch_routing_hash(routing.unwrap_or(id)) as i32;
+        let id_hash = if self.routing.partition_size() == 1 { 0 } else { opensearch_routing_hash(id) as i32 };
+        self.routing.document_shard(routing_hash, id_hash)
     }
 
     fn values(&self) -> impl Iterator<Item = &StoredDocument> {
@@ -517,20 +720,16 @@ impl ShardedDocuments {
         self.shards.values().map(StoredShard::len).sum()
     }
 
-    fn invalidate_search_artifacts(&mut self) {
+    fn require_full_refresh(&mut self) {
         for shard in self.shards.values_mut() {
-            shard.search_state = None;
-            shard.refreshed_documents_by_id = Arc::new(BTreeMap::new());
-            shard.refreshed_vector_columns.clear();
-            shard.append_only_since_refresh = false;
-            shard.incremental_refresh_in_progress = false;
+            shard.require_full_refresh();
         }
     }
 }
 
 impl Default for ShardedDocuments {
     fn default() -> Self {
-        Self::new(1)
+        Self::new(IndexRouting::new(1, Some(1), 1).expect("valid single-shard layout"))
     }
 }
 
@@ -1376,10 +1575,13 @@ type VectorValue = f32;
 struct TantivySearchState {
     index: TantivyIndexHandle,
     reader: IndexReader,
+    searcher: tantivy::Searcher,
     writer: Arc<Mutex<IndexWriter>>,
     fields: BTreeMap<String, TantivyIndexedField>,
     doc_ids_by_segment: Arc<Vec<Arc<Vec<Option<String>>>>>,
     doc_id_segment_ids: Arc<Vec<SegmentId>>,
+    bm25_field_statistics: native_bm25::FieldStatisticsCache,
+    native_text_compatibility: native_text_compatibility::NativeTextCompatibility,
 }
 
 #[derive(Clone, Debug)]
@@ -1393,6 +1595,8 @@ struct TantivyIndexedField {
     field: Field,
     field_type: TantivyFieldType,
     fast: bool,
+    multi_field_source: Option<MultiFieldSource>,
+    text_position_gap: Option<u32>,
 }
 
 impl std::fmt::Debug for TantivySearchState {
@@ -1406,6 +1610,27 @@ impl std::fmt::Debug for TantivySearchState {
 }
 
 impl TantivyEngine {
+    /// Read the last published document on the routed shard without exposing pending mutations.
+    pub fn get_refreshed_document_with_routing(
+        &self,
+        request: GetDocumentRequest,
+        routing: Option<&str>,
+    ) -> EngineResult<Option<GetDocumentResponse>> {
+        let store = self.store.read().expect("tantivy engine store rwlock poisoned");
+        let index = store.indices.get(&request.index).ok_or_else(|| EngineError::IndexNotFound {
+            index: request.index.clone(),
+        })?;
+        let shard_id = index.documents.shard_id_for_write(&request.id, routing);
+        Ok(index.documents.shards.get(&shard_id)
+            .and_then(|shard| shard.refreshed_document_by_id(&request.id))
+            .map(|document| GetDocumentResponse {
+                index: request.index,
+                metadata: document.metadata.clone(),
+                source: document.source.clone(),
+                found: true,
+            }))
+    }
+
     pub fn index_document_with_routing(
         &self,
         request: IndexDocumentRequest,
@@ -1494,31 +1719,67 @@ impl TantivyEngine {
             result,
         })
     }
+
+    /// Preserve the recovered allocation watermark even when its last operations were deletes.
+    pub fn restore_next_sequence_number(&self, index_name: &str, next_seq_no: i64) -> EngineResult<()> {
+        if next_seq_no < 0 {
+            return Err(EngineError::InvalidRequest { reason: "negative recovered sequence number".to_string() });
+        }
+        let mut store = self.store.write().expect("tantivy engine store rwlock poisoned");
+        let index = store.indices.get_mut(index_name).ok_or_else(|| EngineError::IndexNotFound {
+            index: index_name.to_string(),
+        })?;
+        if next_seq_no > index.next_seq_no {
+            index.next_seq_no = next_seq_no;
+            index.append_only_since_refresh = false;
+            index.documents.require_full_refresh();
+        }
+        Ok(())
+    }
 }
 
-impl IndexEngine for TantivyEngine {
-    fn create_index(&self, request: CreateIndexRequest) -> EngineResult<CreateIndexResponse> {
-        let schema = map_opensearch_index_to_tantivy_schema(&request)?;
-        let schema_hash = schema_hash(&request.index, &schema)?;
+impl TantivyEngine {
+    pub fn create_index_from_schema(
+        &self,
+        index: String,
+        schema: TantivyIndexSchema,
+    ) -> EngineResult<CreateIndexResponse> {
+        self.create_index_from_schema_with_uuid(index, schema,
+            format!("steelsearch-{}", uuid::Uuid::new_v4().simple()))
+    }
+
+    pub fn create_index_from_schema_with_uuid(
+        &self,
+        index: String,
+        schema: TantivyIndexSchema,
+        index_uuid: String,
+    ) -> EngineResult<CreateIndexResponse> {
+        if index_uuid.is_empty() {
+            return Err(invalid_request("index uuid must not be empty"));
+        }
+        let routing = schema.index_routing()?;
+        let schema_hash = schema_hash(&index, &schema)?;
         let mut store = self
             .store
             .write()
             .expect("tantivy engine store rwlock poisoned");
-        if store.indices.contains_key(&request.index) {
+        if store.indices.contains_key(&index) {
             return Err(EngineError::IndexAlreadyExists {
-                index: request.index,
+                index,
             });
         }
-        let shard_count = schema.number_of_shards;
         store.indices.insert(
-            request.index.clone(),
+            index.clone(),
             StoredIndex {
-                index_name: request.index.clone(),
-                index_uuid: format!("steelsearch-{schema_hash:016x}"),
-                allocation_id: format!("alloc-{schema_hash:016x}-0"),
+                index_name: index.clone(),
+                refresh_lock: Arc::new(Mutex::new(())),
+                requested_refresh_seq_no: Arc::new(AtomicI64::new(-1)),
+                persistence_lock: Arc::new(Mutex::new(PersistenceState::default())),
+                allocation_id: format!("alloc-{index_uuid}-0"),
+                index_uuid,
                 schema,
                 schema_hash,
-                documents: ShardedDocuments::new(shard_count),
+                documents: ShardedDocuments::new(routing),
                 next_seq_no: 0,
                 refreshed_seq_no: -1,
                 primary_term: 1,
@@ -1540,12 +1801,22 @@ impl IndexEngine for TantivyEngine {
             },
         );
         Ok(CreateIndexResponse {
-            index: request.index,
+            index,
             acknowledged: true,
         })
     }
+}
+
+impl IndexEngine for TantivyEngine {
+    fn create_index(&self, request: CreateIndexRequest) -> EngineResult<CreateIndexResponse> {
+        let schema = map_opensearch_index_to_tantivy_schema(&request)?;
+        self.create_index_from_schema(request.index, schema)
+    }
 
     fn delete_index(&self, index: &str) -> EngineResult<()> {
+        let generation = self.index_persistence_lock(index)?;
+        let _guard = generation.lock().expect("index persistence lock poisoned");
+        self.ensure_index_generation(index, &generation)?;
         let mut store = self
             .store
             .write()
@@ -1806,31 +2077,57 @@ impl IndexEngine for TantivyEngine {
 
         let mut refreshed_any = false;
         for index_name in index_names {
-            let requested_target_refreshed_seq_no = {
-                let store = self
-                    .store
-                    .read()
-                    .expect("tantivy engine store rwlock poisoned");
+            let (refresh_lock, requested_refresh_seq_no, requested_target_refreshed_seq_no) = {
+                let store = self.store.read().expect("tantivy engine store rwlock poisoned");
                 let Some(index) = store.indices.get(&index_name) else {
                     continue;
                 };
-                index.next_seq_no - 1
+                let target = index.next_seq_no - 1;
+                index.requested_refresh_seq_no.fetch_max(target, Ordering::AcqRel);
+                (Arc::clone(&index.refresh_lock), Arc::clone(&index.requested_refresh_seq_no), target)
             };
+            // The shared Tantivy writers must have only one refresh owner per index.
+            #[cfg(not(feature = "diagnostic-lock-timing"))]
+            let _refresh_guard = refresh_lock.lock().expect("index refresh lock poisoned");
+            #[cfg(feature = "diagnostic-lock-timing")]
+            let _refresh_guard = diagnostic_lock::acquire(&diagnostic_lock::REFRESH_OWNER, || {
+                refresh_lock.lock().expect("index refresh lock poisoned")
+            });
+            // Batch admitted requests once; retries must not chase later append requests.
+            let batch_target_refreshed_seq_no = requested_refresh_seq_no.load(Ordering::Acquire)
+                .max(requested_target_refreshed_seq_no);
             'refresh_index: loop {
-                let Some((index_target_refreshed_seq_no, plans)) = ({
+                let Some((index_target_refreshed_seq_no, plans, non_append_generations)) = ({
+                    #[cfg(not(feature = "diagnostic-lock-timing"))]
                     let mut store = self
                         .store
                         .write()
                         .expect("tantivy engine store rwlock poisoned");
+                    #[cfg(feature = "diagnostic-lock-timing")]
+                    let mut store = diagnostic_lock::acquire(&diagnostic_lock::REFRESH_PLAN, || {
+                        self.store.write().expect("tantivy engine store rwlock poisoned")
+                    });
                     let Some(index) = store.indices.get_mut(&index_name) else {
                         return Err(EngineError::IndexNotFound { index: index_name });
                     };
-                    let target_refreshed_seq_no = requested_target_refreshed_seq_no;
-                    if index.refreshed_seq_no >= target_refreshed_seq_no {
+                    if !Arc::ptr_eq(&index.refresh_lock, &refresh_lock) {
+                        return Err(EngineError::IndexNotFound { index: index_name });
+                    }
+                    // Append-only refreshes retain the admitted batch's visibility boundary.
+                    let target_refreshed_seq_no = if index.append_only_since_refresh {
+                        batch_target_refreshed_seq_no
+                    } else {
+                        index.next_seq_no - 1
+                    };
+                    let non_append_generations = index.documents.shards.iter()
+                        .map(|(id, shard)| (*id, shard.non_append_generation))
+                        .collect::<BTreeMap<_, _>>();
+                    if index.refreshed_seq_no >= requested_target_refreshed_seq_no
+                        && index.append_only_since_refresh {
                         None
                     } else if index.documents.shard_count == 1 {
                         if index.incremental_refresh_in_progress {
-                            Some((target_refreshed_seq_no, vec![ShardRefreshPlan::Busy]))
+                            Some((target_refreshed_seq_no, vec![ShardRefreshPlan::Busy], non_append_generations))
                         } else if let Some(search_state) =
                             index.search_state.as_ref().filter(|_| {
                                 index.append_only_since_refresh && index.refreshed_seq_no >= 0
@@ -1860,6 +2157,7 @@ impl IndexEngine for TantivyEngine {
                                     nested_child_index: NestedChildIndex::default(),
                                     search_state: search_state.clone(),
                                 }],
+                                non_append_generations,
                             ))
                         } else {
                             let schema = index.schema.clone();
@@ -1868,22 +2166,25 @@ impl IndexEngine for TantivyEngine {
                                 shard.incremental_refresh_in_progress = true;
                                 plans.push(ShardRefreshPlan::Full {
                                     shard_id: shard.shard_id,
-                                    target_refreshed_seq_no: target_refreshed_seq_no
-                                        .min(shard.max_sequence_number()),
+                                    target_refreshed_seq_no,
                                     schema: schema.clone(),
                                     documents: shard.documents.clone(),
                                 });
                             }
-                            Some((target_refreshed_seq_no, plans))
+                            Some((target_refreshed_seq_no, plans, non_append_generations))
                         }
                     } else {
                         let schema = index.schema.clone();
                         let schema_hash = index.schema_hash;
                         let mut plans = Vec::new();
                         for shard in index.documents.shards.values_mut() {
-                            let shard_target_refreshed_seq_no =
-                                shard.max_sequence_number().min(target_refreshed_seq_no);
-                            if shard.refreshed_seq_no >= shard_target_refreshed_seq_no {
+                            let shard_target_refreshed_seq_no = if shard.append_only_since_refresh {
+                                shard.max_sequence_number().min(target_refreshed_seq_no)
+                            } else {
+                                target_refreshed_seq_no
+                            };
+                            if shard.refreshed_seq_no >= shard_target_refreshed_seq_no
+                                && shard.append_only_since_refresh {
                                 continue;
                             }
                             if shard.incremental_refresh_in_progress {
@@ -1918,7 +2219,7 @@ impl IndexEngine for TantivyEngine {
                                 });
                             }
                         }
-                        Some((target_refreshed_seq_no, plans))
+                        Some((target_refreshed_seq_no, plans, non_append_generations))
                     }
                 }) else {
                     break 'refresh_index;
@@ -1966,6 +2267,7 @@ impl IndexEngine for TantivyEngine {
                                                 .write()
                                                 .expect("tantivy engine store rwlock poisoned");
                                             if let Some(index) = store.indices.get_mut(&index_name)
+                                                .filter(|index| Arc::ptr_eq(&index.refresh_lock, &refresh_lock))
                                             {
                                                 index.incremental_refresh_in_progress = false;
                                             }
@@ -1993,6 +2295,9 @@ impl IndexEngine for TantivyEngine {
                                 let Some(index) = store.indices.get_mut(&index_name) else {
                                     return Err(EngineError::IndexNotFound { index: index_name });
                                 };
+                                if !Arc::ptr_eq(&index.refresh_lock, &refresh_lock) {
+                                    return Err(EngineError::IndexNotFound { index: index_name });
+                                }
                                 if index.refreshed_seq_no == base_refreshed_seq_no
                                     && index.refreshed_seq_no < target_refreshed_seq_no
                                     && index.schema_hash == schema_hash
@@ -2186,7 +2491,9 @@ impl IndexEngine for TantivyEngine {
                                 .store
                                 .write()
                                 .expect("tantivy engine store rwlock poisoned");
-                            if let Some(index) = store.indices.get_mut(&index_name) {
+                            if let Some(index) = store.indices.get_mut(&index_name)
+                                .filter(|index| Arc::ptr_eq(&index.refresh_lock, &refresh_lock))
+                            {
                                 for shard in index.documents.shards.values_mut() {
                                     shard.incremental_refresh_in_progress = false;
                                 }
@@ -2195,13 +2502,21 @@ impl IndexEngine for TantivyEngine {
                         }
                     }
                 };
+                #[cfg(not(feature = "diagnostic-lock-timing"))]
                 let mut store = self
                     .store
                     .write()
                     .expect("tantivy engine store rwlock poisoned");
+                #[cfg(feature = "diagnostic-lock-timing")]
+                let mut store = diagnostic_lock::acquire(&diagnostic_lock::REFRESH_PUBLISH, || {
+                    self.store.write().expect("tantivy engine store rwlock poisoned")
+                });
                 let Some(index) = store.indices.get_mut(&index_name) else {
                     return Err(EngineError::IndexNotFound { index: index_name });
                 };
+                if !Arc::ptr_eq(&index.refresh_lock, &refresh_lock) {
+                    return Err(EngineError::IndexNotFound { index: index_name });
+                }
                 let is_single_shard_index = index.documents.shard_count == 1;
                 let mut single_shard_search_state = None;
                 for artifact in artifacts {
@@ -2211,8 +2526,11 @@ impl IndexEngine for TantivyEngine {
                         };
                         if !shard.incremental_refresh_in_progress
                             || artifact.schema_hash != index.schema_hash
-                            || shard.refreshed_seq_no >= artifact.target_refreshed_seq_no
+                            || shard.refreshed_seq_no > artifact.target_refreshed_seq_no
+                            || (shard.refreshed_seq_no == artifact.target_refreshed_seq_no
+                                && artifact.refreshed_documents_by_id.is_none())
                         {
+                            shard.incremental_refresh_in_progress = false;
                             continue;
                         }
                         if is_single_shard_index {
@@ -2251,7 +2569,8 @@ impl IndexEngine for TantivyEngine {
                                 artifact.target_refreshed_seq_no,
                             );
                         }
-                        shard.append_only_since_refresh = true;
+                        shard.append_only_since_refresh = non_append_generations
+                            .get(&artifact.shard_id) == Some(&shard.non_append_generation);
                         shard.incremental_refresh_in_progress = false;
                         true
                     };
@@ -2260,11 +2579,17 @@ impl IndexEngine for TantivyEngine {
                     }
                 }
                 if index.documents.shards.values().all(|shard| {
-                    let shard_target_refreshed_seq_no = shard
-                        .max_sequence_number()
-                        .min(index_target_refreshed_seq_no);
+                    let shard_target_refreshed_seq_no = if shard.append_only_since_refresh {
+                        shard.max_sequence_number().min(index_target_refreshed_seq_no)
+                    } else {
+                        index_target_refreshed_seq_no
+                    };
                     shard.refreshed_seq_no >= shard_target_refreshed_seq_no
                 }) {
+                    if index.refreshed_seq_no == index_target_refreshed_seq_no {
+                        // Same-watermark replay changes content; old cloned snapshots keep their cache.
+                        index.bm25_stats_cache = Arc::new(Mutex::new(BTreeMap::new()));
+                    }
                     index.refreshed_seq_no = index_target_refreshed_seq_no;
                     index.runtime_cache.clear_knn_results();
                     if index.documents.shard_count == 1 {
@@ -2287,7 +2612,8 @@ impl IndexEngine for TantivyEngine {
                         index.nested_child_index = NestedChildIndex::default();
                         index.search_state = None;
                     }
-                    index.append_only_since_refresh = true;
+                    index.append_only_since_refresh = index.documents.shards.values()
+                        .all(|shard| shard.append_only_since_refresh);
                     index.incremental_refresh_in_progress = false;
                     refreshed_any = true;
                     break 'refresh_index;
@@ -2847,8 +3173,9 @@ impl IndexEngine for TantivyEngine {
             .map(Vec::as_slice);
         let aggregation_map = parse_search_aggregation_map(&request.aggregations)?;
         let shard_scope = parse_internal_search_shard_scope(&request.query);
+        let alias_filters = parse_internal_search_alias_filters(&request.query)?;
         let request_result_cache_supported =
-            vector_request_result_cache_supported(&query) && shard_scope.is_empty();
+            vector_request_result_cache_supported(&query) && shard_scope.is_empty() && alias_filters.is_empty();
         let skip_upfront_runtime_cache_touch = request_result_cache_supported
             && request.indices.len() == 1
             && request.sort.is_empty()
@@ -3072,6 +3399,7 @@ impl IndexEngine for TantivyEngine {
                     store.search_response_index_aware_with_request_filters(
                         &index_names,
                         &shard_scope,
+                        &alias_filters,
                         &query,
                         &request.sort,
                         &aggregation_map,
@@ -3162,6 +3490,7 @@ impl IndexEngine for TantivyEngine {
         } else {
             if let Some(index_name) = single_index_name.as_deref() {
                 if shard_scope.is_empty()
+                    && alias_filters.is_empty()
                     && !query_uses_vector_scores(&query)
                     && min_score.is_none()
                     && post_filter.is_none()
@@ -3198,7 +3527,8 @@ impl IndexEngine for TantivyEngine {
                 request.explain,
                 request_result_cache_supported,
             );
-            let mut response = if min_score.is_some()
+            let mut response = if !alias_filters.is_empty()
+                || min_score.is_some()
                 || post_filter.is_some()
                 || !index_boosts.is_empty()
                 || request_scoped_fields.is_some()
@@ -3211,6 +3541,7 @@ impl IndexEngine for TantivyEngine {
                 store.search_response_index_aware_with_request_filters(
                     &index_names,
                     &shard_scope,
+                    &alias_filters,
                     &query,
                     &request.sort,
                     &aggregation_map,
@@ -3389,10 +3720,15 @@ impl TantivyEngine {
         source_projection_fields: Option<&[String]>,
     ) -> EngineResult<SearchResponse> {
         let (index_snapshot, search_execution_telemetry) = {
+            #[cfg(not(feature = "diagnostic-lock-timing"))]
             let store = self
                 .store
                 .read()
                 .expect("tantivy engine store rwlock poisoned");
+            #[cfg(feature = "diagnostic-lock-timing")]
+            let store = diagnostic_lock::acquire(&diagnostic_lock::SEARCH_SNAPSHOT, || {
+                self.store.read().expect("tantivy engine store rwlock poisoned")
+            });
             let Some(index) = store.indices.get(index_name) else {
                 return Err(EngineError::IndexNotFound {
                     index: index_name.to_string(),
@@ -3436,6 +3772,31 @@ impl TantivyEngine {
             .indices
             .get(index)
             .map(|stored| stored.schema.clone())
+    }
+
+    fn index_persistence_lock(&self, index: &str) -> EngineResult<Arc<Mutex<PersistenceState>>> {
+        self.store.read().expect("tantivy engine store rwlock poisoned")
+            .indices.get(index).map(|stored| Arc::clone(&stored.persistence_lock))
+            .ok_or_else(|| EngineError::IndexNotFound { index: index.to_string() })
+    }
+
+    fn ensure_index_generation(&self, index: &str, generation: &Arc<Mutex<PersistenceState>>) -> EngineResult<()> {
+        let store = self.store.read().expect("tantivy engine store rwlock poisoned");
+        let stored = store.indices.get(index)
+            .ok_or_else(|| EngineError::IndexNotFound { index: index.to_string() })?;
+        if !Arc::ptr_eq(&stored.persistence_lock, generation) {
+            return Err(invalid_request(format!("index [{index}] changed during persistence or deletion")));
+        }
+        Ok(())
+    }
+
+    pub fn index_routing(&self, index: &str) -> Option<IndexRouting> {
+        self.store
+            .read()
+            .expect("tantivy engine store rwlock poisoned")
+            .indices
+            .get(index)
+            .map(|stored| stored.documents.routing)
     }
 
     pub fn shard_manifest(&self, index: &str) -> EngineResult<ShardManifest> {
@@ -3548,6 +3909,9 @@ impl TantivyEngine {
         index: &str,
         shard_path: impl AsRef<Path>,
     ) -> EngineResult<ShardManifest> {
+        let generation = self.index_persistence_lock(index)?;
+        let _guard = generation.lock().expect("index persistence lock poisoned");
+        self.ensure_index_generation(index, &generation)?;
         let manifest = self.shard_manifest(index)?;
         persist_shard_manifest(shard_path, &manifest)?;
         Ok(manifest)
@@ -3558,35 +3922,7 @@ impl TantivyEngine {
         index: &str,
         shard_path: impl AsRef<Path>,
     ) -> EngineResult<ShardManifest> {
-        let shard_path = shard_path.as_ref();
-        let manifest = self.shard_manifest(index)?;
-        let previous_manifest = load_shard_manifest(shard_path).ok();
-        let appended = if let Some(previous_manifest) = previous_manifest.as_ref() {
-            let previous_max_seq_no = previous_manifest.max_sequence_number;
-            let missing_operation_count = manifest
-                .max_sequence_number
-                .saturating_sub(previous_max_seq_no)
-                .max(0) as usize;
-            let operations = self.persisted_operations_after(index, previous_max_seq_no)?;
-            if operations_path(shard_path).exists()
-                && (missing_operation_count == 0 || operations.len() == missing_operation_count)
-            {
-                if !operations.is_empty() {
-                    append_operations(shard_path, &operations)?;
-                }
-                true
-            } else {
-                false
-            }
-        } else {
-            false
-        };
-        if !appended {
-            let operations = self.persisted_operations(index)?;
-            persist_operations(shard_path, &operations)?;
-        }
-        persist_shard_manifest(shard_path, &manifest)?;
-        Ok(manifest)
+        self.persist_document_state(index, None, shard_path.as_ref())
     }
 
     pub fn persist_index_shard_state(
@@ -3595,8 +3931,38 @@ impl TantivyEngine {
         shard_id: u32,
         shard_path: impl AsRef<Path>,
     ) -> EngineResult<ShardManifest> {
-        let shard_path = shard_path.as_ref();
-        let (manifest, persisted_seq_no) = {
+        self.persist_document_state(index, Some(shard_id), shard_path.as_ref())
+    }
+
+    fn persist_document_state(
+        &self,
+        index: &str,
+        shard_id: Option<u32>,
+        shard_path: &Path,
+    ) -> EngineResult<ShardManifest> {
+        self.persist_document_state_after_snapshot(index, shard_id, shard_path, || {})
+    }
+
+    fn persist_document_state_after_snapshot(
+        &self,
+        index: &str,
+        shard_id: Option<u32>,
+        shard_path: &Path,
+        after_snapshot: impl FnOnce(),
+    ) -> EngineResult<ShardManifest> {
+        let generation = self.index_persistence_lock(index)?;
+        let mut persistence = generation.lock().expect("index persistence lock poisoned");
+        self.ensure_index_generation(index, &generation)?;
+        fs::create_dir_all(shard_path).map_err(|error| EngineError::BackendFailure {
+            reason: format!("failed to create shard path [{}]: {error}", shard_path.display()),
+        })?;
+        let path = fs::canonicalize(shard_path).map_err(|error| EngineError::BackendFailure {
+            reason: format!("failed to resolve shard path [{}]: {error}", shard_path.display()),
+        })?;
+        let previous_manifest = load_shard_manifest(&path).ok();
+        // Invalidating before I/O makes retries rewrite any partially appended log.
+        let checkpoint = persistence.checkpoints.remove(&path);
+        let (manifest, rewrite_generations, operations, append) = {
             let store = self
                 .store
                 .read()
@@ -3606,45 +3972,65 @@ impl TantivyEngine {
                     index: index.to_string(),
                 });
             };
-            let Some(shard) = stored.documents.shards.get(&shard_id) else {
-                return Err(invalid_request(format!(
-                    "shard [{shard_id}] does not exist in index [{index}]"
-                )));
-            };
-            let manifest = stored
-                .shard_manifests()
-                .into_iter()
-                .find(|manifest| manifest.shard_id == shard_id)
-                .expect("shard manifest should exist for stored shard");
-            (manifest, shard.persisted_seq_no)
-        };
-        let previous_max_seq_no = if persisted_seq_no >= 0 {
-            Some(persisted_seq_no)
-        } else {
-            load_shard_manifest(shard_path)
-                .ok()
-                .map(|manifest| manifest.max_sequence_number)
-        };
-        let appended = if let Some(previous_max_seq_no) = previous_max_seq_no {
-            let operations =
-                self.persisted_operations_for_shard_after(index, shard_id, previous_max_seq_no)?;
-            if operations_path(shard_path).exists() {
-                if !operations.is_empty() {
-                    append_operations(shard_path, &operations)?;
-                }
-                true
+            let shards = if let Some(shard_id) = shard_id {
+                vec![stored.documents.shards.get(&shard_id).ok_or_else(|| {
+                    invalid_request(format!("shard [{shard_id}] does not exist in index [{index}]"))
+                })?]
             } else {
-                false
+                stored.documents.shards.values().collect::<Vec<_>>()
+            };
+            let manifest = if let Some(shard_id) = shard_id {
+                stored.shard_manifests().into_iter()
+                    .find(|manifest| manifest.shard_id == shard_id)
+                    .expect("shard manifest should exist for stored shard")
+            } else {
+                stored.shard_manifest()
+            };
+            let rewrite_generations = shards.iter().map(|shard| {
+                (shard.shard_id, shard.persistence_rewrite_generation)
+            }).collect::<Vec<_>>();
+            let append = checkpoint.as_ref().zip(previous_manifest.as_ref())
+                .is_some_and(|(checkpoint, previous)| {
+                    checkpoint.shard_id == shard_id
+                        && checkpoint.rewrite_generations == rewrite_generations
+                        && checkpoint.max_sequence_number == previous.max_sequence_number
+                        && previous.index_uuid == manifest.index_uuid
+                        && previous.shard_id == manifest.shard_id
+                        && previous.max_sequence_number <= manifest.max_sequence_number
+                        && operations_path(&path).exists()
+                });
+            let mut operations = if append {
+                let after = checkpoint.as_ref().unwrap().max_sequence_number;
+                shards.iter().flat_map(|shard| shard.persisted_operations_after(after))
+                    .collect::<Vec<_>>()
+            } else {
+                shards.iter().flat_map(|shard| shard.values())
+                    .map(|document| PersistedDocumentOperation {
+                        metadata: document.metadata.clone(),
+                        coordination: document.coordination.clone(),
+                        routing: document.routing.clone(),
+                        vector_fields: document.vector_fields.clone(),
+                        source: document.source.clone(),
+                    }).collect::<Vec<_>>()
+            };
+            operations.sort_by_key(|operation| operation.metadata.seq_no);
+            (manifest, rewrite_generations, operations, append)
+        };
+        after_snapshot();
+        if append {
+            if !operations.is_empty() {
+                append_operations(&path, &operations)?;
             }
         } else {
-            false
-        };
-        if !appended {
-            let operations = self.persisted_operations_for_shard(index, shard_id)?;
-            persist_operations(shard_path, &operations)?;
+            persist_operations(&path, &operations)?;
         }
-        persist_shard_manifest(shard_path, &manifest)?;
-        {
+        persist_shard_manifest(&path, &manifest)?;
+        persistence.checkpoints.insert(path, PersistenceCheckpoint {
+            shard_id,
+            max_sequence_number: manifest.max_sequence_number,
+            rewrite_generations,
+        });
+        if let Some(shard_id) = shard_id {
             let mut store = self
                 .store
                 .write()
@@ -3667,6 +4053,7 @@ impl TantivyEngine {
         shard_path: impl AsRef<Path>,
     ) -> EngineResult<ShardManifest> {
         let index = index.into();
+        let routing_layout = schema.index_routing()?;
         let shard_path = shard_path.as_ref();
         let manifest = load_shard_manifest(shard_path)?;
         let recovered_documents = replay_operations(shard_path, &manifest)?;
@@ -3675,7 +4062,8 @@ impl TantivyEngine {
         }
         validate_recovered_vector_state(&manifest, &schema, &recovered_documents)?;
         let expected_schema_hash = schema_hash(&index, &schema)?;
-        if manifest.schema_hash != expected_schema_hash {
+        if manifest.schema_hash != expected_schema_hash
+            && !matches_legacy_default_text_schema_hash(&index, &schema, manifest.schema_hash)? {
             return Err(EngineError::InvalidRequest {
                 reason: format!(
                     "shard manifest schema hash [{}] does not match recovered schema hash [{}]",
@@ -3707,12 +4095,15 @@ impl TantivyEngine {
                     .routing
                     .as_deref()
                     .unwrap_or(document.metadata.id.as_str());
-                opensearch_routing_shard(routing, shard_count as usize) as u32 == manifest.shard_id
+                routing_layout.document_shard(
+                    opensearch_routing_hash(routing) as i32,
+                    opensearch_routing_hash(&document.metadata.id) as i32,
+                ) == manifest.shard_id
             });
         let mut documents = if recovered_documents_are_single_shard {
-            ShardedDocuments::from_single_shard(shard_count, manifest.shard_id, recovered_documents)
+            ShardedDocuments::from_single_shard(routing_layout, manifest.shard_id, recovered_documents)
         } else {
-            ShardedDocuments::from_flat(shard_count, recovered_documents)
+            ShardedDocuments::from_flat(routing_layout, recovered_documents)
         };
         for shard in documents.shards.values_mut() {
             shard.refreshed_seq_no = manifest
@@ -3725,10 +4116,13 @@ impl TantivyEngine {
             index.clone(),
             StoredIndex {
                 index_name: index.clone(),
+                refresh_lock: Arc::new(Mutex::new(())),
+                requested_refresh_seq_no: Arc::new(AtomicI64::new(-1)),
+                persistence_lock: Arc::new(Mutex::new(PersistenceState::default())),
                 index_uuid: manifest.index_uuid.clone(),
                 allocation_id: manifest.allocation_id.clone(),
                 schema,
-                schema_hash: manifest.schema_hash,
+                schema_hash: expected_schema_hash,
                 documents,
                 next_seq_no,
                 refreshed_seq_no: manifest.refreshed_sequence_number,
@@ -3899,15 +4293,23 @@ impl TantivySearchState {
         I: IntoIterator<Item = &'a StoredDocument>,
     {
         let (tantivy_schema, fields) = build_tantivy_schema(schema);
-        let index = TantivyIndexHandle::create_in_ram(tantivy_schema);
+        let index = TantivyIndexHandle::create(
+            refresh_directory::RefreshDirectory::default(), tantivy_schema, Default::default(),
+        ).map_err(tantivy_error)?;
         let mut writer = index
             .writer(TANTIVY_WRITER_HEAP_BYTES)
             .map_err(tantivy_error)?;
+        // Keep small refresh batches from repeatedly rewriting much larger segments.
+        let mut merge_policy = tantivy::merge_policy::LogMergePolicy::default();
+        merge_policy.set_min_layer_size(TANTIVY_MERGE_MIN_LAYER_DOCS);
+        writer.set_merge_policy(Box::new(merge_policy));
+        let mut native_text_compatibility = native_text_compatibility::NativeTextCompatibility::new(&fields);
         for document in documents {
             if document.metadata.seq_no > refreshed_seq_no {
                 continue;
             }
-            let tantivy_document = build_tantivy_document(&fields, document);
+            let tantivy_document = build_tantivy_document(&index, &fields, document)?;
+            native_text_compatibility.observe(&document.source);
             writer
                 .add_document(tantivy_document)
                 .map_err(tantivy_error)?;
@@ -3919,14 +4321,18 @@ impl TantivySearchState {
             .try_into()
             .map_err(tantivy_error)?;
         reader.reload().map_err(tantivy_error)?;
-        let doc_ids_by_segment = build_tantivy_doc_id_lookup(&reader, &fields, None)?;
+        let searcher = reader.searcher();
+        let doc_ids_by_segment = build_tantivy_doc_id_lookup(&searcher, &fields, None)?;
         Ok(Self {
             index,
             reader,
+            searcher,
             writer: Arc::new(Mutex::new(writer)),
             fields,
             doc_ids_by_segment: doc_ids_by_segment.doc_ids_by_segment,
             doc_id_segment_ids: doc_ids_by_segment.segment_ids,
+            bm25_field_statistics: native_bm25::FieldStatisticsCache::default(),
+            native_text_compatibility,
         })
     }
 
@@ -3935,25 +4341,48 @@ impl TantivySearchState {
         documents: &[Arc<StoredDocument>],
     ) -> EngineResult<TantivyRefreshTimings> {
         let mut timings = TantivyRefreshTimings::default();
+        let preparation_started = std::time::Instant::now();
+        let mut native_text_compatibility = self.native_text_compatibility.clone();
+        for document in documents {
+            native_text_compatibility.observe(&document.source);
+        }
+        // Finish fallible field conversion before mutating the shared writer.
+        let prepared = if self.fields.values().any(|field|
+            field.multi_field_source.is_some() || field.text_position_gap.is_some()) {
+            Some(documents.iter().map(|document| build_tantivy_document(&self.index, &self.fields, document))
+                .collect::<EngineResult<Vec<_>>>()?)
+        } else {
+            None
+        };
+        let preparation_nanos = elapsed_nanos_u64(preparation_started.elapsed());
+        #[cfg(not(feature = "diagnostic-lock-timing"))]
         let mut writer = self
             .writer
             .lock()
             .expect("tantivy index writer mutex poisoned");
+        #[cfg(feature = "diagnostic-lock-timing")]
+        let mut writer = diagnostic_lock::acquire(&diagnostic_lock::REFRESH_WRITER, || {
+            self.writer.lock().expect("tantivy index writer mutex poisoned")
+        });
         let document_add_started = std::time::Instant::now();
-        for document in documents {
-            let document = document.as_ref();
-            let tantivy_document = build_tantivy_document(&self.fields, document);
-            writer
-                .add_document(tantivy_document)
-                .map_err(tantivy_error)?;
+        if let Some(prepared) = prepared {
+            for document in prepared {
+                writer.add_document(document).map_err(tantivy_error)?;
+            }
+        } else {
+            for document in documents {
+                let tantivy_document = build_tantivy_document(&self.index, &self.fields, document)?;
+                writer.add_document(tantivy_document).map_err(tantivy_error)?;
+            }
         }
-        timings.document_add_nanos = elapsed_nanos_u64(document_add_started.elapsed());
+        timings.document_add_nanos = preparation_nanos.saturating_add(elapsed_nanos_u64(document_add_started.elapsed()));
         let commit_started = std::time::Instant::now();
         writer.commit().map_err(tantivy_error)?;
         timings.commit_nanos = elapsed_nanos_u64(commit_started.elapsed());
         drop(writer);
         let reload_started = std::time::Instant::now();
         self.reader.reload().map_err(tantivy_error)?;
+        let searcher = self.reader.searcher();
         timings.reload_nanos = elapsed_nanos_u64(reload_started.elapsed());
         let previous_doc_ids = TantivyDocIdLookup {
             segment_ids: Arc::clone(&self.doc_id_segment_ids),
@@ -3961,10 +4390,16 @@ impl TantivySearchState {
         };
         let doc_id_lookup_started = std::time::Instant::now();
         let doc_id_lookup =
-            build_tantivy_doc_id_lookup(&self.reader, &self.fields, Some(&previous_doc_ids))?;
+            build_tantivy_doc_id_lookup(&searcher, &self.fields, Some(&previous_doc_ids))?;
         timings.doc_id_lookup_nanos = elapsed_nanos_u64(doc_id_lookup_started.elapsed());
+        // Publish a searcher and document-address lookup from the same reader generation.
+        self.searcher = searcher;
+        self.native_text_compatibility = native_text_compatibility;
+        self.bm25_field_statistics = native_bm25::FieldStatisticsCache::default();
         self.doc_ids_by_segment = doc_id_lookup.doc_ids_by_segment;
         self.doc_id_segment_ids = doc_id_lookup.segment_ids;
+        #[cfg(feature = "diagnostic-lock-timing")]
+        diagnostic_lock::record_append_batch(documents.len(), timings.commit_nanos);
         Ok(timings)
     }
 
@@ -3981,7 +4416,7 @@ impl TantivySearchState {
 }
 
 fn build_tantivy_doc_id_lookup(
-    reader: &IndexReader,
+    searcher: &tantivy::Searcher,
     fields: &BTreeMap<String, TantivyIndexedField>,
     previous: Option<&TantivyDocIdLookup>,
 ) -> EngineResult<TantivyDocIdLookup> {
@@ -3991,7 +4426,6 @@ fn build_tantivy_doc_id_lookup(
             doc_ids_by_segment: Arc::new(Vec::new()),
         });
     };
-    let searcher = reader.searcher();
     let previous_by_segment_id = previous
         .map(|previous| {
             previous
@@ -4016,7 +4450,7 @@ fn build_tantivy_doc_id_lookup(
             continue;
         }
         let segment_doc_ids = build_tantivy_segment_doc_id_lookup(
-            &searcher,
+            searcher,
             id_field.field,
             segment_ord as u32,
             segment_reader.max_doc(),
@@ -4084,16 +4518,20 @@ fn build_tantivy_schema(
                 geo_lat_tantivy_field_name(&field_mapping.name),
                 TantivyIndexedField {
                     field: lat_field,
+                    text_position_gap: None,
                     field_type: TantivyFieldType::F64,
                     fast: true,
+                    multi_field_source: field_mapping.multi_field_source.clone(),
                 },
             );
             fields.insert(
                 geo_lon_tantivy_field_name(&field_mapping.name),
                 TantivyIndexedField {
                     field: lon_field,
+                    text_position_gap: None,
                     field_type: TantivyFieldType::F64,
                     fast: true,
+                    multi_field_source: field_mapping.multi_field_source.clone(),
                 },
             );
             continue;
@@ -4119,7 +4557,10 @@ fn build_tantivy_schema(
                 builder.add_i64_field(&field_mapping.name, options)
             }
             TantivyFieldType::F64 => {
-                let mut options = NumericOptions::default().set_indexed().set_stored();
+                let mut options = NumericOptions::default().set_indexed();
+                if field_mapping.stored {
+                    options = options.set_stored();
+                }
                 if field_mapping.fast {
                     options = options.set_fast();
                 }
@@ -4152,6 +4593,14 @@ fn build_tantivy_schema(
             TantivyIndexedField {
                 field,
                 field_type: field_mapping.field_type.clone(),
+                text_position_gap: if field_mapping.field_type == TantivyFieldType::Text {
+                    match field_mapping.text_options.as_ref().and_then(|options| options.position_increment_gap.as_ref()) {
+                        None => Some(100),
+                        Some(value) => value.as_u64().and_then(|gap| u32::try_from(gap).ok())
+                            .or_else(|| value.as_str().and_then(|gap| gap.parse().ok())),
+                    }
+                } else { None },
+                multi_field_source: field_mapping.multi_field_source.clone(),
                 fast: field_mapping.fast
                     && matches!(
                         field_mapping.field_type,
@@ -4170,6 +4619,8 @@ fn build_tantivy_schema(
             field: id_field,
             field_type: TantivyFieldType::Keyword,
             fast: false,
+            multi_field_source: None,
+            text_position_gap: None,
         },
     );
     (builder.build(), fields)
@@ -4200,9 +4651,10 @@ fn decode_geo_tantivy_field_name(field: &str) -> Option<(&str, GeoTantivyFieldCo
 }
 
 fn build_tantivy_document(
+    index: &TantivyIndexHandle,
     fields: &BTreeMap<String, TantivyIndexedField>,
     document: &StoredDocument,
-) -> TantivyDocument {
+) -> EngineResult<TantivyDocument> {
     let mut tantivy_document = TantivyDocument::default();
     if let Some(id_field) = fields.get("_id") {
         tantivy_document.add_text(id_field.field, &document.metadata.id);
@@ -4211,7 +4663,14 @@ fn build_tantivy_document(
         if field_name == "_id" {
             continue;
         }
+        if let Some(source) = &indexed_field.multi_field_source {
+            if source.normalizer.is_some() {
+                return Err(invalid_request("multi-field normalizer execution is not implemented"));
+            }
+        }
         if let Some((source_field, component)) = decode_geo_tantivy_field_name(field_name) {
+            let source_field = indexed_field.multi_field_source.as_ref()
+                .map(|source| source.path.as_str()).unwrap_or(source_field);
             for value in source_values_for_tantivy_field_path(&document.source, source_field) {
                 for (lat, lon) in geo_point_values_from_value(value) {
                     match component {
@@ -4226,7 +4685,24 @@ fn build_tantivy_document(
             }
             continue;
         }
-        for value in source_values_for_tantivy_field_path(&document.source, field_name) {
+        let source_path = indexed_field.multi_field_source.as_ref()
+            .map(|source| source.path.as_str()).unwrap_or(field_name);
+        let values = source_values_for_tantivy_field_path(&document.source, source_path);
+        if let Some(gap) = indexed_field.text_position_gap {
+            if let [Value::String(text)] = values.as_slice() {
+                tantivy_document.add_text(indexed_field.field, text);
+            } else {
+                add_positioned_text_values(&mut tantivy_document, index, indexed_field.field, &values, gap)?;
+            }
+            continue;
+        }
+        for value in values {
+            if let Some(source) = &indexed_field.multi_field_source {
+                if indexed_field.field_type == TantivyFieldType::Keyword {
+                    add_multi_field_keyword_value(&mut tantivy_document, indexed_field.field, value, source.ignore_above)?;
+                    continue;
+                }
+            }
             add_json_value_to_tantivy_document(
                 &mut tantivy_document,
                 indexed_field.field,
@@ -4235,7 +4711,87 @@ fn build_tantivy_document(
             );
         }
     }
-    tantivy_document
+    Ok(tantivy_document)
+}
+
+fn add_positioned_text_values(
+    document: &mut TantivyDocument, index: &TantivyIndexHandle,
+    field: Field, values: &[&Value], gap: u32,
+) -> EngineResult<()> {
+    use tantivy::tokenizer::PreTokenizedString;
+    let mut texts = Vec::new();
+    fn collect_text_values(value: &Value, texts: &mut Vec<String>) {
+        match value {
+            Value::Array(values) => values.iter().for_each(|value| collect_text_values(value, texts)),
+            Value::String(text) => texts.push(text.clone()),
+            Value::Number(number) => texts.push(number.to_string()),
+            Value::Bool(value) => texts.push(value.to_string()),
+            Value::Null | Value::Object(_) => {}
+        }
+    }
+    for value in values {
+        collect_text_values(value, &mut texts);
+    }
+    if texts.is_empty() { return Ok(()); }
+    if texts.len() == 1 {
+        document.add_text(field, &texts[0]);
+        return Ok(());
+    }
+    let mut analyzer = index.tokenizer_for_field(field).map_err(tantivy_error)?;
+    let mut combined = PreTokenizedString { text: String::new(), tokens: Vec::new() };
+    let mut position = 0usize;
+    for (ordinal, text) in texts.iter().enumerate() {
+        if ordinal > 0 { combined.text.push(' '); }
+        let offset = combined.text.len();
+        combined.text.push_str(text);
+        let mut end_position = position;
+        let mut stream = analyzer.token_stream(text);
+        while stream.advance() {
+            let mut token = stream.token().clone();
+            token.position = position.checked_add(token.position)
+                .filter(|position| *position <= 2_147_483_519)
+                .ok_or_else(|| invalid_request("text token position exceeds the supported limit"))?;
+            end_position = end_position.max(token.position.checked_add(token.position_length)
+                .ok_or_else(|| invalid_request("text token position overflow"))?);
+            token.offset_from += offset;
+            token.offset_to += offset;
+            combined.tokens.push(token);
+        }
+        // Empty strings consume a gap; nulls and empty arrays emitted no text value above.
+        position = end_position.checked_add(gap as usize)
+            .ok_or_else(|| invalid_request("text position gap overflow"))?;
+    }
+    document.add_pre_tokenized_text(field, combined);
+    Ok(())
+}
+
+fn add_multi_field_keyword_value(
+    document: &mut TantivyDocument, field: Field, value: &Value, ignore_above: Option<u32>,
+) -> EngineResult<()> {
+    visit_multi_field_keyword_values(value, ignore_above, &mut |text| document.add_text(field, text))
+}
+
+fn visit_multi_field_keyword_values(
+    value: &Value, ignore_above: Option<u32>, emit: &mut impl FnMut(&str),
+) -> EngineResult<()> {
+    let text: Cow<'_, str> = match value {
+        Value::Null => return Ok(()),
+        Value::Array(values) => {
+            for value in values {
+                visit_multi_field_keyword_values(value, ignore_above, emit)?;
+            }
+            return Ok(());
+        }
+        Value::String(text) => Cow::Borrowed(text),
+        Value::Number(number) => Cow::Owned(number.to_string()),
+        Value::Bool(value) => Cow::Owned(value.to_string()),
+        Value::Object(_) => return Err(invalid_request("keyword multi-field cannot index an object value")),
+    };
+    if ignore_above.is_some_and(|limit| text.encode_utf16().take(limit as usize + 1).count() > limit as usize) {
+        return Ok(());
+    }
+    emit(text.as_ref());
+    Ok(())
 }
 
 fn source_values_for_tantivy_field_path<'a>(source: &'a Value, field: &str) -> Vec<&'a Value> {
@@ -4445,7 +5001,7 @@ fn build_tantivy_query(
             prefix_length,
             transpositions,
             zero_terms_all,
-            ..
+            boost,
         } => build_tantivy_match_query(
             search_state,
             field,
@@ -4456,14 +5012,14 @@ fn build_tantivy_query(
             *prefix_length,
             *transpositions,
             *zero_terms_all,
-        ),
+        ).map(|query| query.map(|query| maybe_boost_tantivy_query(query, *boost))),
         Query::MatchPhrase {
             field,
             query,
             slop,
             analyzer,
             zero_terms_all,
-            ..
+            boost,
         } => build_tantivy_match_phrase_query(
             search_state,
             field,
@@ -4471,7 +5027,7 @@ fn build_tantivy_query(
             *slop,
             analyzer.as_deref(),
             *zero_terms_all,
-        ),
+        ).map(|query| query.map(|query| maybe_boost_tantivy_query(query, *boost))),
         Query::MatchPhrasePrefix {
             field,
             query,
@@ -4629,14 +5185,17 @@ fn build_tantivy_query(
                 || (minimum_should_match == 1
                     && (!clauses.must.is_empty() || !clauses.filter.is_empty()))
             {
+                let required = if clauses.must.is_empty() && clauses.filter.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![Query::Bool { clauses: BoolQuery {
+                        must: clauses.must.clone(), filter: clauses.filter.clone(),
+                        should: Vec::new(), must_not: Vec::new(), minimum_should_match: None,
+                    }}]
+                };
                 return build_tantivy_minimum_should_match_query(
                     search_state,
-                    &clauses
-                        .must
-                        .iter()
-                        .chain(clauses.filter.iter())
-                        .cloned()
-                        .collect::<Vec<_>>(),
+                    &required,
                     &clauses.should,
                     &clauses.must_not,
                     minimum_should_match as usize,
@@ -4666,7 +5225,7 @@ fn build_tantivy_query(
                 let Some(inner) = build_tantivy_query(search_state, query)? else {
                     return Ok(None);
                 };
-                tantivy_clauses.push((Occur::Must, inner));
+                tantivy_clauses.push((Occur::Must, Box::new(ConstScoreQuery::new(inner, 0.0))));
             }
             for query in &clauses.must_not {
                 let Some(inner) = build_tantivy_query(search_state, query)? else {
@@ -5035,42 +5594,37 @@ fn build_tantivy_minimum_should_match_query(
         return Ok(Some(Box::new(EmptyQuery)));
     }
 
-    let combinations = query_index_combinations(should_queries.len(), minimum_should_match);
-    let mut disjunctions = Vec::with_capacity(combinations.len());
-    for combination in combinations {
-        let mut combination_clauses = Vec::new();
-        if !append_built_tantivy_clauses(
-            search_state,
-            &mut combination_clauses,
-            Occur::Must,
-            required_queries,
-        )? {
+    if minimum_should_match == 1 {
+        let mut clauses = Vec::new();
+        let mut optional = Vec::new();
+        if !append_built_tantivy_clauses(search_state, &mut clauses, Occur::Must, required_queries)?
+            || !append_built_tantivy_clauses(search_state, &mut optional, Occur::Should, should_queries)?
+            || !append_built_tantivy_clauses(search_state, &mut clauses, Occur::MustNot, excluded_queries)?
+        {
             return Ok(None);
         }
-        for (index, query) in should_queries.iter().enumerate() {
-            let Some(inner) = build_tantivy_query(search_state, query)? else {
-                return Ok(None);
-            };
-            if combination.contains(&index) {
-                combination_clauses.push((Occur::Must, inner));
-            } else {
-                combination_clauses.push((Occur::Should, inner));
-            }
-        }
-        if !append_built_tantivy_clauses(
-            search_state,
-            &mut combination_clauses,
-            Occur::MustNot,
-            excluded_queries,
-        )? {
-            return Ok(None);
-        }
-        disjunctions.push((
-            Occur::Should,
-            Box::new(BooleanQuery::new(combination_clauses)) as Box<dyn TantivyQueryTrait>,
-        ));
+        // Require the optional group once; overlapping combinations would duplicate scores.
+        clauses.push((Occur::Must, Box::new(BooleanQuery::new(optional))));
+        return Ok(Some(Box::new(BooleanQuery::new(clauses))));
     }
-    Ok(Some(Box::new(BooleanQuery::new(disjunctions))))
+
+    let mut clauses = Vec::new();
+    if !append_built_tantivy_clauses(search_state, &mut clauses, Occur::Must, required_queries)?
+        || !append_built_tantivy_clauses(search_state, &mut clauses, Occur::MustNot, excluded_queries)?
+    {
+        return Ok(None);
+    }
+    let mut optional = Vec::with_capacity(should_queries.len());
+    for query in should_queries {
+        let Some(inner) = build_tantivy_query(search_state, query)? else {
+            return Ok(None);
+        };
+        optional.push(inner);
+    }
+    clauses.push((Occur::Must, Box::new(tantivy::query::MinimumShouldMatchQuery::new(
+        optional, minimum_should_match,
+    ))));
+    Ok(Some(Box::new(BooleanQuery::new(clauses))))
 }
 
 fn append_built_tantivy_clauses(
@@ -5188,7 +5742,9 @@ fn build_tantivy_match_query(
             let parser = QueryParser::for_index(&search_state.index, vec![indexed_field.field]);
             parser
                 .parse_query(&query_text)
-                .map(|query| Some(query))
+                .map(|query| Some(search_state.bm25_field_statistics.wrap(
+                    query, indexed_field.field, &search_state.searcher,
+                )))
                 .map_err(tantivy_error)
         }
         _ => build_tantivy_term_query(search_state, field, &Value::String(query_text)),
@@ -5243,15 +5799,24 @@ fn build_tantivy_match_phrase_query(
                 if terms.is_empty() {
                     return Ok(None);
                 }
-                return Ok(Some(Box::new(PhraseQuery::new_with_offset_and_slop(
-                    terms, slop,
-                ))));
+                let query: Box<dyn TantivyQueryTrait> = if terms.len() == 1 {
+                    Box::new(tantivy::query::TermQuery::new(
+                        terms[0].1.clone(), IndexRecordOption::WithFreqs,
+                    ))
+                } else {
+                    Box::new(native_phrase::NativePhraseQuery::new(terms, slop).map_err(tantivy_error)?)
+                };
+                return Ok(Some(search_state.bm25_field_statistics.wrap(
+                    query, indexed_field.field, &search_state.searcher,
+                )));
             }
             let parser = QueryParser::for_index(&search_state.index, vec![indexed_field.field]);
             let escaped = query_text.replace('\\', "\\\\").replace('"', "\\\"");
             parser
                 .parse_query(&format!("\"{escaped}\""))
-                .map(|query| Some(query))
+                .map(|query| Some(search_state.bm25_field_statistics.wrap(
+                    query, indexed_field.field, &search_state.searcher,
+                )))
                 .map_err(tantivy_error)
         }
         _ => Ok(None),
@@ -5471,21 +6036,17 @@ fn build_tantivy_match_phrase_prefix_query(
 }
 
 fn multi_match_base_field_name(field: &str) -> &str {
+    multi_match_field_and_boost(field).0
+}
+
+fn multi_match_field_and_boost(field: &str) -> (&str, f32) {
     field
         .rsplit_once('^')
         .and_then(|(field_name, boost)| {
-            if !field_name.is_empty()
-                && boost
-                    .parse::<f32>()
-                    .ok()
-                    .is_some_and(|boost| boost.is_finite())
-            {
-                Some(field_name)
-            } else {
-                None
-            }
+            let boost = boost.parse::<f32>().ok()?;
+            (!field_name.is_empty() && boost.is_finite()).then_some((field_name, boost))
         })
-        .unwrap_or(field)
+        .unwrap_or((field, 1.0))
 }
 
 fn build_tantivy_tokenized_field_set_query(
@@ -5742,7 +6303,9 @@ fn build_tantivy_multi_match_query(
         let Some(inner_query) = inner_query else {
             return Ok(None);
         };
-        clauses.push(inner_query);
+        clauses.push(maybe_boost_tantivy_query(
+            inner_query, Some(f64::from(multi_match_field_and_boost(field).1)),
+        ));
     }
     let tie_breaker =
         tie_breaker.unwrap_or_else(|| default_multi_match_tie_breaker(query_type)) as f32;
@@ -6177,6 +6740,12 @@ fn build_tantivy_range_query(
         TantivyFieldType::I64 => {
             let lower = bound_i64(bounds.gte.as_ref(), bounds.gt.as_ref(), false)?;
             let upper = bound_i64(bounds.lte.as_ref(), bounds.lt.as_ref(), true)?;
+            // Tantivy's fast-field range conversion overflows at excluded i64 endpoints.
+            if matches!(lower, Bound::Excluded(i64::MAX))
+                || matches!(upper, Bound::Excluded(i64::MIN))
+            {
+                return Ok(Some(Box::new(EmptyQuery)));
+            }
             Ok(Some(Box::new(RangeQuery::new_i64_bounds(
                 field.to_string(),
                 lower,
@@ -6201,7 +6770,7 @@ fn build_tantivy_range_query(
                 upper,
             ))))
         }
-        TantivyFieldType::Keyword => {
+        TantivyFieldType::Keyword | TantivyFieldType::Text => {
             let lower = bound_str(bounds.gte.as_ref(), bounds.gt.as_ref())?;
             let upper = bound_str(bounds.lte.as_ref(), bounds.lt.as_ref())?;
             Ok(Some(Box::new(RangeQuery::new_str_bounds(
@@ -6866,7 +7435,7 @@ impl EngineStore {
                 &mut merged,
                 aggregation_map,
             );
-            finalize_merged_pipeline_aggregations(&mut merged, aggregation_map);
+            finalize_checked_aggregation_response(&mut merged, aggregation_map)?;
             let mut aggregations = Value::Object(merged);
             strip_internal_merge_surfaces(&mut aggregations);
             return Ok(Some((total_hits, aggregations)));
@@ -6933,21 +7502,21 @@ impl EngineStore {
                 &all_hits,
                 aggregation_map,
                 PluginTopHitsInputOrder::NeedsExplicitSort,
-            )
+            )?
         } else {
             collect_aggregations_from_documents(
                 "_multi_index",
                 &documents,
                 &all_documents,
                 aggregation_map,
-            )
+            )?
         };
         if let Some(object) = aggregations.as_object_mut() {
             normalize_multi_index_size_zero_plugin_histogram_pipeline_surfaces(
                 object,
                 aggregation_map,
             );
-            finalize_merged_pipeline_aggregations(object, aggregation_map);
+            finalize_checked_aggregation_response(object, aggregation_map)?;
         }
         strip_internal_merge_surfaces(&mut aggregations);
         Ok(Some((total_hits, aggregations)))
@@ -7027,6 +7596,7 @@ impl EngineStore {
         &self,
         index_names: &[String],
         shard_scope: &SearchShardScope,
+        alias_filters: &BTreeMap<String, Query>,
         query: &Query,
         sort_specs: &[SortSpec],
         aggregation_map: &AggregationMap,
@@ -7044,8 +7614,13 @@ impl EngineStore {
         fetch_subphases: Vec<FetchSubphaseResult>,
         source_projection_fields: Option<&[String]>,
     ) -> EngineResult<SearchResponse> {
+        let mapped_sort = MappedEngineSort::new(self, index_names, sort_specs)?;
         let mut hits = Vec::new();
         let mut aggregation_hits = Vec::new();
+        let mut scope_hits = Vec::new();
+        let mut background_hits = Vec::new();
+        let needs_scope_hits = aggregation_map_requires_all_hits(aggregation_map);
+        let needs_background_hits = aggregation_map_requires_significance_background(aggregation_map);
         let parsed_slice = slice.and_then(parse_native_search_slice);
         for index_name in index_names {
             let Some(index) = self.indices.get(index_name) else {
@@ -7053,7 +7628,28 @@ impl EngineStore {
                     index: index_name.clone(),
                 });
             };
+            let native_scores = if request_scoped_fields.is_none()
+                && index.native_compound_score_is_authoritative(query, shard_scope.get(index_name)) {
+                index.search_hits_for_query_native_scoped(
+                    index_name, shard_scope.get(index_name), query, &[],
+                )?.map(|hits| hits.into_iter().map(|hit| (hit.metadata.id, hit.score))
+                    .collect::<BTreeMap<_, _>>())
+            } else {
+                None
+            };
             for document in index.refreshed_documents_for_shards(shard_scope.get(index_name)) {
+                if needs_background_hits {
+                    background_hits.push(SearchHit {
+                        index: index_name.clone(), metadata: document.metadata.clone(),
+                        score: 1.0, source: document.source.clone(),
+                        fields: None, highlight: None, explanation: None, sort: None, inner_hits: None,
+                    });
+                }
+                if let Some(filter) = alias_filters.get(index_name) {
+                    if index.score_document_query(filter, document)?.is_none() {
+                        continue;
+                    }
+                }
                 if let Some(slice) = parsed_slice.as_ref() {
                     if !native_document_matches_search_slice(
                         &document.metadata.id,
@@ -7066,13 +7662,23 @@ impl EngineStore {
                 let scoped_document = request_scoped_fields
                     .map(|fields| document_with_request_scoped_fields(document, fields));
                 let effective_document = scoped_document.as_ref().unwrap_or(document);
-                let Some(score) = index.score_document_query(query, effective_document)? else {
-                    continue;
-                };
-                let score = index
-                    .opensearch_text_bm25_score(query, effective_document)
-                    .unwrap_or(score)
-                    * search_index_boost_for(index_name, index_boosts);
+                // Global input retains alias and slice scope, but not the user's query.
+                if needs_scope_hits {
+                    scope_hits.push(SearchHit {
+                        index: index_name.clone(), metadata: document.metadata.clone(),
+                        score: 1.0, source: effective_document.source.clone(),
+                        fields: None, highlight: None, explanation: None, sort: None, inner_hits: None,
+                    });
+                }
+                let score = if let Some(scores) = &native_scores {
+                    let Some(score) = scores.get(&document.metadata.id) else { continue };
+                    *score
+                } else {
+                    let Some(score) = index.score_document_query(query, effective_document)? else {
+                        continue;
+                    };
+                    index.opensearch_text_bm25_score(query, effective_document).unwrap_or(score)
+                } * search_index_boost_for(index_name, index_boosts);
                 if min_score.is_some_and(|min_score| score < min_score) {
                     continue;
                 }
@@ -7100,7 +7706,9 @@ impl EngineStore {
             }
         }
         let total_hits = hits.len() as u64;
-        if sort_uses_default_relevance_order(sort_specs) {
+        if let Some(sort) = &mapped_sort {
+            hits = sort.order_hits(hits)?;
+        } else if sort_uses_default_relevance_order(sort_specs) {
             hits.sort_by(compare_relevance_hits);
         } else {
             sort_hits(&mut hits, sort_specs);
@@ -7123,29 +7731,37 @@ impl EngineStore {
             .filter(|limit| total_hits > *limit)
             .unwrap_or(total_hits);
         if let Some(search_after) = search_after {
-            hits = apply_search_after_to_native_hits(hits, sort_specs, search_after);
+            hits = if let Some(sort) = &mapped_sort {
+                sort.after(hits, search_after)?
+            } else {
+                apply_search_after_to_native_hits(hits, sort_specs, search_after)
+            };
         }
-        let all_hits = aggregation_hits.clone();
-        let mut page_hits = finalize_hits_for_requested_page(hits, sort_specs, from, size);
+        let mut page_hits = if let Some(sort) = &mapped_sort {
+            sort.order_hits(hits)?.into_iter().skip(from).take(size).collect()
+        } else {
+            finalize_hits_for_requested_page(hits, sort_specs, from, size)
+        };
         if request_scoped_fields.is_some() {
             self.restore_original_sources_for_hits(&mut page_hits);
         }
         let mut aggregations = if aggregation_map.is_empty() {
             serde_json::json!({})
         } else {
-            collect_aggregations_with_plugin_top_hits_input_order(
-                &all_hits,
-                &all_hits,
+            collect_aggregations_with_plugin_top_hits_input_order_and_background(
+                &aggregation_hits,
+                &scope_hits,
                 aggregation_map,
                 PluginTopHitsInputOrder::NeedsExplicitSort,
-            )
+                needs_background_hits.then_some(background_hits.as_slice()),
+            )?
         };
         if let Some(object) = aggregations.as_object_mut() {
             normalize_multi_index_size_zero_plugin_histogram_pipeline_surfaces(
                 object,
                 aggregation_map,
             );
-            finalize_merged_pipeline_aggregations(object, aggregation_map);
+            finalize_checked_aggregation_response(object, aggregation_map)?;
         }
         strip_internal_merge_surfaces(&mut aggregations);
         let mut response = Self::standard_requested_page_search_response(
@@ -7245,6 +7861,7 @@ impl EngineStore {
         fetch_subphases: Vec<FetchSubphaseResult>,
         source_projection_fields: Option<&[String]>,
     ) -> EngineResult<(SearchResponse, Option<ReusableQueryContext<'_>>)> {
+        let mapped_sort = MappedEngineSort::new(self, index_names, sort_specs)?;
         if size == 0 {
             if let Some((total_hits, aggregations)) = self
                 .collect_size_zero_native_aggregation_response_index_aware(
@@ -7498,7 +8115,9 @@ impl EngineStore {
                 });
             }
             let total_hits = hits.len() as u64;
-            if sort_uses_default_relevance_order(sort_specs) {
+            if let Some(sort) = &mapped_sort {
+                hits = sort.order_hits(hits)?;
+            } else if sort_uses_default_relevance_order(sort_specs) {
                 hits.sort_by(compare_relevance_hits);
             } else {
                 sort_hits(&mut hits, sort_specs);
@@ -7589,7 +8208,9 @@ impl EngineStore {
             }
         }
         let total_hits = hits.len() as u64;
-        if sort_uses_default_relevance_order(sort_specs) {
+        if let Some(sort) = &mapped_sort {
+            hits = sort.order_hits(hits)?;
+        } else if sort_uses_default_relevance_order(sort_specs) {
             hits.sort_by(compare_relevance_hits);
         } else {
             sort_hits(&mut hits, sort_specs);
@@ -7618,14 +8239,14 @@ impl EngineStore {
                 &all_hits,
                 aggregation_map,
                 PluginTopHitsInputOrder::NeedsExplicitSort,
-            )
+            )?
         };
         if let Some(object) = aggregations.as_object_mut() {
             normalize_multi_index_size_zero_plugin_histogram_pipeline_surfaces(
                 object,
                 aggregation_map,
             );
-            finalize_merged_pipeline_aggregations(object, aggregation_map);
+            finalize_checked_aggregation_response(object, aggregation_map)?;
         }
         strip_internal_merge_surfaces(&mut aggregations);
         let uses_vector_native = matches!(query, Query::Knn(_)) || query_uses_vector_scores(query);
@@ -7703,16 +8324,20 @@ impl StoredIndex {
             number_of_replicas: 0,
             dynamic: true,
             fields: Vec::new(),
+            routing: None,
         };
         let schema_hash = schema_hash(index_name, &schema).unwrap_or(0);
-        let shard_count = schema.number_of_shards;
+        let routing = schema.index_routing().expect("valid test routing");
         Self {
             index_name: index_name.to_string(),
+            refresh_lock: Arc::new(Mutex::new(())),
+            requested_refresh_seq_no: Arc::new(AtomicI64::new(-1)),
+            persistence_lock: Arc::new(Mutex::new(PersistenceState::default())),
             index_uuid: format!("steelsearch-{schema_hash:016x}"),
             allocation_id: format!("alloc-{schema_hash:016x}-0"),
             schema,
             schema_hash,
-            documents: ShardedDocuments::new(shard_count),
+            documents: ShardedDocuments::new(routing),
             next_seq_no: 0,
             refreshed_seq_no: -1,
             primary_term: 1,
@@ -8090,12 +8715,16 @@ impl StoredIndex {
     fn search_snapshot_with_nested_index(&self, include_nested_index: bool) -> Self {
         Self {
             index_name: self.index_name.clone(),
+            refresh_lock: Arc::clone(&self.refresh_lock),
+            requested_refresh_seq_no: Arc::clone(&self.requested_refresh_seq_no),
+            persistence_lock: Arc::clone(&self.persistence_lock),
             index_uuid: self.index_uuid.clone(),
             allocation_id: self.allocation_id.clone(),
             schema: self.schema.clone(),
             schema_hash: self.schema_hash,
             documents: ShardedDocuments {
                 shard_count: self.documents.shard_count,
+                routing: self.documents.routing,
                 shards: self
                     .documents
                     .shards
@@ -8148,9 +8777,8 @@ impl StoredIndex {
     fn ensure_dynamic_mappings(&mut self, source: &Value) -> EngineResult<()> {
         if ensure_dynamic_mappings_for_schema(&mut self.schema, source)? {
             self.schema_hash = schema_hash(&self.index_name, &self.schema)?;
-            self.search_state = None;
             self.append_only_since_refresh = false;
-            self.documents.invalidate_search_artifacts();
+            self.documents.require_full_refresh();
         }
         Ok(())
     }
@@ -8318,11 +8946,7 @@ impl StoredIndex {
                 "replayed document metadata id must not be empty",
             ));
         }
-        if metadata.version == 0 {
-            return Err(invalid_request(
-                "replayed document metadata version must be greater than zero",
-            ));
-        }
+        // External versioning permits zero; replay preserves the assigned version.
         if metadata.seq_no < 0 {
             return Err(invalid_request(
                 "replayed document metadata seq_no must be non-negative",
@@ -8350,11 +8974,19 @@ impl StoredIndex {
             .documents
             .get_with_routing(&metadata.id, routing)
             .is_some();
+        self.ensure_dynamic_mappings(&source)?;
         let result = if replaced_existing {
             WriteResult::Updated
         } else {
             WriteResult::Created
         };
+        let out_of_order = metadata.seq_no < self.next_seq_no;
+        if out_of_order {
+            // The index-wide checkpoint may include a higher sequence from another shard.
+            let shard_id = self.documents.shard_id_for_write(&metadata.id, routing);
+            self.documents.shards.get_mut(&shard_id).expect("routing shard exists")
+                .require_persistence_rewrite();
+        }
         self.next_seq_no = self.next_seq_no.max(metadata.seq_no.saturating_add(1));
         self.primary_term = self.primary_term.max(metadata.primary_term);
         self.documents.insert_with_routing(
@@ -8372,10 +9004,10 @@ impl StoredIndex {
                 source,
             },
         );
-        if replaced_existing {
-            self.search_state = None;
+        // A late replay can fall behind a published or in-flight refresh watermark.
+        if replaced_existing || out_of_order {
             self.append_only_since_refresh = false;
-            self.documents.invalidate_search_artifacts();
+            self.documents.require_full_refresh();
         }
         Ok(result)
     }
@@ -8443,9 +9075,8 @@ impl StoredIndex {
                 source,
             },
         );
-        self.search_state = None;
         self.append_only_since_refresh = false;
-        self.documents.invalidate_search_artifacts();
+        self.documents.require_full_refresh();
         Some((metadata, coordination, result))
     }
 
@@ -8498,9 +9129,8 @@ impl StoredIndex {
             retention_leases: previous.coordination.retention_leases,
             noop: false,
         };
-        self.search_state = None;
         self.append_only_since_refresh = false;
-        self.documents.invalidate_search_artifacts();
+        self.documents.require_full_refresh();
         Some((metadata, coordination))
     }
 
@@ -9428,23 +10058,34 @@ impl StoredIndex {
                 native_index_proved_query = false;
                 break;
             };
-            candidate_ids.extend(shard_candidate_ids);
+            if candidate_ids.is_empty() {
+                candidate_ids = shard_candidate_ids;
+            } else {
+                candidate_ids.extend(shard_candidate_ids);
+            }
         }
         if native_index_proved_query {
             return candidate_ids;
         }
-        if let Some(candidate_ids) = Self::native_nested_candidate_ids_from_index(
+        if let Some(mut candidate_ids) = Self::native_nested_candidate_ids_from_index(
             &self.nested_child_index,
             self.refreshed_seq_no,
             path,
             query,
         ) {
+            if selected_shards.is_some() {
+                candidate_ids.retain(|id| {
+                    self.refreshed_document_by_id_for_shards(id, selected_shards)
+                        .is_some()
+                });
+            }
             return candidate_ids;
         }
         self.documents
             .shards
-            .values()
-            .flat_map(|shard| shard.refreshed_documents_by_id.values())
+            .iter()
+            .filter(|(id, _)| selected_shards.map_or(true, |selected| selected.contains(id)))
+            .flat_map(|(_, shard)| shard.refreshed_documents_by_id.values())
             .filter_map(|document| {
                 nested_query_matches_source(&document.metadata.id, &document.source, path, query)
                     .then_some(document.metadata.id.as_str())
@@ -9649,24 +10290,32 @@ impl StoredIndex {
                 if self.knn_mapping(field).is_ok() {
                     return Ok(std::collections::BTreeSet::new());
                 }
+                if self.schema.fields.iter().any(|mapping| {
+                    mapping.name == *field
+                        && matches!(mapping.field_type, TantivyFieldType::Text | TantivyFieldType::Keyword)
+                }) {
+                    if self.refreshed_documents_iter().next().is_none() {
+                        return Ok(std::collections::BTreeSet::new());
+                    }
+                    let state = self.search_state.as_ref().or_else(|| {
+                        self.shard_search_states_for(None).next().map(|(_, state)| state)
+                    });
+                    if let Some(state) = state {
+                        if build_tantivy_range_query(state, field, bounds)?.is_some() {
+                            if let Some(documents) = self.search_documents_for_tantivy_query(query)? {
+                                return Ok(documents.into_iter()
+                                    .map(|document| document.metadata.id.clone()).collect());
+                            }
+                        }
+                    }
+                }
                 Ok(self
                     .documents
                     .iter()
                     .filter_map(|(id, document)| {
                         let value = source_value_for_highlight_field(&document.source, field)?;
                         (document.metadata.seq_no <= self.refreshed_seq_no
-                            && match value {
-                                Value::String(text)
-                                    if parse_tantivy_datetime_value(&Value::String(
-                                        text.clone(),
-                                    ))
-                                    .is_none() =>
-                                {
-                                    text_range_candidate_matches_token_bound(text, bounds)
-                                        && document_matches_query(query, id, &document.source)
-                                }
-                                _ => matches_range_query(value, bounds),
-                            })
+                            && matches_range_query(value, bounds))
                         .then_some(id.clone())
                     })
                     .collect())
@@ -9784,10 +10433,7 @@ impl StoredIndex {
             }
         }
 
-        let mut minimum_should_match = effective_bool_minimum_should_match(clauses) as usize;
-        if !clauses.should.is_empty() {
-            minimum_should_match = minimum_should_match.min(clauses.should.len());
-        }
+        let minimum_should_match = effective_bool_minimum_should_match(clauses) as usize;
 
         if !clauses.should.is_empty() {
             let prefer_vector_hybrid_should = minimum_should_match > 1
@@ -9829,6 +10475,9 @@ impl StoredIndex {
             }
         }
 
+        if minimum_should_match > clauses.should.len() {
+            candidates = Some(std::collections::BTreeSet::new());
+        }
         let mut candidates = candidates.unwrap_or_else(|| self.all_refreshed_candidate_ids());
         for query in &clauses.must_not {
             if bool_query_cannot_reduce_to_exclusion(query) {
@@ -9973,6 +10622,12 @@ impl StoredIndex {
         &self,
         query: &Query,
     ) -> Option<std::collections::BTreeSet<String>> {
+        if let Query::Term { field, .. } | Query::Match { field, .. } = query {
+            if self.multi_field_keyword_mapping(field).is_some() {
+                // This shortcut reads literal source keys, not indexed multi-field values.
+                return None;
+            }
+        }
         match query {
             Query::Term {
                 field,
@@ -10212,7 +10867,10 @@ impl StoredIndex {
         query: &Query,
         sort: &[SortSpec],
     ) -> EngineResult<Option<Vec<SearchHit>>> {
-        if selected_shards.is_some() {
+        if selected_shards.is_some_and(|selected| !self.documents.shards.keys().any(|id| selected.contains(id))) {
+            return Ok(Some(Vec::new()));
+        }
+        if selected_shards.is_some() && self.documents.shard_count > 1 {
             return self.search_hits_for_query_native_sharded(
                 index_name,
                 selected_shards,
@@ -10285,7 +10943,7 @@ impl StoredIndex {
             }
             return Ok(Some(hits));
         }
-        let needs_post_filter = query_requires_native_candidate_post_filter(query);
+        let needs_post_filter = self.native_query_needs_post_filter(query, selected_shards);
         let Some(tantivy_query) = build_tantivy_query(search_state, query)? else {
             if needs_post_filter && query_allows_source_candidate_scan_for_native_post_filter(query)
             {
@@ -10300,7 +10958,7 @@ impl StoredIndex {
             }
             return Ok(None);
         };
-        let searcher = search_state.reader.searcher();
+        let searcher = search_state.searcher.clone();
         let limit = self.refreshed_documents_iter().count();
         let candidate_sort = if sort_uses_default_relevance_order(sort)
             || supports_native_multi_sort(search_state, sort)
@@ -10309,13 +10967,15 @@ impl StoredIndex {
         } else {
             &[]
         };
-        let exact_source_score = query_needs_exact_source_score(query);
+        let native_query_score = self.native_query_score_is_authoritative(query, selected_shards);
+        let exact_source_score = query_needs_exact_source_score(query) && !native_query_score;
         let Some(scored_addresses) = search_tantivy_top_docs_with_scores(
             search_state,
             &searcher,
             tantivy_query.as_ref(),
             candidate_sort,
             limit,
+            native_query_score,
         )?
         else {
             return Ok(None);
@@ -10349,14 +11009,16 @@ impl StoredIndex {
                 };
                 hit_score = exact_score;
             }
-            if let Some(opensearch_score) = self.opensearch_text_bm25_score(query, document) {
-                hit_score = opensearch_score;
+            if !native_query_score {
+                if let Some(opensearch_score) = self.opensearch_text_bm25_score(query, document) {
+                    hit_score = opensearch_score;
+                }
             }
             hits.push(self.search_hit_for_document_with_score(
                 index_name,
                 document,
                 hit_score,
-                !exact_source_score,
+                !exact_source_score && !native_query_score,
             ));
         }
         if sort_uses_default_relevance_order(sort) {
@@ -10408,7 +11070,7 @@ impl StoredIndex {
             return Ok(Some(hits));
         }
 
-        let needs_post_filter = query_requires_native_candidate_post_filter(query);
+        let needs_post_filter = self.native_query_needs_post_filter(query, selected_shards);
         let shard_states = self
             .shard_search_states_for(selected_shards)
             .collect::<Vec<_>>();
@@ -10429,7 +11091,8 @@ impl StoredIndex {
             }
             return Ok(None);
         }
-        let exact_source_score = query_needs_exact_source_score(query);
+        let native_query_score = self.native_query_score_is_authoritative(query, selected_shards);
+        let exact_source_score = query_needs_exact_source_score(query) && !native_query_score;
         let search_shard =
             |(shard, search_state): &(
                 &StoredShard,
@@ -10439,7 +11102,7 @@ impl StoredIndex {
                 let Some(tantivy_query) = build_tantivy_query(search_state, query)? else {
                     return Ok(None);
                 };
-                let searcher = search_state.reader.searcher();
+                let searcher = search_state.searcher.clone();
                 let limit = shard.refreshed_len();
                 let candidate_sort = if sort_uses_default_relevance_order(sort)
                     || supports_native_multi_sort(search_state, sort)
@@ -10454,6 +11117,7 @@ impl StoredIndex {
                     tantivy_query.as_ref(),
                     candidate_sort,
                     limit,
+                    native_query_score,
                 )?
                 else {
                     return Ok(None);
@@ -10487,15 +11151,16 @@ impl StoredIndex {
                         };
                         hit_score = exact_score;
                     }
-                    if let Some(opensearch_score) = self.opensearch_text_bm25_score(query, document)
-                    {
-                        hit_score = opensearch_score;
+                    if !native_query_score {
+                        if let Some(opensearch_score) = self.opensearch_text_bm25_score(query, document) {
+                            hit_score = opensearch_score;
+                        }
                     }
                     hits.push(self.search_hit_for_document_with_score(
                         index_name,
                         document,
                         hit_score,
-                        !exact_source_score,
+                        !exact_source_score && !native_query_score,
                     ));
                 }
                 Ok(Some(hits))
@@ -10527,20 +11192,90 @@ impl StoredIndex {
         Ok(Some(hits))
     }
 
-    fn search_hits_page_for_query_native_sharded_tantivy(
-        &self,
+    fn search_hits_page_for_query_native_sharded_tantivy<'a>(
+        &'a self,
         index_name: &str,
-        selected_shards: Option<&BTreeSet<u32>>,
+        selected_shards: Option<&'a BTreeSet<u32>>,
         query: &Query,
         sort: &[SortSpec],
         from: usize,
         size: usize,
     ) -> EngineResult<Option<(u64, Vec<SearchHit>)>> {
+        if sort_uses_default_relevance_order(sort) {
+            let Some((total_hits, mut hits)) = self.collect_sharded_page_candidates(
+                selected_shards, query, sort, from, size, |document, score| (document, score),
+            )? else {
+                return Ok(None);
+            };
+            // All candidates belong to this index; source is unnecessary for relevance ordering.
+            hits.sort_by(|(left, left_score), (right, right_score)| {
+                right_score
+                    .partial_cmp(left_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| left.metadata.id.cmp(&right.metadata.id))
+            });
+            return Ok(Some((
+                total_hits,
+                hits.into_iter()
+                    .skip(from)
+                    .take(size)
+                    .map(|(document, score)| {
+                        self.search_hit_for_document_with_score(index_name, document, score, false)
+                    })
+                    .collect(),
+            )));
+        }
+        let Some((total_hits, mut hits)) = self.collect_sharded_page_candidates(
+            selected_shards, query, sort, from, size,
+            |document, score| (document, score),
+        )? else {
+            return Ok(None);
+        };
+        // Keep source borrowed until the global page has been selected.
+        hits.sort_by(|(left, left_score), (right, right_score)| {
+            let left = SortHitInput { id: &left.metadata.id, score: *left_score, source: &left.source };
+            let right = SortHitInput { id: &right.metadata.id, score: *right_score, source: &right.source };
+            for spec in sort {
+                let ordering = compare_sort_hit_inputs(left, right, spec);
+                if !ordering.is_eq() {
+                    if sort_inputs_have_one_missing_value(left, right, spec) {
+                        return ordering;
+                    }
+                    return match spec.order {
+                        SortOrder::Asc => ordering,
+                        SortOrder::Desc => ordering.reverse(),
+                    };
+                }
+            }
+            left.id.cmp(right.id)
+        });
+        let mut page = hits.into_iter().skip(from).take(size)
+            .map(|(document, score)| {
+                self.search_hit_for_document_with_score(index_name, document, score, false)
+            })
+            .collect::<Vec<_>>();
+        materialize_search_hit_sort_values_in_place(&mut page, sort);
+        Ok(Some((total_hits, page)))
+    }
+
+    fn collect_sharded_page_candidates<'a, Hit, Materialize>(
+        &'a self,
+        selected_shards: Option<&'a BTreeSet<u32>>,
+        query: &Query,
+        sort: &[SortSpec],
+        from: usize,
+        size: usize,
+        materialize: Materialize,
+    ) -> EngineResult<Option<(u64, Vec<Hit>)>>
+    where
+        Hit: Send,
+        Materialize: Fn(&'a StoredDocument, f32) -> Hit + Sync,
+    {
         if self.documents.shard_count <= 1
             || matches!(query, Query::Knn(_))
             || Self::query_contains_knn(query)
             || matches!(query, Query::Nested { .. })
-            || query_requires_native_candidate_post_filter(query)
+            || self.native_query_needs_post_filter(query, selected_shards)
         {
             return Ok(None);
         }
@@ -10551,13 +11286,14 @@ impl StoredIndex {
             return Ok(None);
         }
         let first_pass_limit = from.saturating_add(size);
-        let exact_source_score = query_needs_exact_source_score(query);
+        let native_query_score = self.native_query_score_is_authoritative(query, selected_shards);
+        let exact_source_score = query_needs_exact_source_score(query) && !native_query_score;
         let search_shard =
             |(shard, search_state): &(
-                &StoredShard,
-                &TantivySearchState,
+                &'a StoredShard,
+                &'a TantivySearchState,
             )|
-             -> EngineResult<Option<(u64, Vec<SearchHit>)>> {
+             -> EngineResult<Option<(u64, Vec<Hit>)>> {
                 if !(sort_uses_default_relevance_order(sort)
                     || supports_native_multi_sort(search_state, sort))
                 {
@@ -10573,7 +11309,7 @@ impl StoredIndex {
                 let Some(tantivy_query) = build_tantivy_query(search_state, query)? else {
                     return Ok(None);
                 };
-                let searcher = search_state.reader.searcher();
+                let searcher = search_state.searcher.clone();
                 let Some((total_hits, scored_addresses)) =
                     search_tantivy_count_and_top_docs_with_scores(
                         search_state,
@@ -10581,6 +11317,7 @@ impl StoredIndex {
                         tantivy_query.as_ref(),
                         sort,
                         first_pass_limit,
+                        native_query_score,
                     )?
                 else {
                     return Ok(None);
@@ -10618,15 +11355,146 @@ impl StoredIndex {
                     } else {
                         score
                     };
-                    if let Some(opensearch_score) = self.opensearch_text_bm25_score(query, document)
+                    if !native_query_score {
+                        if let Some(opensearch_score) = self.opensearch_text_bm25_score(query, document) {
+                            hit_score = opensearch_score;
+                        }
+                    }
+                    if !exact_source_score && !native_query_score && hit_score == 0.0 {
+                        hit_score = 1.0;
+                    }
+                    hits.push(materialize(document, hit_score));
+                }
+                Ok(Some((total_hits, hits)))
+            };
+        let use_parallel_shard_reduce = self.documents.len() >= 2_048;
+        let shard_results = if use_parallel_shard_reduce {
+            shard_states
+                .par_iter()
+                .map(search_shard)
+                .collect::<EngineResult<Vec<_>>>()?
+        } else {
+            shard_states
+                .iter()
+                .map(search_shard)
+                .collect::<EngineResult<Vec<_>>>()?
+        };
+        let mut total_hits = 0_u64;
+        let mut hits = Vec::new();
+        for shard_result in shard_results {
+            let Some((shard_total_hits, mut shard_hits)) = shard_result else {
+                return Ok(None);
+            };
+            total_hits = total_hits.saturating_add(shard_total_hits);
+            hits.append(&mut shard_hits);
+        }
+        Ok(Some((total_hits, hits)))
+    }
+
+    #[cfg(test)]
+    fn search_hits_page_for_query_native_sharded_tantivy_eager_reference(
+        &self,
+        index_name: &str,
+        selected_shards: Option<&BTreeSet<u32>>,
+        query: &Query,
+        sort: &[SortSpec],
+        from: usize,
+        size: usize,
+    ) -> EngineResult<Option<(u64, Vec<SearchHit>)>> {
+        if self.documents.shard_count <= 1
+            || matches!(query, Query::Knn(_))
+            || Self::query_contains_knn(query)
+            || matches!(query, Query::Nested { .. })
+            || self.native_query_needs_post_filter(query, selected_shards)
+        {
+            return Ok(None);
+        }
+        let shard_states = self
+            .shard_search_states_for(selected_shards)
+            .collect::<Vec<_>>();
+        if shard_states.is_empty() {
+            return Ok(None);
+        }
+        let first_pass_limit = from.saturating_add(size);
+        let native_query_score = self.native_query_score_is_authoritative(query, selected_shards);
+        let exact_source_score = query_needs_exact_source_score(query) && !native_query_score;
+        let search_shard =
+            |(shard, search_state): &(
+                &StoredShard,
+                &TantivySearchState,
+            )|
+             -> EngineResult<Option<(u64, Vec<SearchHit>)>> {
+                if !(sort_uses_default_relevance_order(sort)
+                    || supports_native_multi_sort(search_state, sort))
+                {
+                    return Ok(None);
+                }
+                if default_relevance_keyword_term_query_requires_full_tie_break(
+                    search_state,
+                    query,
+                    sort,
+                ) {
+                    return Ok(None);
+                }
+                let Some(tantivy_query) = build_tantivy_query(search_state, query)? else {
+                    return Ok(None);
+                };
+                let searcher = search_state.searcher.clone();
+                let Some((total_hits, scored_addresses)) =
+                    search_tantivy_count_and_top_docs_with_scores(
+                        search_state,
+                        &searcher,
+                        tantivy_query.as_ref(),
+                        sort,
+                        first_pass_limit,
+                        native_query_score,
+                    )?
+                else {
+                    return Ok(None);
+                };
+                if size == 0 {
+                    return Ok(Some((total_hits, Vec::new())));
+                }
+                let Some(id_field) = search_state.fields.get("_id") else {
+                    return Ok(None);
+                };
+                let mut hits = Vec::with_capacity(scored_addresses.len());
+                for (score, address) in scored_addresses {
+                    let document_id = if let Some(document_id) =
+                        search_state.document_id_for_address(&searcher, address)
                     {
-                        hit_score = opensearch_score;
+                        Cow::Borrowed(document_id)
+                    } else {
+                        let stored_document = searcher.doc(address).map_err(tantivy_error)?;
+                        let Some(document_id) = stored_document
+                            .get_first(id_field.field)
+                            .and_then(|value| value.as_text())
+                        else {
+                            continue;
+                        };
+                        Cow::Owned(document_id.to_string())
+                    };
+                    let Some(document) = shard.refreshed_document_by_id(&document_id) else {
+                        continue;
+                    };
+                    let mut hit_score = if exact_source_score {
+                        let Some(exact_score) = self.score_document_query(query, document)? else {
+                            continue;
+                        };
+                        exact_score
+                    } else {
+                        score
+                    };
+                    if !native_query_score {
+                        if let Some(opensearch_score) = self.opensearch_text_bm25_score(query, document) {
+                            hit_score = opensearch_score;
+                        }
                     }
                     hits.push(self.search_hit_for_document_with_score(
                         index_name,
                         document,
                         hit_score,
-                        !exact_source_score,
+                        !exact_source_score && !native_query_score,
                     ));
                 }
                 Ok(Some((total_hits, hits)))
@@ -10683,20 +11551,27 @@ impl StoredIndex {
         from: usize,
         size: usize,
     ) -> EngineResult<Option<(u64, Vec<SearchHit>)>> {
+        if selected_shards.is_some_and(|selected| !self.documents.shards.keys().any(|id| selected.contains(id))) {
+            return Ok(Some((0, Vec::new())));
+        }
         if selected_shards.is_some()
+            && self.documents.shard_count > 1
             && !matches!(query, Query::Knn(_))
             && !Self::query_contains_knn(query)
             && !matches!(query, Query::Nested { .. })
-            && !query_requires_native_candidate_post_filter(query)
+            && !self.native_query_needs_post_filter(query, selected_shards)
         {
-            return self.search_hits_page_for_query_native_sharded_tantivy(
+            if let Some(page) = self.search_hits_page_for_query_native_sharded_tantivy(
                 index_name,
                 selected_shards,
                 query,
                 sort,
                 from,
                 size,
-            );
+            )? {
+                return Ok(Some(page));
+            }
+            return self.search_hits_page_for_full_native_sort(index_name, selected_shards, query, sort, from, size);
         }
         if let Query::Nested {
             path,
@@ -10742,7 +11617,7 @@ impl StoredIndex {
                 hits.into_iter().skip(from).take(size).collect(),
             )));
         }
-        let needs_post_filter = query_requires_native_candidate_post_filter(query);
+        let needs_post_filter = self.native_query_needs_post_filter(query, selected_shards);
         if needs_post_filter && Self::query_contains_knn(query) {
             return self.search_hits_page_for_reduced_candidate_post_filter(
                 index_name,
@@ -10785,21 +11660,21 @@ impl StoredIndex {
             }
             if sort.len() > 1 {
                 return self
-                    .search_hits_page_for_full_native_sort(index_name, query, sort, from, size);
+                    .search_hits_page_for_full_native_sort(index_name, selected_shards, query, sort, from, size);
             }
             let Some(search_state) = &self.search_state else {
                 return self
-                    .search_hits_page_for_full_native_sort(index_name, query, sort, from, size);
+                    .search_hits_page_for_full_native_sort(index_name, selected_shards, query, sort, from, size);
             };
             if !(sort_uses_default_relevance_order(sort)
                 || supports_native_multi_sort(search_state, sort))
             {
-                return Ok(None);
+                return self.search_hits_page_for_full_native_sort(index_name, selected_shards, query, sort, from, size);
             }
             let Some(tantivy_query) = build_tantivy_query(search_state, query)? else {
                 return Ok(None);
             };
-            let searcher = search_state.reader.searcher();
+            let searcher = search_state.searcher.clone();
             let tie_break_requires_full_window =
                 default_relevance_keyword_term_query_requires_full_tie_break(
                     search_state,
@@ -10811,7 +11686,8 @@ impl StoredIndex {
             } else {
                 from.saturating_add(size)
             };
-            let exact_source_score = query_needs_exact_source_score(query);
+            let native_query_score = self.native_query_score_is_authoritative(query, selected_shards);
+            let exact_source_score = query_needs_exact_source_score(query) && !native_query_score;
             let Some((total_hits, mut scored_addresses)) =
                 search_tantivy_count_and_top_docs_with_scores(
                     search_state,
@@ -10819,6 +11695,7 @@ impl StoredIndex {
                     tantivy_query.as_ref(),
                     sort,
                     first_pass_limit,
+                    native_query_score,
                 )?
             else {
                 return Ok(None);
@@ -10834,6 +11711,7 @@ impl StoredIndex {
                     tantivy_query.as_ref(),
                     sort,
                     limit,
+                    native_query_score,
                 )?
                 .unwrap_or_default();
             }
@@ -10867,14 +11745,16 @@ impl StoredIndex {
                 } else {
                     score
                 };
-                if let Some(opensearch_score) = self.opensearch_text_bm25_score(query, document) {
-                    hit_score = opensearch_score;
+                if !native_query_score {
+                    if let Some(opensearch_score) = self.opensearch_text_bm25_score(query, document) {
+                        hit_score = opensearch_score;
+                    }
                 }
                 hits.push(self.search_hit_for_document_with_score(
                     index_name,
                     document,
                     hit_score,
-                    !exact_source_score,
+                    !exact_source_score && !native_query_score,
                 ));
             }
             if sort_uses_default_relevance_order(sort) {
@@ -10908,56 +11788,44 @@ impl StoredIndex {
         size: usize,
         selected_shards: Option<&BTreeSet<u32>>,
     ) -> EngineResult<Option<(u64, Vec<SearchHit>)>> {
-        if selected_shards.is_none() {
-            if let Some(candidate_documents) =
-                self.required_bool_tantivy_candidate_documents_for_source_post_filter(query)?
-            {
-                let mut hits = Vec::new();
-                for document in candidate_documents {
-                    let Some(score) = self.score_document_query(query, document)? else {
-                        continue;
-                    };
-                    hits.push(self.search_hit_for_document_with_score(
-                        index_name,
-                        document,
-                        if score == 0.0 { 1.0 } else { score },
-                        false,
-                    ));
-                }
-                if sort_uses_default_relevance_order(sort) {
-                    hits.sort_by(compare_relevance_hits);
-                } else {
-                    sort_hits(&mut hits, sort);
-                }
-                let total_hits = hits.len() as u64;
-                if size == 0 {
-                    return Ok(Some((total_hits, Vec::new())));
-                }
-                return Ok(Some((
-                    total_hits,
-                    hits.into_iter().skip(from).take(size).collect(),
-                )));
-            }
-        }
-
-        let mut hits = Vec::new();
-        for document in self.refreshed_documents_for_shards(selected_shards) {
-            let Some(score) = self.score_document_query(query, document)? else {
+        let mapped_sort = MappedEngineSort::for_index(index_name, self, sort)?;
+        let candidates = if selected_shards.is_none() {
+            self.required_bool_tantivy_candidate_documents_for_source_post_filter(query)?
+        } else {
+            None
+        }.unwrap_or_else(|| self.refreshed_documents_for_shards(selected_shards));
+        let mut bm25_context = Bm25Context::default();
+        self.prepare_source_bm25_matches(query, selected_shards, &mut bm25_context)?;
+        let mut scored_documents = Vec::new();
+        for document in candidates {
+            let Some(score) = self.score_document_query_with_bm25_context(
+                query, document, &mut bm25_context,
+            )? else {
                 continue;
             };
-            hits.push(self.search_hit_for_document_with_score(
-                index_name,
-                document,
-                if score == 0.0 { 1.0 } else { score },
-                false,
-            ));
+            scored_documents.push((document, if score == 0.0 { 1.0 } else { score }));
         }
+        let total_hits = scored_documents.len() as u64;
+        // Keep source borrowed until relevance ordering and pagination are finished.
         if sort_uses_default_relevance_order(sort) {
-            hits.sort_by(compare_relevance_hits);
+            scored_documents.sort_by(|(left, left_score), (right, right_score)| {
+                right_score.partial_cmp(left_score).unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| left.metadata.id.cmp(&right.metadata.id))
+            });
+            let hits = scored_documents.into_iter().skip(from).take(size)
+                .map(|(document, score)| self.search_hit_for_document_with_score(
+                    index_name, document, score, false,
+                )).collect();
+            return Ok(Some((total_hits, hits)));
+        }
+        let mut hits = scored_documents.into_iter().map(|(document, score)| {
+            self.search_hit_for_document_with_score(index_name, document, score, false)
+        }).collect();
+        if let Some(mapped_sort) = mapped_sort.as_ref() {
+            hits = mapped_sort.order_hits(hits)?;
         } else {
             sort_hits(&mut hits, sort);
         }
-        let total_hits = hits.len() as u64;
         if size == 0 {
             return Ok(Some((total_hits, Vec::new())));
         }
@@ -11032,17 +11900,22 @@ impl StoredIndex {
     fn search_hits_page_for_full_native_sort(
         &self,
         index_name: &str,
+        selected_shards: Option<&BTreeSet<u32>>,
         query: &Query,
         sort: &[SortSpec],
         from: usize,
         size: usize,
     ) -> EngineResult<Option<(u64, Vec<SearchHit>)>> {
-        let Some(hits) = self.search_hits_for_query_native(index_name, query, sort)? else {
+        let mapped_sort = MappedEngineSort::for_index(index_name, self, sort)?;
+        let Some(mut hits) = self.search_hits_for_query_native_scoped(index_name, selected_shards, query, sort)? else {
             return Ok(None);
         };
         let total_hits = hits.len() as u64;
         if size == 0 {
             return Ok(Some((total_hits, Vec::new())));
+        }
+        if let Some(sort) = mapped_sort {
+            hits = sort.order_hits(hits)?;
         }
         Ok(Some((
             total_hits,
@@ -11057,7 +11930,7 @@ impl StoredIndex {
         sort: &[SortSpec],
         size: usize,
     ) -> EngineResult<Option<Vec<SearchHit>>> {
-        if query_requires_native_candidate_post_filter(query)
+        if self.native_query_needs_post_filter(query, None)
             && sort_uses_default_relevance_order(sort)
             && query_allows_source_candidate_scan_for_native_post_filter(query)
         {
@@ -11672,7 +12545,7 @@ impl StoredIndex {
                     .len() as u64,
             ));
         }
-        if query_requires_native_candidate_post_filter(query) {
+        if self.native_query_needs_post_filter(query, None) {
             let Some(documents) = self.search_documents_for_tantivy_query(query)? else {
                 return Ok(None);
             };
@@ -11690,7 +12563,7 @@ impl StoredIndex {
         let Some(tantivy_query) = build_tantivy_query(search_state, query)? else {
             return Ok(None);
         };
-        let searcher = search_state.reader.searcher();
+        let searcher = search_state.searcher.clone();
         let count = searcher
             .search(tantivy_query.as_ref(), &Count)
             .map_err(tantivy_error)?;
@@ -12250,7 +13123,7 @@ impl StoredIndex {
         let Some(documents) = self.search_documents_for_tantivy_query(query)? else {
             return Ok(None);
         };
-        if !query_requires_native_candidate_post_filter(query) {
+        if !self.native_query_needs_post_filter(query, None) {
             return Ok(Some(documents));
         }
         Ok(Some(
@@ -12358,7 +13231,7 @@ impl StoredIndex {
                 }
                 return Ok(None);
             };
-            let searcher = search_state.reader.searcher();
+            let searcher = search_state.searcher.clone();
             let count = searcher
                 .search(tantivy_query.as_ref(), &Count)
                 .map_err(tantivy_error)?;
@@ -12386,7 +13259,7 @@ impl StoredIndex {
                 }
                 return Ok(None);
             };
-            let searcher = search_state.reader.searcher();
+            let searcher = search_state.searcher.clone();
             let count = searcher
                 .search(tantivy_query.as_ref(), &Count)
                 .map_err(tantivy_error)?;
@@ -12415,7 +13288,7 @@ impl StoredIndex {
                 }
                 return Ok(None);
             };
-            let searcher = search_state.reader.searcher();
+            let searcher = search_state.searcher.clone();
             let limit = self.refreshed_documents_iter().count();
             let top_docs = searcher
                 .search(tantivy_query.as_ref(), &TopDocs::with_limit(limit))
@@ -12475,7 +13348,7 @@ impl StoredIndex {
                     let Some(tantivy_query) = build_tantivy_query(search_state, query)? else {
                         return Ok(None);
                     };
-                    let searcher = search_state.reader.searcher();
+                    let searcher = search_state.searcher.clone();
                     let limit = shard.refreshed_len();
                     let top_docs = searcher
                         .search(tantivy_query.as_ref(), &TopDocs::with_limit(limit))
@@ -12540,7 +13413,7 @@ impl StoredIndex {
             let Some(tantivy_query) = build_tantivy_query(search_state, query)? else {
                 return Ok(None);
             };
-            let searcher = search_state.reader.searcher();
+            let searcher = search_state.searcher.clone();
             let doc_addresses = searcher
                 .search(tantivy_query.as_ref(), &NativeDocAddressCollector)
                 .map_err(tantivy_error)?;
@@ -12583,7 +13456,7 @@ impl StoredIndex {
                     let Some(tantivy_query) = build_tantivy_query(search_state, query)? else {
                         return Ok(None);
                     };
-                    let searcher = search_state.reader.searcher();
+                    let searcher = search_state.searcher.clone();
                     let doc_addresses = searcher
                         .search(tantivy_query.as_ref(), &NativeDocAddressCollector)
                         .map_err(tantivy_error)?;
@@ -12825,17 +13698,17 @@ impl StoredIndex {
                 &all_hits,
                 aggregation_map,
                 PluginTopHitsInputOrder::CallerFinal,
-            )
+            )?
         } else {
             collect_aggregations_from_documents(
                 &self.index_name,
                 &documents,
                 &all_documents,
                 aggregation_map,
-            )
+            )?
         };
         if let Some(object) = aggregations.as_object_mut() {
-            finalize_merged_pipeline_aggregations(object, aggregation_map);
+            finalize_checked_aggregation_response(object, aggregation_map)?;
         }
         strip_internal_merge_surfaces(&mut aggregations);
         Ok(Some(aggregations))
@@ -12908,17 +13781,17 @@ impl StoredIndex {
                 &all_hits,
                 aggregation_map,
                 PluginTopHitsInputOrder::CallerFinal,
-            )
+            )?
         } else {
             collect_aggregations_from_documents(
                 index_name,
                 &documents,
                 &all_documents,
                 aggregation_map,
-            )
+            )?
         };
         if let Some(object) = aggregations.as_object_mut() {
-            finalize_merged_pipeline_aggregations(object, aggregation_map);
+            finalize_checked_aggregation_response(object, aggregation_map)?;
         }
         strip_internal_merge_surfaces(&mut aggregations);
         Ok(aggregations)
@@ -13011,17 +13884,17 @@ impl StoredIndex {
                 &all_hits,
                 aggregation_map,
                 PluginTopHitsInputOrder::CallerFinal,
-            )
+            )?
         } else {
             collect_aggregations_from_documents(
                 index_name,
                 &documents,
                 &all_documents,
                 aggregation_map,
-            )
+            )?
         };
         if let Some(object) = aggregations.as_object_mut() {
-            finalize_merged_pipeline_aggregations(object, aggregation_map);
+            finalize_checked_aggregation_response(object, aggregation_map)?;
         }
         strip_internal_merge_surfaces(&mut aggregations);
         let reusable = ReusableQueryContext {
@@ -13405,12 +14278,27 @@ impl StoredIndex {
         }
     }
 
+    fn multi_field_keyword_mapping(&self, field: &str) -> Option<&TantivyFieldMapping> {
+        if !field.contains('.') {
+            return None;
+        }
+        self.schema.fields.iter().find(|mapping| mapping.name == field
+            && mapping.field_type == TantivyFieldType::Keyword && mapping.multi_field_source.is_some())
+    }
+
+    fn multi_field_keyword_values(&self, source: &Value, field: &str) -> EngineResult<Vec<Value>> {
+        let mapping = self.multi_field_keyword_mapping(field)
+            .ok_or_else(|| invalid_request(format!("[{field}] is not a keyword multi-field")))?;
+        let descriptor = mapping.multi_field_source.as_ref().expect("checked multi-field source");
+        descriptor.keyword_values(source)
+    }
+
     fn score_document_query(
         &self,
         query: &Query,
         document: &StoredDocument,
     ) -> EngineResult<Option<f32>> {
-        let mut bm25_context = BTreeMap::new();
+        let mut bm25_context = Bm25Context::default();
         self.score_document_query_with_bm25_context(query, document, &mut bm25_context)
     }
 
@@ -13418,9 +14306,24 @@ impl StoredIndex {
         &self,
         query: &Query,
         document: &StoredDocument,
-        bm25_context: &mut BTreeMap<String, CachedBm25FieldStats>,
+        bm25_context: &mut Bm25Context,
     ) -> EngineResult<Option<f32>> {
         match query {
+            Query::Term { field, value, case_insensitive }
+                if self.multi_field_keyword_mapping(field).is_some() => {
+                let values = Value::Array(self.multi_field_keyword_values(&document.source, field)?);
+                let expected = Value::String(json_value_to_query_text(value)?);
+                Ok(matches_term_query_with_case(&values, &expected, *case_insensitive).then_some(1.0))
+            }
+            Query::Terms { field, values } if self.multi_field_keyword_mapping(field).is_some() => {
+                let actual = Value::Array(self.multi_field_keyword_values(&document.source, field)?);
+                let expected = values.iter().map(|value| json_value_to_query_text(value)
+                    .map(Value::String)).collect::<EngineResult<Vec<_>>>()?;
+                Ok(matches_terms_query(&actual, &expected).then_some(1.0))
+            }
+            Query::Exists { field } if self.multi_field_keyword_mapping(field).is_some() => {
+                Ok((!self.multi_field_keyword_values(&document.source, field)?.is_empty()).then_some(1.0))
+            }
             Query::Knn(knn) => self.score_knn_query(knn, document),
             Query::Nested { path, query }
                 if query_uses_vector_scores(query)
@@ -13430,33 +14333,53 @@ impl StoredIndex {
             }
             Query::Range { field, bounds } if self.knn_mapping(field).is_ok() => Ok(None),
             Query::Range { field, bounds } => {
-                Ok(source_value_for_highlight_field(&document.source, field)
-                    .is_some_and(|value| {
-                        let field_type = self
-                            .search_state
-                            .as_ref()
-                            .and_then(|search_state| search_state.fields.get(field))
-                            .map(|field| &field.field_type);
-                        matches!(
-                            field_type,
-                            Some(
-                                TantivyFieldType::I64
-                                    | TantivyFieldType::F64
-                                    | TantivyFieldType::Date
-                                    | TantivyFieldType::Keyword
-                            )
-                        ) && matches_range_query(value, bounds)
-                    })
-                    .then_some(1.0))
+                let Some(value) = source_value_for_highlight_field(&document.source, field) else {
+                    return Ok(None);
+                };
+                let state = self.search_state.as_ref().or_else(|| {
+                    self.shard_search_states_for(None).next().map(|(_, state)| state)
+                });
+                let Some((state, indexed_field)) = state.and_then(|state| {
+                    state.fields.get(field).map(|indexed_field| (state, indexed_field))
+                }) else {
+                    return Ok(None);
+                };
+                let matched = match indexed_field.field_type {
+                    TantivyFieldType::Text => {
+                        let mut analyzer = state.index.tokenizer_for_field(indexed_field.field)
+                            .map_err(tantivy_error)?;
+                        let values = match value {
+                            Value::Array(values) => values.as_slice(),
+                            _ => std::slice::from_ref(value),
+                        };
+                        values.iter().filter_map(Value::as_str).any(|text| {
+                            let mut stream = analyzer.token_stream(text);
+                            while stream.advance() {
+                                if matches_range_query(&Value::String(stream.token().text.clone()), bounds) {
+                                    return true;
+                                }
+                            }
+                            false
+                        })
+                    }
+                    TantivyFieldType::I64 | TantivyFieldType::F64
+                    | TantivyFieldType::Date | TantivyFieldType::Keyword => matches_range_query(value, bounds),
+                    _ => false,
+                };
+                Ok(matched.then_some(1.0))
             }
             Query::Bool { clauses } => {
                 self.score_bool_query_with_bm25_context(clauses, document, bm25_context)
             }
             Query::Match { boost, .. }
             | Query::MatchPhrase { boost, .. }
-            | Query::MatchPhrasePrefix { boost, .. } => Ok(self
+            | Query::MatchPhrasePrefix { boost, .. }
+            | Query::MultiMatch { boost, .. } => Ok(self
                 .opensearch_text_bm25_score_with_bm25_context(query, document, bm25_context)
                 .or_else(|| {
+                    if bm25_context.complete_source_phrases.contains(query) {
+                        return None;
+                    }
                     document_matches_query(query, &document.metadata.id, &document.source)
                         .then_some(1.0)
                 })
@@ -13512,15 +14435,131 @@ impl StoredIndex {
     }
 
     fn opensearch_text_bm25_score(&self, query: &Query, document: &StoredDocument) -> Option<f32> {
-        let mut bm25_context = BTreeMap::new();
+        let mut bm25_context = Bm25Context::default();
         self.opensearch_text_bm25_score_with_bm25_context(query, document, &mut bm25_context)
+    }
+
+    fn native_phrase_score_is_authoritative(
+        &self, query: &Query, selected_shards: Option<&BTreeSet<u32>>,
+    ) -> bool {
+        let Query::MatchPhrase {field, query, slop, analyzer:None, boost, ..} = query else {
+            return false;
+        };
+        if u32::try_from(*slop).is_err() { return false; }
+        let Some(text) = query.as_str().filter(|text| text.is_ascii()) else { return false };
+        let tokens = tokenize_phrase_text(text);
+        if tokens.is_empty() || tokens.iter().any(|token| token.len() >= 40)
+            || boost.is_some_and(|boost| !(boost as f32).is_finite() || (boost as f32) <= 0.0)
+            || field.contains('.') {
+            return false;
+        }
+        if !self.schema.fields.iter().any(|mapping| mapping.name == *field
+            && mapping.field_type == TantivyFieldType::Text && mapping.indexed
+            && mapping.multi_field_source.is_none()
+            && mapping.text_options.as_ref().is_some_and(|options| options.supports_native_exact_phrase())) {
+            return false;
+        }
+        self.documents.shards.keys()
+            .filter(|id| selected_shards.map_or(true, |selected| selected.contains(id)))
+            .all(|id| self.documents.shards[id].refreshed_len() == 0
+                || self.documents.shards[id].search_state.as_ref()
+                    .or_else(|| (self.documents.shard_count == 1).then_some(self.search_state.as_ref()).flatten())
+                    .is_some_and(|state| state.native_text_compatibility.supports(field)))
+    }
+
+    fn native_query_score_is_authoritative(
+        &self, query: &Query, selected_shards: Option<&BTreeSet<u32>>,
+    ) -> bool {
+        self.native_phrase_score_is_authoritative(query, selected_shards)
+            || self.native_compound_score_is_authoritative(query, selected_shards)
+    }
+
+    fn native_compound_score_is_authoritative(
+        &self, query: &Query, selected_shards: Option<&BTreeSet<u32>>,
+    ) -> bool {
+        matches!(query, Query::Bool { clauses } if bool_query_has_scoring_clause(clauses))
+            && self.native_score_tree_is_supported(query, selected_shards)
+    }
+
+    fn native_query_needs_post_filter(
+        &self, query: &Query, selected_shards: Option<&BTreeSet<u32>>,
+    ) -> bool {
+        query_requires_native_candidate_post_filter(query)
+            && !self.native_compound_score_is_authoritative(query, selected_shards)
+    }
+
+    fn native_score_tree_is_supported(
+        &self, query: &Query, selected_shards: Option<&BTreeSet<u32>>,
+    ) -> bool {
+        let positive_boost = |boost: Option<f64>| boost.map_or(true, |value| {
+            let value = value as f32;
+            value.is_finite() && value > 0.0
+        });
+        let plain_text = |value: &Value| value.as_str().is_some_and(|text| {
+            !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte.is_ascii_whitespace())
+                && !text.split_ascii_whitespace().any(|token| matches!(token, "AND" | "OR" | "NOT"))
+                && !tokenize_phrase_text(text).is_empty()
+        });
+        let mapped = |field: &str, kind| !field.contains('.') && self.schema.fields.iter()
+            .any(|mapping| mapping.name == field && mapping.field_type == kind
+                && mapping.indexed && mapping.multi_field_source.is_none());
+        match query {
+            Query::MatchAll | Query::MatchNone => true,
+            Query::MatchPhrase { .. } => self.native_phrase_score_is_authoritative(query, selected_shards),
+            Query::Match {field, query, minimum_should_match: None, operator,
+                fuzziness: None, zero_terms_all: false, boost, ..}
+                if operator.as_deref().unwrap_or("or") == "or" && plain_text(query) && positive_boost(*boost) => {
+                self.native_phrase_score_is_authoritative(&Query::MatchPhrase {
+                    field: field.clone(), query: query.clone(), slop: 0, analyzer: None,
+                    zero_terms_all: false, boost: *boost,
+                }, selected_shards)
+            }
+            Query::MultiMatch {fields, query, query_type, operator, minimum_should_match: None,
+                tie_breaker, boost, analyzer: None, fuzziness: None, zero_terms_all: false, ..}
+                if matches!(query_type, MultiMatchType::BestFields | MultiMatchType::MostFields)
+                    && operator.as_deref().unwrap_or("or") == "or" && plain_text(query)
+                    && positive_boost(*boost) && !fields.is_empty()
+                    && tie_breaker.map_or(true, |value| value.is_finite() && (0.0..=1.0).contains(&value)
+                        && (*query_type != MultiMatchType::MostFields || value == 1.0)) => {
+                fields.iter().all(|field| {
+                    let (name, boost) = multi_match_field_and_boost(field);
+                    positive_boost(Some(f64::from(boost)))
+                        && self.native_phrase_score_is_authoritative(&Query::MatchPhrase {
+                            field: name.into(), query: query.clone(), slop: 0, analyzer: None,
+                            zero_terms_all: false, boost: Some(f64::from(boost)),
+                        }, selected_shards)
+                })
+            }
+            Query::Term {field, value, case_insensitive: false} =>
+                value.is_string() && mapped(field, TantivyFieldType::Keyword),
+            Query::Range {field, bounds} => mapped(field, TantivyFieldType::I64)
+                && [&bounds.gte, &bounds.gt, &bounds.lte, &bounds.lt].iter()
+                    .all(|bound| bound.as_ref().map_or(true, |value| value.as_i64().is_some())),
+            Query::Bool {clauses} => clauses.must.iter().chain(&clauses.should)
+                .all(|child| self.native_score_tree_is_supported(child, selected_shards))
+                && clauses.filter.iter().chain(&clauses.must_not)
+                    .all(|child| self.native_filter_tree_is_supported(child, selected_shards)),
+            _ => false,
+        }
+    }
+
+    fn native_filter_tree_is_supported(
+        &self, query: &Query, selected_shards: Option<&BTreeSet<u32>>,
+    ) -> bool {
+        match query {
+            Query::Term {field, value, case_insensitive: false} if field == "_id" => value.is_string(),
+            Query::Bool {clauses} => clauses.must.iter().chain(&clauses.should)
+                .chain(&clauses.filter).chain(&clauses.must_not)
+                .all(|child| self.native_filter_tree_is_supported(child, selected_shards)),
+            _ => self.native_score_tree_is_supported(query, selected_shards),
+        }
     }
 
     fn opensearch_text_bm25_score_with_bm25_context(
         &self,
         query: &Query,
         document: &StoredDocument,
-        bm25_context: &mut BTreeMap<String, CachedBm25FieldStats>,
+        bm25_context: &mut Bm25Context,
     ) -> Option<f32> {
         match query {
             Query::Match {
@@ -13600,6 +14639,109 @@ impl StoredIndex {
         }
     }
 
+    fn prepare_source_bm25_matches(
+        &self,
+        query: &Query,
+        selected_shards: Option<&BTreeSet<u32>>,
+        context: &mut Bm25Context,
+    ) -> EngineResult<()> {
+        if let Query::MatchPhrase { field, query: text, analyzer, zero_terms_all, .. }
+            | Query::MatchPhrasePrefix { field, query: text, analyzer, zero_terms_all, .. } = query {
+            if analyzer.is_none() && !zero_terms_all && text.is_string()
+                && self.field_is_text(field)
+                && context.tokens(text).is_some_and(|tokens| !tokens.is_empty())
+                && !context.complete_source_phrases.contains(query) {
+                // For this contract, a missing BM25 score means no match, not unsupported scoring.
+                context.complete_source_phrases.push(query.clone());
+            }
+            return Ok(());
+        }
+        let mut leaves = Vec::new();
+        match query {
+            Query::Bool { clauses } => {
+                if !clauses.must.is_empty()
+                    && (!clauses.filter.is_empty() || !clauses.must_not.is_empty()
+                        || effective_bool_minimum_should_match(clauses) > 0)
+                    && self.source_score_query_is_infallible(query)
+                    && !context.deferred_bool_must.contains(clauses)
+                {
+                    context.deferred_bool_must.push(clauses.clone());
+                }
+                for clause in clauses.must.iter().chain(&clauses.should) {
+                    self.prepare_source_bm25_matches(clause, selected_shards, context)?;
+                }
+                return Ok(());
+            }
+            Query::Match { field, query, minimum_should_match, operator, fuzziness, .. }
+                if fuzziness.is_none() && minimum_should_match.is_none()
+                    && operator.as_deref().unwrap_or("or") == "or" => {
+                leaves.push((field.as_str(), query));
+            }
+            Query::MultiMatch { fields, query, query_type, operator, minimum_should_match,
+                analyzer, fuzziness, .. }
+                if matches!(query_type, MultiMatchType::BestFields | MultiMatchType::MostFields)
+                    && fuzziness.is_none() && analyzer.is_none() && minimum_should_match.is_none()
+                    && operator.as_deref().unwrap_or("or") == "or" => {
+                leaves.extend(fields.iter().map(|field| (multi_match_field_and_boost(field).0, query)));
+            }
+            _ => return Ok(()),
+        }
+        let states = if self.documents.shard_count <= 1 {
+            self.search_state.iter().filter(|_| selected_shards.map_or(true, |s| s.contains(&0)))
+                .map(|state| (0, state)).collect::<Vec<_>>()
+        } else {
+            self.documents.shards.iter()
+                .filter(|(id, _)| selected_shards.map_or(true, |s| s.contains(id)))
+                .filter_map(|(id, shard)| shard.search_state.as_ref().map(|state| (*id, state)))
+                .collect::<Vec<_>>()
+        };
+        for (field, query) in leaves {
+            if field.contains('.') || context.native_matches.iter()
+                .any(|prepared| prepared.field == field && &prepared.query == query) {
+                continue;
+            }
+            let used = context.native_matches.iter()
+                .flat_map(|prepared| prepared.scores.values()).map(|scores| scores.len()).sum::<usize>();
+            let document_slots = states.iter().flat_map(|(_, state)| state.searcher.segment_readers())
+                .fold(0usize, |total, segment| total.saturating_add(segment.max_doc() as usize));
+            // Bound both stored scores and temporary segment arrays; fall back without truncation.
+            if document_slots > MAX_PREPARED_SOURCE_BM25_SCORES.saturating_sub(used) {
+                continue;
+            }
+            let Some(tokens) = context.tokens(query) else { continue };
+            if tokens.is_empty() { continue; }
+            let mut prepared = PreparedSourceBm25Match {
+                field: field.to_string(), query: query.clone(), scores: BTreeMap::new(),
+            };
+            for &(shard_id, state) in &states {
+                let Some(indexed) = state.fields.get(field).filter(|indexed|
+                    indexed.field_type == TantivyFieldType::Text && indexed.multi_field_source.is_none()
+                ) else { continue };
+                let Some(stats) = self.opensearch_bm25_field_stats(field, shard_id)
+                    .filter(|stats| stats.native_tokens_compatible) else { continue };
+                let idfs = tokens.iter().map(|term| opensearch_bm25_idf_from_stats(&stats, term))
+                    .collect::<Vec<_>>();
+                let scored = native_bm25::source_ordered_term_scores(
+                    &state.searcher, indexed.field, &tokens,
+                    |term_index, freq, length| idfs[term_index]
+                        * opensearch_bm25_tf(freq, length, stats.avg_field_len),
+                ).map_err(tantivy_error)?;
+                let mut scores = std::collections::HashMap::with_capacity(scored.len());
+                let mut complete = true;
+                for (address, score) in scored {
+                    let Some(id) = state.document_id_for_address(&state.searcher, address) else {
+                        complete = false;
+                        break;
+                    };
+                    scores.insert(id.to_string(), score);
+                }
+                if complete { prepared.scores.insert(shard_id, scores); }
+            }
+            if !prepared.scores.is_empty() { context.native_matches.push(prepared); }
+        }
+        Ok(())
+    }
+
     fn opensearch_match_bm25_score(
         &self,
         field: &str,
@@ -13617,7 +14759,7 @@ impl StoredIndex {
         if field_tokens.is_empty() {
             return None;
         }
-        let score = self.with_opensearch_bm25_field_stats(field, |stats| {
+        let score = self.with_opensearch_bm25_field_stats(field, document, |stats| {
             query_tokens
                 .iter()
                 .map(|token| {
@@ -13637,12 +14779,21 @@ impl StoredIndex {
         field: &str,
         query: &Value,
         document: &StoredDocument,
-        bm25_context: &mut BTreeMap<String, CachedBm25FieldStats>,
+        bm25_context: &mut Bm25Context,
     ) -> Option<f32> {
+        if let Some(prepared) = bm25_context.native_matches.iter()
+            .find(|prepared| prepared.field == field && &prepared.query == query) {
+            let shard_id = self.documents.shard_id_for_write(
+                &document.metadata.id, document.routing.as_deref(),
+            );
+            if let Some(scores) = prepared.scores.get(&shard_id) {
+                return scores.get(&document.metadata.id).copied();
+            }
+        }
         if !self.field_is_text(field) {
             return None;
         }
-        let query_tokens = tokenize_phrase_text(&json_value_to_query_text(query).ok()?);
+        let query_tokens = bm25_context.tokens(query)?;
         if query_tokens.is_empty() {
             return None;
         }
@@ -13652,6 +14803,7 @@ impl StoredIndex {
         }
         let score = self.with_opensearch_bm25_field_stats_for_query_context(
             field,
+            document,
             bm25_context,
             |stats| {
                 query_tokens
@@ -13705,7 +14857,7 @@ impl StoredIndex {
         } else {
             &matched_terms
         };
-        self.with_opensearch_bm25_field_stats(field, |stats| {
+        self.with_opensearch_bm25_field_stats(field, document, |stats| {
             let idf = scoring_terms
                 .iter()
                 .map(|term| opensearch_bm25_idf_from_stats(stats, term))
@@ -13722,12 +14874,12 @@ impl StoredIndex {
         slop: usize,
         prefix_last_token: bool,
         document: &StoredDocument,
-        bm25_context: &mut BTreeMap<String, CachedBm25FieldStats>,
+        bm25_context: &mut Bm25Context,
     ) -> Option<f32> {
         if !self.field_is_text(field) {
             return None;
         }
-        let query_tokens = tokenize_phrase_text(&json_value_to_query_text(query).ok()?);
+        let query_tokens = bm25_context.tokens(query)?;
         if query_tokens.is_empty() {
             return None;
         }
@@ -13738,7 +14890,7 @@ impl StoredIndex {
         let matched_terms = if prefix_last_token {
             matched_phrase_prefix_terms(&field_tokens, &query_tokens, slop)?
         } else if phrase_tokens_match_with_slop(&field_tokens, &query_tokens, slop) {
-            query_tokens.clone()
+            query_tokens.as_ref().clone()
         } else {
             return None;
         };
@@ -13747,7 +14899,7 @@ impl StoredIndex {
         } else {
             &matched_terms
         };
-        self.with_opensearch_bm25_field_stats_for_query_context(field, bm25_context, |stats| {
+        self.with_opensearch_bm25_field_stats_for_query_context(field, document, bm25_context, |stats| {
             let idf = scoring_terms
                 .iter()
                 .map(|term| opensearch_bm25_idf_from_stats(stats, term))
@@ -13766,7 +14918,7 @@ impl StoredIndex {
         tie_breaker: f32,
         document: &StoredDocument,
     ) -> Option<f32> {
-        let mut bm25_context = BTreeMap::new();
+        let mut bm25_context = Bm25Context::default();
         self.opensearch_multi_match_bm25_score_with_bm25_context(
             fields,
             query,
@@ -13786,12 +14938,12 @@ impl StoredIndex {
         slop: usize,
         tie_breaker: f32,
         document: &StoredDocument,
-        bm25_context: &mut BTreeMap<String, CachedBm25FieldStats>,
+        bm25_context: &mut Bm25Context,
     ) -> Option<f32> {
-        let mut scores = fields
+        let scores = fields
             .iter()
             .filter_map(|field| {
-                let field = multi_match_base_field_name(field);
+                let (field, field_boost) = multi_match_field_and_boost(field);
                 match query_type {
                     MultiMatchType::BestFields | MultiMatchType::MostFields => self
                         .opensearch_match_bm25_score_with_bm25_context(
@@ -13818,14 +14970,27 @@ impl StoredIndex {
                             bm25_context,
                         ),
                     _ => None,
-                }
-            })
-            .collect::<Vec<_>>();
+                }.map(|score| score * field_boost)
+            });
+        // Most ranking requests use at most two fields; keep their scores on the stack.
+        let mut inline = [0.0_f32; 2];
+        let mut overflow;
+        let scores: &mut [f32] = if fields.len() <= inline.len() {
+            let mut len = 0;
+            for score in scores {
+                inline[len] = score;
+                len += 1;
+            }
+            &mut inline[..len]
+        } else {
+            overflow = scores.collect::<Vec<_>>();
+            &mut overflow
+        };
         if scores.is_empty() {
             return None;
         }
         if matches!(query_type, MultiMatchType::MostFields) {
-            return Some(scores.into_iter().sum());
+            return Some(scores.iter().copied().sum());
         }
         scores.sort_by(|left, right| right.partial_cmp(left).unwrap_or(std::cmp::Ordering::Equal));
         let best = scores[0];
@@ -13836,34 +15001,40 @@ impl StoredIndex {
     fn with_opensearch_bm25_field_stats<R>(
         &self,
         field: &str,
+        document: &StoredDocument,
         f: impl FnOnce(&CachedBm25FieldStats) -> R,
     ) -> Option<R> {
-        let stats = self.opensearch_bm25_field_stats(field)?;
+        let shard_id = self.documents.shard_id_for_write(&document.metadata.id, document.routing.as_deref());
+        let stats = self.opensearch_bm25_field_stats(field, shard_id)?;
         Some(f(&stats))
     }
 
     fn with_opensearch_bm25_field_stats_for_query_context<R>(
         &self,
         field: &str,
-        bm25_context: &mut BTreeMap<String, CachedBm25FieldStats>,
+        document: &StoredDocument,
+        bm25_context: &mut Bm25Context,
         f: impl FnOnce(&CachedBm25FieldStats) -> R,
     ) -> Option<R> {
+        let shard_id = self.documents.shard_id_for_write(&document.metadata.id, document.routing.as_deref());
+        let bm25_context = bm25_context.fields.entry(shard_id).or_default();
         let cache_hit = bm25_context
             .get(field)
             .is_some_and(|cached| cached.refreshed_seq_no == self.refreshed_seq_no);
         if !cache_hit {
-            let stats = self.opensearch_bm25_field_stats(field)?;
+            let stats = self.opensearch_bm25_field_stats(field, shard_id)?;
             bm25_context.insert(field.to_string(), stats);
         }
         bm25_context.get(field).map(f)
     }
 
-    fn opensearch_bm25_field_stats(&self, field: &str) -> Option<CachedBm25FieldStats> {
+    fn opensearch_bm25_field_stats(&self, field: &str, shard_id: u32) -> Option<CachedBm25FieldStats> {
         if let Some(cached) = self
             .bm25_stats_cache
             .lock()
             .expect("bm25 stats cache mutex poisoned")
-            .get(field)
+            .get(&shard_id)
+            .and_then(|fields| fields.get(field))
             .filter(|cached| cached.refreshed_seq_no == self.refreshed_seq_no)
             .cloned()
         {
@@ -13873,8 +15044,14 @@ impl StoredIndex {
         let mut doc_count = 0usize;
         let mut total_len = 0usize;
         let mut term_doc_counts = BTreeMap::<String, usize>::new();
-        for document in self.refreshed_documents_iter() {
+        let mut native_tokens_compatible = !field.contains('.');
+        let mut native_phrase_values_compatible = true;
+        for document in self.documents.shards.get(&shard_id)?.refreshed_values() {
             let tokens = source_tokens_for_field(&document.source, field);
+            native_tokens_compatible &= document.source.get(field).map_or(true, source_bm25_ascii_text)
+                && tokens.iter().all(|token| token.len() < 40);
+            native_phrase_values_compatible &= document.source.get(field)
+                .map_or(true, native_phrase_source_value_supported);
             if tokens.is_empty() {
                 continue;
             }
@@ -13891,19 +15068,23 @@ impl StoredIndex {
             refreshed_seq_no: self.refreshed_seq_no,
             doc_count,
             avg_field_len: total_len as f32 / doc_count as f32,
-            term_doc_counts,
+            term_doc_counts: Arc::new(term_doc_counts),
+            native_tokens_compatible,
+            native_phrase_values_compatible,
         };
         self.bm25_stats_cache
             .lock()
             .expect("bm25 stats cache mutex poisoned")
+            .entry(shard_id).or_default()
             .insert(field.to_string(), stats.clone());
         Some(stats)
     }
 
     fn field_is_text(&self, field: &str) -> bool {
         self.search_state
-            .as_ref()
-            .and_then(|search_state| search_state.fields.get(field))
+            .iter()
+            .chain(self.shard_search_states_for(None).map(|(_, state)| state))
+            .find_map(|search_state| search_state.fields.get(field))
             .is_some_and(|field| matches!(field.field_type, TantivyFieldType::Text))
     }
 
@@ -14080,12 +15261,46 @@ impl StoredIndex {
         }
     }
 
+    fn source_score_query_is_infallible(&self, query: &Query) -> bool {
+        match query {
+            Query::MatchAll | Query::MatchNone | Query::Match { .. }
+            | Query::MatchPhrase { .. } | Query::MatchPhrasePrefix { .. }
+            | Query::MultiMatch { .. } | Query::MatchBoolPrefix { .. } => true,
+            Query::Term { field, .. } | Query::Terms { field, .. } | Query::Exists { field } =>
+                self.multi_field_keyword_mapping(field).is_none(),
+            Query::Range { field, .. } => !self.search_state.iter()
+                .chain(self.shard_search_states_for(None).map(|(_, state)| state))
+                .any(|state| state.fields.get(field).is_some_and(|field|
+                    field.field_type == TantivyFieldType::Text)),
+            Query::Bool { clauses } => clauses.must.iter().chain(&clauses.filter)
+                .chain(&clauses.must_not).chain(&clauses.should)
+                .all(|query| self.source_score_query_is_infallible(query)),
+            _ => false,
+        }
+    }
+
+    fn score_bool_must_with_bm25_context(
+        &self,
+        queries: &[Query],
+        document: &StoredDocument,
+        bm25_context: &mut Bm25Context,
+    ) -> EngineResult<Option<f32>> {
+        let mut score = 0.0;
+        for query in queries {
+            let Some(query_score) =
+                self.score_document_query_with_bm25_context(query, document, bm25_context)?
+            else { return Ok(None) };
+            score += query_score;
+        }
+        Ok(Some(score))
+    }
+
     fn score_bool_query(
         &self,
         clauses: &BoolQuery,
         document: &StoredDocument,
     ) -> EngineResult<Option<f32>> {
-        let mut bm25_context = BTreeMap::new();
+        let mut bm25_context = Bm25Context::default();
         self.score_bool_query_with_bm25_context(clauses, document, &mut bm25_context)
     }
 
@@ -14093,17 +15308,21 @@ impl StoredIndex {
         &self,
         clauses: &BoolQuery,
         document: &StoredDocument,
-        bm25_context: &mut BTreeMap<String, CachedBm25FieldStats>,
+        bm25_context: &mut Bm25Context,
     ) -> EngineResult<Option<f32>> {
-        let mut score = 0.0;
-        for query in &clauses.must {
-            let Some(query_score) =
-                self.score_document_query_with_bm25_context(query, document, bm25_context)?
-            else {
-                return Ok(None);
-            };
-            score += query_score;
+        if clauses.must.is_empty() && clauses.filter.is_empty()
+            && clauses.should.is_empty() && clauses.must_not.is_empty()
+        {
+            return Ok(Some(1.0));
         }
+        // Only prepared, infallible trees can change evaluation order without hiding errors.
+        let defer_must = bm25_context.deferred_bool_must.contains(clauses);
+        let mut score = if defer_must { 0.0 } else {
+            let Some(score) = self.score_bool_must_with_bm25_context(
+                &clauses.must, document, bm25_context,
+            )? else { return Ok(None) };
+            score
+        };
         for query in &clauses.filter {
             if self
                 .score_document_query_with_bm25_context(query, document, bm25_context)?
@@ -14120,21 +15339,28 @@ impl StoredIndex {
                 return Ok(None);
             }
         }
-        let matched_should = clauses
-            .should
-            .iter()
-            .map(|query| self.score_document_query_with_bm25_context(query, document, bm25_context))
-            .collect::<EngineResult<Vec<_>>>()?;
-        let should_count = matched_should
-            .iter()
-            .filter(|score| score.is_some())
-            .count() as u32;
-        let mut minimum_should_match = effective_bool_minimum_should_match(clauses);
-        minimum_should_match = minimum_should_match.min(clauses.should.len() as u32);
+        let mut should_count = 0u32;
+        // Match f32::Sum's identity and left-to-right order, separate from the must sum.
+        let mut should_score = -0.0_f32;
+        for query in &clauses.should {
+            if let Some(query_score) =
+                self.score_document_query_with_bm25_context(query, document, bm25_context)?
+            {
+                should_count += 1;
+                should_score += query_score;
+            }
+        }
+        let minimum_should_match = effective_bool_minimum_should_match(clauses);
         if should_count < minimum_should_match {
             return Ok(None);
         }
-        score += matched_should.into_iter().flatten().sum::<f32>();
+        if defer_must {
+            let Some(must_score) = self.score_bool_must_with_bm25_context(
+                &clauses.must, document, bm25_context,
+            )? else { return Ok(None) };
+            score = must_score;
+        }
+        score += should_score;
         if score == 0.0 && bool_query_has_scoring_clause(clauses) {
             score = 1.0;
         }
@@ -14240,13 +15466,16 @@ fn ensure_dynamic_mapping_for_value(
         }
         Value::Array(values) => {
             let mut changed = false;
+            // After the first scalar succeeds, recursive discovery cannot remove its mapping.
+            let mut scalar_mapping_known = false;
             for value in values {
                 match value {
                     Value::Object(_) | Value::Array(_) => {
                         changed |= ensure_dynamic_mapping_for_value(schema, field_name, value)?;
                     }
-                    _ if infer_dynamic_field_type(value).is_some() => {
+                    _ if !scalar_mapping_known && infer_dynamic_field_type(value).is_some() => {
                         changed |= ensure_dynamic_scalar_mapping(schema, field_name, value)?;
+                        scalar_mapping_known = true;
                     }
                     _ => {}
                 }
@@ -14273,6 +15502,7 @@ fn ensure_dynamic_scalar_mapping(
             "dynamic mapping is disabled and field [{field_name}] is not mapped"
         )));
     }
+    let add_keyword = field_type == TantivyFieldType::Text;
     schema.fields.push(TantivyFieldMapping {
         name: field_name.to_string(),
         indexed: true,
@@ -14287,7 +15517,20 @@ fn ensure_dynamic_scalar_mapping(
         ),
         field_type,
         knn_vector: None,
+        multi_field_source: None,
+        text_options: add_keyword.then(|| Box::new(TantivyTextOptions::default())),
     });
+    if add_keyword {
+        schema.fields.push(TantivyFieldMapping {
+            name: format!("{field_name}.keyword"),
+            field_type: TantivyFieldType::Keyword,
+            indexed: true, stored: false, fast: true, knn_vector: None,
+            text_options: None,
+            multi_field_source: Some(MultiFieldSource {
+                path: field_name.to_string(), ignore_above: Some(256), normalizer: None,
+            }),
+        });
+    }
     Ok(true)
 }
 
@@ -14631,6 +15874,21 @@ fn schema_hash(index: &str, schema: &TantivyIndexSchema) -> EngineResult<u64> {
     Ok(hash)
 }
 
+fn matches_legacy_default_text_schema_hash(
+    index: &str, schema: &TantivyIndexSchema, expected: u64,
+) -> EngineResult<bool> {
+    let mut legacy = schema.clone();
+    let mut removed_default = false;
+    for field in &mut legacy.fields {
+        if let Some(options) = field.text_options.take() {
+            if *options != TantivyTextOptions::default() { return Ok(false); }
+            removed_default = true;
+        }
+    }
+    // Only the newly recorded default options may differ; all previous schema bytes stay checked.
+    Ok(removed_default && schema_hash(index,&legacy)? == expected)
+}
+
 fn extract_vector_fields(
     schema: &TantivyIndexSchema,
     source: &Value,
@@ -14672,7 +15930,7 @@ fn extract_top_level_scalar_fields(source: &Value) -> BTreeMap<String, Value> {
         .unwrap_or_default()
 }
 
-fn extract_top_level_string_fields(source: &Value) -> BTreeMap<String, String> {
+fn extract_top_level_string_fields(source: &Value) -> FieldCache<String> {
     source
         .as_object()
         .map(|object| {
@@ -14688,7 +15946,7 @@ fn extract_top_level_string_fields(source: &Value) -> BTreeMap<String, String> {
         .unwrap_or_default()
 }
 
-fn extract_top_level_f64_fields(source: &Value) -> BTreeMap<String, f64> {
+fn extract_top_level_f64_fields(source: &Value) -> FieldCache<f64> {
     source
         .as_object()
         .map(|object| {
@@ -14700,7 +15958,7 @@ fn extract_top_level_f64_fields(source: &Value) -> BTreeMap<String, f64> {
         .unwrap_or_default()
 }
 
-fn extract_top_level_date_millis_fields(source: &Value) -> BTreeMap<String, i64> {
+fn extract_top_level_date_millis_fields(source: &Value) -> FieldCache<i64> {
     source
         .as_object()
         .map(|object| {
@@ -15252,6 +16510,7 @@ fn search_tantivy_top_docs_with_scores(
     query: &dyn TantivyQueryTrait,
     sort: &[SortSpec],
     limit: usize,
+    score_sorted_hits: bool,
 ) -> EngineResult<Option<Vec<(tantivy::Score, tantivy::DocAddress)>>> {
     if limit == 0 {
         return Ok(Some(Vec::new()));
@@ -15274,14 +16533,13 @@ fn search_tantivy_top_docs_with_scores(
         limit,
         offset: 0,
     };
-    Ok(Some(
-        searcher
-            .search(query, &collector)
-            .map_err(tantivy_error)?
-            .into_iter()
-            .map(|address| (1.0, address))
-            .collect(),
-    ))
+    let addresses = searcher.search(query, &collector).map_err(tantivy_error)?;
+    let scored = if score_sorted_hits {
+        native_bm25::score_addresses(searcher,query,addresses).map_err(tantivy_error)?
+    } else {
+        addresses.into_iter().map(|address| (1.0,address)).collect()
+    };
+    Ok(Some(scored))
 }
 
 fn search_tantivy_count_and_top_docs_with_scores(
@@ -15290,7 +16548,9 @@ fn search_tantivy_count_and_top_docs_with_scores(
     query: &dyn TantivyQueryTrait,
     sort: &[SortSpec],
     limit: usize,
+    score_sorted_hits: bool,
 ) -> EngineResult<Option<(u64, Vec<(tantivy::Score, tantivy::DocAddress)>)>> {
+    let limit = limit.min(usize::try_from(searcher.num_docs()).unwrap_or(usize::MAX));
     if sort_uses_default_relevance_order(sort) {
         if limit == 0 {
             let total_hits = searcher.search(query, &Count).map_err(tantivy_error)? as u64;
@@ -15320,7 +16580,11 @@ fn search_tantivy_count_and_top_docs_with_scores(
     let (total_hits, top_docs) = searcher
         .search(query, &(Count, collector))
         .map_err(tantivy_error)?;
-    let top_docs = top_docs.into_iter().map(|address| (1.0, address)).collect();
+    let top_docs = if score_sorted_hits {
+        native_bm25::score_addresses(searcher,query,top_docs).map_err(tantivy_error)?
+    } else {
+        top_docs.into_iter().map(|address| (1.0, address)).collect()
+    };
     Ok(Some((total_hits as u64, top_docs)))
 }
 
@@ -15731,11 +16995,23 @@ fn parse_internal_search_shard_scope(query: &Value) -> SearchShardScope {
                         .filter_map(Value::as_u64)
                         .filter_map(|shard_id| u32::try_from(shard_id).ok())
                         .collect::<BTreeSet<_>>();
-                    (!shard_ids.is_empty()).then(|| (index.clone(), shard_ids))
+                    Some((index.clone(), shard_ids))
                 })
                 .collect()
         })
         .unwrap_or_default()
+}
+
+fn parse_internal_search_alias_filters(query: &Value) -> EngineResult<BTreeMap<String, Query>> {
+    let Some(filters) = query.get(INTERNAL_SEARCH_ALIAS_FILTERS_FIELD) else {
+        return Ok(BTreeMap::new());
+    };
+    let filters = filters.as_object().ok_or_else(|| invalid_request("alias filter scope must be an object"))?;
+    filters.iter().map(|(index, filter)| {
+        let parsed = parse_query(filter)
+            .map_err(|error| invalid_request(format!("invalid alias filter for [{index}]: {error}")))?;
+        Ok((index.clone(), parsed))
+    }).collect()
 }
 
 fn build_refreshed_vector_columns<'a>(
@@ -16105,13 +17381,14 @@ fn read_field_mappings(mappings: &Value) -> EngineResult<Vec<TantivyFieldMapping
     };
 
     let mut fields = Vec::with_capacity(properties.len());
-    read_field_mappings_from_properties(properties, None, &mut fields)?;
+    read_field_mappings_from_properties(properties, None, None, &mut fields)?;
     Ok(fields)
 }
 
 fn read_field_mappings_from_properties(
     properties: &serde_json::Map<String, Value>,
     prefix: Option<&str>,
+    source_path: Option<&str>,
     fields: &mut Vec<TantivyFieldMapping>,
 ) -> EngineResult<()> {
     for (name, mapping) in properties {
@@ -16127,6 +17404,17 @@ fn read_field_mappings_from_properties(
             .get("type")
             .and_then(Value::as_str)
             .unwrap_or("object");
+        if source_path.is_some() {
+            if name.contains('.') {
+                return Err(invalid_request(format!("multi-field name [{name}] cannot contain '.'")));
+            }
+            if mapping.get("type").and_then(Value::as_str).is_none() {
+                return Err(invalid_request(format!("no type specified for property [{name}]")));
+            }
+            if matches!(field_type, "object" | "nested" | "alias") {
+                return Err(invalid_request(format!("Type [{field_type}] cannot be used in multi field")));
+            }
+        }
         if field_type == KNN_VECTOR_FIELD_TYPE {
             let knn_vector = parse_knn_vector_mapping(mapping).map_err(|error| {
                 invalid_request(format!(
@@ -16143,12 +17431,14 @@ fn read_field_mappings_from_properties(
                 stored: knn_vector.stored,
                 fast: knn_vector.doc_values,
                 knn_vector: Some(knn_vector),
+                multi_field_source: None,
+                text_options: None,
             });
             continue;
         }
         if matches!(field_type, "object" | "nested") {
             if let Some(child_properties) = mapping.get("properties").and_then(Value::as_object) {
-                read_field_mappings_from_properties(child_properties, Some(&field_name), fields)?;
+                read_field_mappings_from_properties(child_properties, Some(&field_name), None, fields)?;
             }
             continue;
         }
@@ -16179,9 +17469,38 @@ fn read_field_mappings_from_properties(
                         | "date"
                 )),
             knn_vector: None,
+            multi_field_source: source_path.map(|path| read_multi_field_source(path, mapping)).transpose()?,
+            text_options: if field_type == "text" {
+                Some(serde_json::from_value(mapping.clone()).map_err(|error|
+                    invalid_request(format!("invalid text options for [{field_name}]: {error}")))?)
+            } else { None },
         });
+        if let Some(children) = mapping.get("fields") {
+            if children.as_array().is_some_and(Vec::is_empty) {
+                continue;
+            }
+            let children = children.as_object().ok_or_else(|| invalid_request(
+                format!("expected object for [fields] on field [{field_name}]")))?;
+            read_field_mappings_from_properties(children, Some(&field_name),
+                Some(source_path.unwrap_or(&field_name)), fields)?;
+        }
     }
     Ok(())
+}
+
+fn read_multi_field_source(path: &str, mapping: &Value) -> EngineResult<MultiFieldSource> {
+    let ignore_above = mapping.get("ignore_above").map(|value| {
+        let parsed = value.as_i64().or_else(|| value.as_str()?.parse::<i64>().ok());
+        parsed.filter(|value| (0..=i32::MAX as i64).contains(value))
+            .map(|value| value as u32)
+            .ok_or_else(|| invalid_request("[ignore_above] must be a non-negative integer"))
+    }).transpose()?;
+    let normalizer = match mapping.get("normalizer") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(name)) => Some(name.clone()),
+        Some(_) => return Err(invalid_request("[normalizer] must be a string")),
+    };
+    Ok(MultiFieldSource { path: path.to_string(), ignore_above, normalizer })
 }
 
 fn read_dynamic_mapping(mappings: &Value) -> EngineResult<bool> {
@@ -22490,8 +23809,7 @@ fn nested_query_matches_source(id: &str, source: &Value, path: &str, query: &Que
 }
 
 fn nested_child_source_matches_query(id: &str, path: &str, source: &Value, query: &Query) -> bool {
-    document_matches_query(query, id, source)
-        || document_matches_query(query, id, &synthetic_nested_child_source(path, source))
+    document_matches_query(query, id, &synthetic_nested_child_source(path, source))
 }
 
 fn document_matches_query_for_candidate_reduction(
@@ -22634,7 +23952,7 @@ fn document_matches_bool_query_for_candidate_reduction(
         .iter()
         .filter(|query| document_matches_query_for_candidate_reduction(query, id, document))
         .count()
-        >= minimum_should_match.min(clauses.should.len())
+        >= minimum_should_match
 }
 
 fn synthetic_nested_child_source(path: &str, source: &Value) -> Value {
@@ -23099,6 +24417,13 @@ fn bool_query_has_scoring_clause(clauses: &BoolQuery) -> bool {
 }
 
 fn effective_bool_minimum_should_match(clauses: &BoolQuery) -> u32 {
+    if clauses.must.is_empty()
+        && clauses.filter.is_empty()
+        && clauses.should.is_empty()
+    {
+        // Empty and pure-negative bool queries are anchored by match-all.
+        return 0;
+    }
     let should_only_default = u32::from(
         !clauses.should.is_empty() && clauses.must.is_empty() && clauses.filter.is_empty(),
     );
@@ -23731,7 +25056,9 @@ fn query_requires_native_candidate_post_filter(query: &Query) -> bool {
         } if *case_insensitive && field != "_id" => true,
         Query::Wrapper { query } => query_requires_native_candidate_post_filter(query),
         Query::Bool { clauses } => {
-            (clauses.minimum_should_match.unwrap_or(0) > 1
+            clauses.must.iter().chain(clauses.should.iter())
+                .any(multi_match_supports_source_bm25)
+                || (clauses.minimum_should_match.unwrap_or(0) > 1
                 && !clauses.should.iter().any(query_uses_vector_scores))
                 || clauses
                     .must
@@ -23756,6 +25083,7 @@ fn query_requires_native_candidate_post_filter(query: &Query) -> bool {
 
 fn query_allows_source_candidate_scan_for_native_post_filter(query: &Query) -> bool {
     match query {
+        query if multi_match_supports_source_bm25(query) => true,
         Query::QueryString { .. }
         | Query::Exists { .. }
         | Query::Match { .. }
@@ -23819,6 +25147,15 @@ fn query_allows_source_candidate_scan_for_native_post_filter(query: &Query) -> b
         }
         _ => false,
     }
+}
+
+fn multi_match_supports_source_bm25(query: &Query) -> bool {
+    matches!(query, Query::MultiMatch {
+        query_type, fuzziness, analyzer, minimum_should_match, operator, ..
+    } if matches!(query_type, MultiMatchType::BestFields | MultiMatchType::MostFields
+        | MultiMatchType::Phrase | MultiMatchType::PhrasePrefix)
+        && fuzziness.is_none() && analyzer.is_none() && minimum_should_match.is_none()
+        && operator.as_deref().unwrap_or("or") == "or")
 }
 
 fn query_requires_source_candidate_scan_despite_tantivy_candidates(query: &Query) -> bool {
@@ -24951,6 +26288,7 @@ fn matches_multi_match_query(
     let field_minimum_should_match = minimum_should_match
         .or_else(|| (operator == Some("and")).then(|| match_query_token_count(query).max(1)));
     fields.iter().any(|field| {
+        let field = multi_match_base_field_name(field);
         let value = if field == "_id" {
             Some(Value::String(id.to_string()))
         } else {
@@ -25003,6 +26341,7 @@ fn multi_match_matched_value_count(
     fields
         .iter()
         .map(|field| {
+            let field = multi_match_base_field_name(field);
             if field == "_id" {
                 usize::from(matches_match_query(
                     Some(&Value::String(id.to_string())),
@@ -26135,6 +27474,34 @@ fn native_nested_child_ordinals_for_query(
     path: &str,
     query: &Query,
 ) -> Option<std::collections::BTreeSet<usize>> {
+    let field = match query {
+        Query::Term { field, .. }
+        | Query::Terms { field, .. }
+        | Query::SpanTerm { field, .. }
+        | Query::Range { field, .. }
+        | Query::Exists { field }
+        | Query::Prefix { field, .. }
+        | Query::Wildcard { field, .. }
+        | Query::Regexp { field, .. }
+        | Query::Fuzzy { field, .. }
+        | Query::Match { field, .. }
+        | Query::MatchPhrase { field, .. }
+        | Query::MatchPhrasePrefix { field, .. }
+        | Query::MatchBoolPrefix { field, .. }
+        | Query::TermsSet { field, .. }
+        | Query::DistanceFeature { field, .. }
+        | Query::RankFeature { field } => Some(field.as_str()),
+        _ => None,
+    };
+    if field.is_some_and(|field| {
+        field != "_id"
+            && field
+                .strip_prefix(path)
+                .and_then(|suffix| suffix.strip_prefix('.'))
+                .is_none()
+    }) {
+        return None;
+    }
     match query {
         Query::Term {
             field,
@@ -26355,19 +27722,48 @@ fn native_nested_child_ordinals_for_query(
                     None => child_ordinals,
                 });
             }
-            if let Some(required) = required {
-                return Some(required);
+            let minimum_should_match = effective_bool_minimum_should_match(clauses);
+            if minimum_should_match as usize > clauses.should.len() {
+                return Some(std::collections::BTreeSet::new());
             }
-            if clauses.minimum_should_match.unwrap_or(0) <= 1 && !clauses.should.is_empty() {
-                let mut ordinals = std::collections::BTreeSet::new();
-                for child in &clauses.should {
-                    ordinals.extend(native_nested_child_ordinals_for_query(
-                        path_index, path, child,
-                    )?);
-                }
-                return Some(ordinals);
+            if minimum_should_match > 0 {
+                let should_ordinals = if minimum_should_match == 1 {
+                    let mut ordinals = std::collections::BTreeSet::new();
+                    for child in &clauses.should {
+                        ordinals.extend(native_nested_child_ordinals_for_query(
+                            path_index, path, child,
+                        )?);
+                    }
+                    ordinals
+                } else {
+                    // Count clauses per child, never across siblings of the same parent.
+                    let mut counts = BTreeMap::<usize, u32>::new();
+                    for child in &clauses.should {
+                        for ordinal in
+                            native_nested_child_ordinals_for_query(path_index, path, child)?
+                        {
+                            *counts.entry(ordinal).or_default() += 1;
+                        }
+                    }
+                    counts
+                        .into_iter()
+                        .filter_map(|(ordinal, count)| {
+                            (count >= minimum_should_match).then_some(ordinal)
+                        })
+                        .collect()
+                };
+                required = Some(match required {
+                    Some(existing) => existing.intersection(&should_ordinals).copied().collect(),
+                    None => should_ordinals,
+                });
             }
-            None
+            let mut ordinals =
+                required.unwrap_or_else(|| (0..path_index.children.len()).collect());
+            for child in &clauses.must_not {
+                let excluded = native_nested_child_ordinals_for_query(path_index, path, child)?;
+                ordinals.retain(|ordinal| !excluded.contains(ordinal));
+            }
+            Some(ordinals)
         }
         Query::Wrapper { query } => native_nested_child_ordinals_for_query(path_index, path, query),
         Query::ConstantScore { filter } => {
@@ -27650,10 +29046,7 @@ fn collect_phrase_prefix_terms_with_slop(
 }
 
 fn tokenize_phrase_text(text: &str) -> Vec<String> {
-    text.split(|ch: char| !ch.is_alphanumeric())
-        .filter(|token| !token.is_empty())
-        .map(|token| token.to_lowercase())
-        .collect()
+    os_core::bm25::source_text_tokens(text)
 }
 
 fn source_tokens_for_field(source: &Value, field: &str) -> Vec<String> {
@@ -27662,23 +29055,32 @@ fn source_tokens_for_field(source: &Value, field: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+fn source_bm25_ascii_text(value: &Value) -> bool {
+    match value {
+        Value::String(text) => text.is_ascii(),
+        Value::Array(values) => values.iter().all(source_bm25_ascii_text),
+        Value::Null => true,
+        _ => false,
+    }
+}
+
+fn native_phrase_source_value_supported(value: &Value) -> bool {
+    match value {
+        Value::Null | Value::Number(_) | Value::Bool(_) => true,
+        Value::String(text) => text.is_ascii(),
+        Value::Array(values) => values.iter().all(native_phrase_source_value_supported),
+        _ => false,
+    }
+}
+
 fn tokens_for_source_value(value: &Value) -> Vec<String> {
     match value {
         Value::String(text) => tokenize_phrase_text(text),
         Value::Array(items) => items.iter().flat_map(tokens_for_source_value).collect(),
+        Value::Number(number) => tokenize_phrase_text(&number.to_string()),
+        Value::Bool(value) => tokenize_phrase_text(&value.to_string()),
         _ => Vec::new(),
     }
-}
-
-fn opensearch_bm25_tf(freq: usize, doc_len: usize, avgdl: f32) -> f32 {
-    if freq == 0 || doc_len == 0 || avgdl == 0.0 {
-        return 0.0;
-    }
-    let freq = freq as f32;
-    let doc_len = doc_len as f32;
-    let k1 = 1.2_f32;
-    let b = 0.75_f32;
-    freq / (freq + k1 * (1.0 - b + b * doc_len / avgdl))
 }
 
 fn opensearch_bm25_term_score_from_stats(
@@ -27695,13 +29097,7 @@ fn opensearch_bm25_term_score_from_stats(
 }
 
 fn opensearch_bm25_idf_from_stats(stats: &CachedBm25FieldStats, term: &str) -> f32 {
-    let doc_count = stats.doc_count as f32;
-    let term_doc_count = stats.term_doc_counts.get(term).copied().unwrap_or_default() as f32;
-    if doc_count == 0.0 || term_doc_count == 0.0 {
-        return 0.0;
-    }
-    (1.0_f64 + (doc_count as f64 - term_doc_count as f64 + 0.5) / (term_doc_count as f64 + 0.5))
-        .ln() as f32
+    inverse_document_frequency(stats.doc_count, stats.term_doc_counts.get(term).copied().unwrap_or_default())
 }
 
 fn matches_range_query(value: &Value, bounds: &RangeBounds) -> bool {
@@ -27722,24 +29118,6 @@ fn range_query_matching_value_count(value: &Value, bounds: &RangeBounds) -> usiz
             && bound_matches(value, bounds.lt.as_ref(), |ordering| ordering.is_lt())
             && bound_matches(value, bounds.lte.as_ref(), |ordering| ordering.is_le()),
     )
-}
-
-fn text_range_candidate_matches_token_bound(text: &str, bounds: &RangeBounds) -> bool {
-    let tokens = tokenize_phrase_text(text);
-    if tokens.is_empty() {
-        return false;
-    }
-    [
-        bounds.gt.as_ref(),
-        bounds.gte.as_ref(),
-        bounds.lt.as_ref(),
-        bounds.lte.as_ref(),
-    ]
-    .into_iter()
-    .flatten()
-    .filter_map(Value::as_str)
-    .flat_map(tokenize_phrase_text)
-    .any(|bound_token| tokens.iter().any(|token| token == &bound_token))
 }
 
 fn value_matches_exists_query(value: &Value) -> bool {
@@ -28147,57 +29525,79 @@ fn date_histogram_bucket_key_from_epoch_millis(
     offset_millis: i64,
     time_zone: Option<&str>,
 ) -> Option<i64> {
-    let interval = normalize_date_histogram_interval(interval)?;
-    let time_zone_offset_millis = date_histogram_time_zone_offset_millis(time_zone)?;
-    let fixed_interval_millis = match interval {
-        "minute" => Some(60_000_i64),
-        "hour" => Some(3_600_000_i64),
-        "day" => Some(86_400_000_i64),
-        _ => None,
-    };
-    if let Some(interval_millis) = fixed_interval_millis {
-        if offset_millis != 0 {
-            let shifted = epoch_millis.checked_sub(offset_millis)?;
-            return shifted
+    PreparedDateHistogramRounding::new(interval, offset_millis, time_zone)?.bucket_key(epoch_millis)
+}
+
+#[derive(Clone, Copy)]
+struct PreparedDateHistogramRounding {
+    interval: &'static str,
+    offset_millis: i64,
+    time_zone_offset_millis: i64,
+    fixed_interval_millis: Option<i64>,
+}
+
+impl PreparedDateHistogramRounding {
+    fn new(interval: &str, offset_millis: i64, time_zone: Option<&str>) -> Option<Self> {
+        let interval = normalize_date_histogram_interval(interval)?;
+        Some(Self {
+            interval,
+            offset_millis,
+            time_zone_offset_millis: date_histogram_time_zone_offset_millis(time_zone)?,
+            fixed_interval_millis: match interval {
+                "minute" => Some(60_000),
+                "hour" => Some(3_600_000),
+                "day" => Some(86_400_000),
+                _ => None,
+            },
+        })
+    }
+
+    fn bucket_key(&self, epoch_millis: i64) -> Option<i64> {
+        let Self { interval, offset_millis, time_zone_offset_millis, fixed_interval_millis } = *self;
+        if let Some(interval_millis) = fixed_interval_millis {
+            if offset_millis != 0 {
+                let shifted = epoch_millis.checked_sub(offset_millis)?;
+                return shifted
+                    .div_euclid(interval_millis)
+                    .checked_mul(interval_millis)?
+                    .checked_add(offset_millis);
+            }
+            let zoned_epoch_millis = epoch_millis.checked_add(time_zone_offset_millis)?;
+            return zoned_epoch_millis
                 .div_euclid(interval_millis)
                 .checked_mul(interval_millis)?
-                .checked_add(offset_millis);
+                .checked_sub(time_zone_offset_millis);
         }
         let zoned_epoch_millis = epoch_millis.checked_add(time_zone_offset_millis)?;
-        return zoned_epoch_millis
-            .div_euclid(interval_millis)
-            .checked_mul(interval_millis)?
-            .checked_sub(time_zone_offset_millis);
+        let timestamp = OffsetDateTime::from_unix_timestamp_nanos(
+            i128::from(zoned_epoch_millis).saturating_mul(1_000_000),
+        )
+        .ok()?;
+        let year = timestamp.year();
+        let month = timestamp.month() as u32;
+        let day = u32::from(timestamp.day());
+        let hour = timestamp.hour();
+        let minute = timestamp.minute();
+        let millis = match interval {
+            "minute" => days_from_civil(year, month, day)?
+                .checked_mul(86_400_000)?
+                .checked_add(i64::from(hour).checked_mul(3_600_000)?)?
+                .checked_add(i64::from(minute).checked_mul(60_000)?)?,
+            "hour" => days_from_civil(year, month, day)?
+                .checked_mul(86_400_000)?
+                .checked_add(i64::from(hour).checked_mul(3_600_000)?)?,
+            "day" => days_from_civil(year, month, day)?.checked_mul(86_400_000)?,
+            "week" => {
+                let days = days_from_civil(year, month, day)?;
+                let weekday_offset = i64::from(timestamp.weekday().number_days_from_monday());
+                days.checked_sub(weekday_offset)?.checked_mul(86_400_000)?
+            }
+            "month" => days_from_civil(year, month, 1)?.checked_mul(86_400_000)?,
+            "year" => days_from_civil(year, 1, 1)?.checked_mul(86_400_000)?,
+            _ => return None,
+        };
+        millis.checked_sub(time_zone_offset_millis)
     }
-    let zoned_epoch_millis = epoch_millis.checked_add(time_zone_offset_millis)?;
-    let timestamp = OffsetDateTime::from_unix_timestamp_nanos(
-        i128::from(zoned_epoch_millis).saturating_mul(1_000_000),
-    )
-    .ok()?;
-    let year = timestamp.year();
-    let month = timestamp.month() as u32;
-    let day = u32::from(timestamp.day());
-    let hour = timestamp.hour();
-    let minute = timestamp.minute();
-    let millis = match interval {
-        "minute" => days_from_civil(year, month, day)?
-            .checked_mul(86_400_000)?
-            .checked_add(i64::from(hour).checked_mul(3_600_000)?)?
-            .checked_add(i64::from(minute).checked_mul(60_000)?)?,
-        "hour" => days_from_civil(year, month, day)?
-            .checked_mul(86_400_000)?
-            .checked_add(i64::from(hour).checked_mul(3_600_000)?)?,
-        "day" => days_from_civil(year, month, day)?.checked_mul(86_400_000)?,
-        "week" => {
-            let days = days_from_civil(year, month, day)?;
-            let weekday_offset = i64::from(timestamp.weekday().number_days_from_monday());
-            days.checked_sub(weekday_offset)?.checked_mul(86_400_000)?
-        }
-        "month" => days_from_civil(year, month, 1)?.checked_mul(86_400_000)?,
-        "year" => days_from_civil(year, 1, 1)?.checked_mul(86_400_000)?,
-        _ => return None,
-    };
-    millis.checked_sub(time_zone_offset_millis)
 }
 
 fn date_histogram_key_as_string_from_epoch_millis(
@@ -28727,8 +30127,7 @@ fn matches_bool_query(clauses: &BoolQuery, id: &str, source: &Value) -> bool {
         return false;
     }
 
-    let mut minimum_should_match = effective_bool_minimum_should_match(clauses) as usize;
-    minimum_should_match = minimum_should_match.min(clauses.should.len());
+    let minimum_should_match = effective_bool_minimum_should_match(clauses) as usize;
     let matching_should_clauses = clauses
         .should
         .iter()
@@ -28736,6 +30135,174 @@ fn matches_bool_query(clauses: &BoolQuery, id: &str, source: &Value) -> bool {
         .count();
 
     matching_should_clauses >= minimum_should_match
+}
+
+struct MappedEngineSort<'a> {
+    specs: &'a [SortSpec],
+    sources: BTreeMap<String, Vec<Option<&'a MultiFieldSource>>>,
+    mapped_columns: Vec<bool>,
+}
+
+impl<'a> MappedEngineSort<'a> {
+    fn new(
+        store: &'a EngineStore,
+        indices: &[String],
+        specs: &'a [SortSpec],
+    ) -> EngineResult<Option<Self>> {
+        Self::from_indices(indices.iter().map(|name| {
+            store.indices.get(name).map(|index| (name.clone(), index))
+                .ok_or_else(|| EngineError::IndexNotFound { index: name.clone() })
+        }), specs)
+    }
+
+    fn for_index(name: &str, index: &'a StoredIndex, specs: &'a [SortSpec]) -> EngineResult<Option<Self>> {
+        Self::from_indices(std::iter::once_with(|| Ok((name.to_string(), index))), specs)
+    }
+
+    fn from_indices(
+        indices: impl IntoIterator<Item = EngineResult<(String, &'a StoredIndex)>>,
+        specs: &'a [SortSpec],
+    ) -> EngineResult<Option<Self>> {
+        if !specs.iter().any(|spec| spec.field.contains('.')) {
+            return Ok(None);
+        }
+        let mut sources = BTreeMap::new();
+        let mut mapped_columns = vec![false; specs.len()];
+        for index in indices {
+            let (name, index) = index?;
+            let mut fields = Vec::with_capacity(specs.len());
+            for (position, spec) in specs.iter().enumerate() {
+                let mapping = if spec.script.is_none() && spec.geo_origin.is_none() {
+                    index.multi_field_keyword_mapping(&spec.field)
+                } else {
+                    None
+                };
+                if mapping.is_some_and(|mapping| !mapping.fast) {
+                    return Err(invalid_request(format!("Cannot sort on field [{}] because doc_values are disabled", spec.field)));
+                }
+                let source = mapping.and_then(|mapping| mapping.multi_field_source.as_ref());
+                if let Some(source) = source {
+                    source.keyword_values(&Value::Null)?;
+                    if !matches!(
+                        spec.mode,
+                        None | Some(os_engine::SortMode::Min | os_engine::SortMode::Max)
+                    ) {
+                        return Err(invalid_request(
+                            "keyword multi-field sort only supports min and max modes",
+                        ));
+                    }
+                    mapped_columns[position] = true;
+                }
+                fields.push(source);
+            }
+            sources.insert(name, fields);
+        }
+        Ok(mapped_columns.iter().any(|mapped| *mapped).then_some(Self {
+            specs,
+            sources,
+            mapped_columns,
+        }))
+    }
+
+    fn values(&self, hit: &SearchHit) -> EngineResult<Vec<Value>> {
+        let mut values = search_hit_sort_values_for_specs(hit, self.specs);
+        if let Some(fields) = self.sources.get(&hit.index) {
+            for (position, source) in fields.iter().enumerate() {
+                let Some(source) = source else {
+                    continue;
+                };
+                let candidates = source.keyword_values(&hit.source)?;
+                let spec = &self.specs[position];
+                let use_max = match spec.mode {
+                    Some(os_engine::SortMode::Max) => true,
+                    Some(os_engine::SortMode::Min) => false,
+                    _ => spec.order == SortOrder::Desc,
+                };
+                let compare = |left: &&Value, right: &&Value| {
+                    compare_values(left, right).unwrap_or(std::cmp::Ordering::Equal)
+                };
+                values[position] = if use_max {
+                    candidates.iter().max_by(compare)
+                } else {
+                    candidates.iter().min_by(compare)
+                }
+                .cloned()
+                .unwrap_or(Value::Null);
+            }
+        }
+        Ok(values)
+    }
+
+    fn compare_value(&self, position: usize, left: &Value, right: &Value) -> std::cmp::Ordering {
+        let ordering = match (left.is_null(), right.is_null()) {
+            (true, true) => std::cmp::Ordering::Equal,
+            (true, false) => std::cmp::Ordering::Greater,
+            (false, true) => std::cmp::Ordering::Less,
+            _ => compare_values(left, right).unwrap_or(std::cmp::Ordering::Equal),
+        };
+        if self.mapped_columns[position] && (left.is_null() || right.is_null()) {
+            return ordering;
+        }
+        if self.specs[position].order == SortOrder::Desc {
+            ordering.reverse()
+        } else {
+            ordering
+        }
+    }
+
+    fn order_hits(&self, hits: Vec<SearchHit>) -> EngineResult<Vec<SearchHit>> {
+        let mut resolved = hits
+            .into_iter()
+            .map(|hit| self.values(&hit).map(|values| (hit, values)))
+            .collect::<EngineResult<Vec<_>>>()?;
+        resolved.sort_by(|(left, left_values), (right, right_values)| {
+            for (position, spec) in self.specs.iter().enumerate() {
+                let ordering = if self.mapped_columns[position] {
+                    self.compare_value(position, &left_values[position], &right_values[position])
+                } else {
+                    let ordering = compare_hits_by_sort(left, right, spec);
+                    if sort_spec_has_one_missing_value(left, right, spec)
+                        || spec.order == SortOrder::Asc
+                    {
+                        ordering
+                    } else {
+                        ordering.reverse()
+                    }
+                };
+                if !ordering.is_eq() {
+                    return ordering;
+                }
+            }
+            compare_search_hit_identity(left, right)
+        });
+        Ok(resolved
+            .into_iter()
+            .map(|(mut hit, values)| {
+                hit.sort = Some(Value::Array(values));
+                hit
+            })
+            .collect())
+    }
+
+    fn after(&self, hits: Vec<SearchHit>, after: &[Value]) -> EngineResult<Vec<SearchHit>> {
+        if after.len() != self.specs.len() {
+            return Ok(hits);
+        }
+        let mut selected = Vec::new();
+        for hit in hits {
+            let values = self.values(&hit)?;
+            let ordering = values
+                .iter()
+                .zip(after)
+                .enumerate()
+                .map(|(position, (left, right))| self.compare_value(position, left, right))
+                .find(|ordering| !ordering.is_eq());
+            if ordering.is_some_and(|ordering| ordering.is_gt()) {
+                selected.push(hit);
+            }
+        }
+        Ok(selected)
+    }
 }
 
 fn sort_hits(hits: &mut [SearchHit], sort_specs: &[SortSpec]) {
@@ -28997,9 +30564,30 @@ fn combine_rescore_score(primary: f32, secondary: f32, score_mode: &str) -> f32 
     }
 }
 
+#[derive(Clone, Copy)]
+struct SortHitInput<'a> {
+    id: &'a str,
+    score: f32,
+    source: &'a Value,
+}
+
+impl<'a> From<&'a SearchHit> for SortHitInput<'a> {
+    fn from(hit: &'a SearchHit) -> Self {
+        Self { id: &hit.metadata.id, score: hit.score, source: &hit.source }
+    }
+}
+
 fn compare_hits_by_sort(
     left: &SearchHit,
     right: &SearchHit,
+    sort_spec: &SortSpec,
+) -> std::cmp::Ordering {
+    compare_sort_hit_inputs(left.into(), right.into(), sort_spec)
+}
+
+fn compare_sort_hit_inputs(
+    left: SortHitInput<'_>,
+    right: SortHitInput<'_>,
     sort_spec: &SortSpec,
 ) -> std::cmp::Ordering {
     if let Some(script) = &sort_spec.script {
@@ -29032,7 +30620,7 @@ fn compare_hits_by_sort(
         return compare_values(&left, &right).unwrap_or(std::cmp::Ordering::Equal);
     }
     match sort_spec.field.as_str() {
-        "_id" => left.metadata.id.cmp(&right.metadata.id),
+        "_id" => left.id.cmp(right.id),
         "_score" => left
             .score
             .partial_cmp(&right.score)
@@ -29057,6 +30645,14 @@ fn compare_hits_by_sort(
 fn sort_spec_has_one_missing_value(
     left: &SearchHit,
     right: &SearchHit,
+    sort_spec: &SortSpec,
+) -> bool {
+    sort_inputs_have_one_missing_value(left.into(), right.into(), sort_spec)
+}
+
+fn sort_inputs_have_one_missing_value(
+    left: SortHitInput<'_>,
+    right: SortHitInput<'_>,
     sort_spec: &SortSpec,
 ) -> bool {
     if native_integer_missing_sort_value(sort_spec).is_some() {
@@ -29924,10 +31520,16 @@ fn source_sort_value(
     order: SortOrder,
     mode: Option<os_engine::SortMode>,
 ) -> Option<Value> {
-    source
-        .get(field)
-        .cloned()
-        .or_else(|| nested_source_sort_value(source, field, order, mode))
+    match source.get(field) {
+        Some(Value::Null) => None,
+        Some(value @ Value::Array(_)) => {
+            let mut values = Vec::new();
+            collect_nested_sort_values(value, &[], &mut values);
+            select_source_sort_value(values, order, mode)
+        }
+        Some(value) => Some(value.clone()),
+        None => nested_source_sort_value(source, field, order, mode),
+    }
 }
 
 fn nested_source_sort_value(
@@ -29942,6 +31544,14 @@ fn nested_source_sort_value(
     let path = field.split('.').collect::<Vec<_>>();
     let mut values = Vec::new();
     collect_nested_sort_values(source, &path, &mut values);
+    select_source_sort_value(values, order, mode)
+}
+
+fn select_source_sort_value(
+    values: Vec<Value>,
+    order: SortOrder,
+    mode: Option<os_engine::SortMode>,
+) -> Option<Value> {
     let numeric_values = values.iter().filter_map(Value::as_f64).collect::<Vec<_>>();
 
     if let Some(mode) = mode {
@@ -30562,9 +32172,9 @@ fn collect_single_aggregation_native(
         &documents,
         &all_documents,
         &aggregation_map,
-    );
+    )?;
     if let Some(object) = value.as_object_mut() {
-        finalize_merged_pipeline_aggregations(object, &aggregation_map);
+        finalize_checked_aggregation_response(object, &aggregation_map)?;
     }
     strip_internal_merge_surfaces(&mut value);
     Ok(value
@@ -31220,11 +32830,11 @@ fn pipeline_bucket_values(value: &Value) -> Vec<Value> {
 
 fn pipeline_bucket_surface(value: &Value) -> Value {
     if let Some(object) = value.as_object() {
-        if let Some(merge_buckets) = object.get("_merge_buckets") {
-            return merge_buckets.clone();
-        }
         if let Some(buckets) = object.get("buckets") {
             return buckets.clone();
+        }
+        if let Some(merge_buckets) = object.get("_merge_buckets") {
+            return merge_buckets.clone();
         }
         return Value::Object(object.clone());
     }
@@ -32807,7 +34417,7 @@ fn compare_bucket_sort_values(
             "_key" => {
                 let left_key = left.get("key").cloned().unwrap_or(Value::Null);
                 let right_key = right.get("key").cloned().unwrap_or(Value::Null);
-                bucket_sort_key(&left_key).cmp(&bucket_sort_key(&right_key))
+                compare_bucket_keys(&left_key, &right_key)
             }
             metric_name => {
                 let left_value = left
@@ -32840,7 +34450,7 @@ fn compare_bucket_sort_values(
 
     let left_key = left.get("key").cloned().unwrap_or(Value::Null);
     let right_key = right.get("key").cloned().unwrap_or(Value::Null);
-    bucket_sort_key(&left_key).cmp(&bucket_sort_key(&right_key))
+    compare_bucket_keys(&left_key, &right_key)
 }
 
 fn collect_aggregations_with_plugin_top_hits_input_order(
@@ -32848,7 +34458,38 @@ fn collect_aggregations_with_plugin_top_hits_input_order(
     all_hits: &[SearchHit],
     aggregation_map: &AggregationMap,
     plugin_top_hits_input_order: PluginTopHitsInputOrder,
-) -> Value {
+) -> EngineResult<Value> {
+    collect_aggregations_with_plugin_top_hits_input_order_with_budget(hits, all_hits, aggregation_map, plugin_top_hits_input_order, &BucketAllocationBudget::default())
+}
+
+fn collect_aggregations_with_plugin_top_hits_input_order_with_budget(
+    hits: &[SearchHit],
+    all_hits: &[SearchHit],
+    aggregation_map: &AggregationMap,
+    plugin_top_hits_input_order: PluginTopHitsInputOrder,
+    bucket_budget: &BucketAllocationBudget,
+) -> EngineResult<Value> {
+    collect_aggregations_with_plugin_top_hits_input_order_and_background_with_budget(hits, all_hits, aggregation_map, plugin_top_hits_input_order, None, bucket_budget)
+}
+
+fn collect_aggregations_with_plugin_top_hits_input_order_and_background(
+    hits: &[SearchHit],
+    all_hits: &[SearchHit],
+    aggregation_map: &AggregationMap,
+    plugin_top_hits_input_order: PluginTopHitsInputOrder,
+    background_hits: Option<&[SearchHit]>,
+) -> EngineResult<Value> {
+    collect_aggregations_with_plugin_top_hits_input_order_and_background_with_budget(hits, all_hits, aggregation_map, plugin_top_hits_input_order, background_hits, &BucketAllocationBudget::default())
+}
+
+fn collect_aggregations_with_plugin_top_hits_input_order_and_background_with_budget(
+    hits: &[SearchHit],
+    all_hits: &[SearchHit],
+    aggregation_map: &AggregationMap,
+    plugin_top_hits_input_order: PluginTopHitsInputOrder,
+    background_hits: Option<&[SearchHit]>,
+    bucket_budget: &BucketAllocationBudget,
+) -> EngineResult<Value> {
     let mut ordered_hits_storage = None;
     let mut ordered_all_hits_storage = None;
     let (hits, all_hits) = if matches!(
@@ -32877,8 +34518,7 @@ fn collect_aggregations_with_plugin_top_hits_input_order(
             Aggregation::DateHistogram(date_histogram) => {
                 aggregations.insert(
                     name.clone(),
-                    collect_date_histogram_aggregation(hits, date_histogram)
-                        .unwrap_or_else(|_| bucket_array_visible_and_carrier_value(Vec::new())),
+                    collect_date_histogram_aggregation_with_budget(hits, date_histogram, bucket_budget)?,
                 );
             }
             Aggregation::Histogram(histogram) => {
@@ -32915,7 +34555,7 @@ fn collect_aggregations_with_plugin_top_hits_input_order(
             Aggregation::SignificantTerms(significant_terms) => {
                 aggregations.insert(
                     name.clone(),
-                    collect_significant_terms_aggregation(hits, all_hits, significant_terms),
+                    collect_significant_terms_aggregation(hits, background_hits.unwrap_or(all_hits), significant_terms),
                 );
             }
             Aggregation::GeoBounds(geo_bounds) => {
@@ -32953,7 +34593,7 @@ fn collect_aggregations_with_plugin_top_hits_input_order(
                         size: usize::MAX,
                     };
                     let mut value =
-                        collect_significant_terms_aggregation(hits, all_hits, &significant_terms);
+                        collect_significant_terms_aggregation(hits, background_hits.unwrap_or(all_hits), &significant_terms);
                     if let Some(object) = value.as_object_mut() {
                         let mut extra_fields = serde_json::Map::new();
                         if let Some(doc_count) = object.get("doc_count").cloned() {
@@ -32978,12 +34618,14 @@ fn collect_aggregations_with_plugin_top_hits_input_order(
                                     .cloned()
                                     .collect::<Vec<_>>();
                                 let nested_aggregations =
-                                    collect_aggregations_with_plugin_top_hits_input_order(
+                                    collect_aggregations_with_plugin_top_hits_input_order_and_background_with_budget(
                                         &bucket_hits,
                                         &bucket_hits,
                                         &aggregation_map,
                                         plugin_top_hits_input_order,
-                                    );
+                                        background_hits,
+                                        bucket_budget,
+                                    )?;
                                 let nested_reduce_hints =
                                     collect_reduce_hints_for_hits(&bucket_hits, &aggregation_map);
                                 let object = bucket.as_object().cloned().unwrap_or_default();
@@ -33007,16 +34649,18 @@ fn collect_aggregations_with_plugin_top_hits_input_order(
                         plugin_subaggregation_map(plugin)
                             .map(|aggregation_map| {
                                 let nested_aggregations =
-                                    collect_aggregations_with_plugin_top_hits_input_order(
+                                    collect_aggregations_with_plugin_top_hits_input_order_and_background_with_budget(
                                         all_hits,
                                         all_hits,
                                         &aggregation_map,
                                         plugin_top_hits_input_order,
-                                    );
+                                        background_hits,
+                                        bucket_budget,
+                                    )?;
                                 let nested_reduce_hints =
                                     collect_reduce_hints_for_hits(all_hits, &aggregation_map);
-                                (nested_aggregations, nested_reduce_hints)
-                            })
+                                Ok((nested_aggregations, nested_reduce_hints))
+                            }).transpose()?
                             .map_or(
                                 (None, None),
                                 |(nested_aggregations, nested_reduce_hints)| {
@@ -33035,11 +34679,13 @@ fn collect_aggregations_with_plugin_top_hits_input_order(
                 } else {
                     aggregations.insert(
                         name.clone(),
-                        collect_plugin_aggregation_from_hits_with_input_order(
+                        collect_plugin_aggregation_from_hits_with_input_order_and_background_with_budget(
                             hits,
                             plugin,
                             plugin_top_hits_input_order,
-                        ),
+                            background_hits,
+                            bucket_budget,
+                        )?,
                     );
                 }
             }
@@ -33052,87 +34698,9 @@ fn collect_aggregations_with_plugin_top_hits_input_order(
         }
     }
 
-    for (name, aggregation) in aggregation_map {
-        match aggregation {
-            Aggregation::BucketSort(bucket_sort) => {
-                aggregations.insert(
-                    name.clone(),
-                    bucket_surface_wrapper_value(collect_bucket_sort_aggregation_value(
-                        &aggregations,
-                        &bucket_sort.aggregation,
-                        &bucket_sort.sort,
-                        bucket_sort.from,
-                        bucket_sort.size,
-                    )),
-                );
-            }
-            Aggregation::BucketCount(bucket_count) => {
-                aggregations.insert(
-                    name.clone(),
-                    collect_bucket_count_aggregation_value(
-                        &aggregations,
-                        &bucket_count.aggregation,
-                    ),
-                );
-            }
-            Aggregation::Normalize(normalize) => {
-                aggregations.insert(
-                    name.clone(),
-                    bucket_surface_wrapper_value(collect_normalize_aggregation_value(
-                        &aggregations,
-                        &normalize.aggregation,
-                        &normalize.path,
-                    )),
-                );
-            }
-            Aggregation::BucketSelector(bucket_selector) => {
-                aggregations.insert(
-                    name.clone(),
-                    bucket_surface_wrapper_value(collect_bucket_selector_aggregation_value(
-                        &aggregations,
-                        &bucket_selector.aggregation,
-                        &bucket_selector.path,
-                        &bucket_selector.op,
-                        bucket_selector.value,
-                    )),
-                );
-            }
-            Aggregation::BucketScript(bucket_script) => {
-                aggregations.insert(
-                    name.clone(),
-                    bucket_surface_wrapper_value(collect_bucket_script_aggregation_value(
-                        &aggregations,
-                        &bucket_script.aggregation,
-                        &bucket_script.path,
-                        &bucket_script.script,
-                        &bucket_script.params,
-                    )),
-                );
-            }
-            Aggregation::Pipeline(pipeline) => {
-                aggregations.insert(
-                    name.clone(),
-                    collect_pipeline_aggregation(&aggregations, pipeline),
-                );
-            }
-            Aggregation::Plugin(plugin) => {
-                if plugin_finalize_aggregation(plugin) {
-                    if !plugin_has_valid_request_surface_for_merge_or_finalize(plugin) {
-                        aggregations
-                            .insert(name.clone(), collect_plugin_aggregation_placeholder(plugin));
-                    } else {
-                        aggregations.insert(
-                            name.clone(),
-                            plugin_pipeline_aggregation_value(&aggregations, plugin),
-                        );
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
+    // Pipelines run after final bucket selection and the cumulative limit check.
 
-    Value::Object(aggregations)
+    Ok(Value::Object(aggregations))
 }
 
 fn collect_aggregations_from_documents(
@@ -33140,12 +34708,22 @@ fn collect_aggregations_from_documents(
     documents: &[&StoredDocument],
     all_documents: &[&StoredDocument],
     aggregation_map: &AggregationMap,
-) -> Value {
+) -> EngineResult<Value> {
+    collect_aggregations_from_documents_with_budget(index_name, documents, all_documents, aggregation_map, &BucketAllocationBudget::default())
+}
+
+fn collect_aggregations_from_documents_with_budget(
+    index_name: &str,
+    documents: &[&StoredDocument],
+    all_documents: &[&StoredDocument],
+    aggregation_map: &AggregationMap,
+    bucket_budget: &BucketAllocationBudget,
+) -> EngineResult<Value> {
     if all_documents.is_empty() {
         if let Some(aggregations) =
-            collect_simple_bucket_aggregations_from_documents(documents, aggregation_map)
+            collect_simple_bucket_aggregations_from_documents_with_budget(documents, aggregation_map, bucket_budget)?
         {
-            return aggregations;
+            return Ok(aggregations);
         }
     }
 
@@ -33163,8 +34741,7 @@ fn collect_aggregations_from_documents(
             Aggregation::DateHistogram(date_histogram) => {
                 aggregations.insert(
                     name.clone(),
-                    collect_date_histogram_aggregation_from_documents(documents, date_histogram)
-                        .unwrap_or_else(|_| bucket_array_visible_and_carrier_value(Vec::new())),
+                    collect_date_histogram_aggregation_from_documents_with_budget(documents, date_histogram, bucket_budget)?,
                 );
             }
             Aggregation::Histogram(histogram) => {
@@ -33281,12 +34858,13 @@ fn collect_aggregations_from_documents(
                                         )
                                     })
                                     .collect::<Vec<_>>();
-                                let nested_aggregations = collect_aggregations_from_documents(
+                                let nested_aggregations = collect_aggregations_from_documents_with_budget(
                                     index_name,
                                     &bucket_documents,
                                     &bucket_documents,
                                     &aggregation_map,
-                                );
+                                    bucket_budget,
+                                )?;
                                 let nested_reduce_hints = collect_reduce_hints_for_documents(
                                     &bucket_documents,
                                     &aggregation_map,
@@ -33311,18 +34889,19 @@ fn collect_aggregations_from_documents(
                     let (nested_aggregations, nested_reduce_hints) =
                         plugin_subaggregation_map(plugin)
                             .map(|aggregation_map| {
-                                let nested_aggregations = collect_aggregations_from_documents(
+                                let nested_aggregations = collect_aggregations_from_documents_with_budget(
                                     index_name,
                                     all_documents,
                                     all_documents,
                                     &aggregation_map,
-                                );
+                                    bucket_budget,
+                                )?;
                                 let nested_reduce_hints = collect_reduce_hints_for_documents(
                                     all_documents,
                                     &aggregation_map,
                                 );
-                                (nested_aggregations, nested_reduce_hints)
-                            })
+                                Ok((nested_aggregations, nested_reduce_hints))
+                            }).transpose()?
                             .map_or(
                                 (None, None),
                                 |(nested_aggregations, nested_reduce_hints)| {
@@ -33341,7 +34920,7 @@ fn collect_aggregations_from_documents(
                 } else {
                     aggregations.insert(
                         name.clone(),
-                        collect_plugin_aggregation_from_documents(index_name, documents, plugin),
+                        collect_plugin_aggregation_from_documents_with_budget(index_name, documents, plugin, bucket_budget)?,
                     );
                 }
             }
@@ -33355,94 +34934,49 @@ fn collect_aggregations_from_documents(
         }
     }
 
-    for (name, aggregation) in aggregation_map {
-        match aggregation {
-            Aggregation::BucketSort(bucket_sort) => {
-                aggregations.insert(
-                    name.clone(),
-                    bucket_surface_wrapper_value(collect_bucket_sort_aggregation_value(
-                        &aggregations,
-                        &bucket_sort.aggregation,
-                        &bucket_sort.sort,
-                        bucket_sort.from,
-                        bucket_sort.size,
-                    )),
-                );
-            }
-            Aggregation::BucketCount(bucket_count) => {
-                aggregations.insert(
-                    name.clone(),
-                    collect_bucket_count_aggregation_value(
-                        &aggregations,
-                        &bucket_count.aggregation,
-                    ),
-                );
-            }
-            Aggregation::Normalize(normalize) => {
-                aggregations.insert(
-                    name.clone(),
-                    bucket_surface_wrapper_value(collect_normalize_aggregation_value(
-                        &aggregations,
-                        &normalize.aggregation,
-                        &normalize.path,
-                    )),
-                );
-            }
-            Aggregation::BucketSelector(bucket_selector) => {
-                aggregations.insert(
-                    name.clone(),
-                    bucket_surface_wrapper_value(collect_bucket_selector_aggregation_value(
-                        &aggregations,
-                        &bucket_selector.aggregation,
-                        &bucket_selector.path,
-                        &bucket_selector.op,
-                        bucket_selector.value,
-                    )),
-                );
-            }
-            Aggregation::BucketScript(bucket_script) => {
-                aggregations.insert(
-                    name.clone(),
-                    bucket_surface_wrapper_value(collect_bucket_script_aggregation_value(
-                        &aggregations,
-                        &bucket_script.aggregation,
-                        &bucket_script.path,
-                        &bucket_script.script,
-                        &bucket_script.params,
-                    )),
-                );
-            }
-            Aggregation::Pipeline(pipeline) => {
-                aggregations.insert(
-                    name.clone(),
-                    collect_pipeline_aggregation(&aggregations, pipeline),
-                );
-            }
-            Aggregation::Plugin(plugin) => {
-                if plugin_finalize_aggregation(plugin) {
-                    if !plugin_has_valid_request_surface_for_merge_or_finalize(plugin) {
-                        aggregations
-                            .insert(name.clone(), collect_plugin_aggregation_placeholder(plugin));
-                    } else {
-                        aggregations.insert(
-                            name.clone(),
-                            plugin_pipeline_aggregation_value(&aggregations, plugin),
-                        );
-                    }
+    // Pipelines run after final bucket selection and the cumulative limit check.
+
+    Ok(Value::Object(aggregations))
+}
+
+enum SimpleTermCounts<'a> {
+    Small(Vec<(&'a str, u64)>),
+    Tree(BTreeMap<&'a str, u64>),
+}
+
+impl<'a> SimpleTermCounts<'a> {
+    fn increment(&mut self, value: &'a str) {
+        match self {
+            Self::Small(counts) => {
+                if let Some((_, count)) = counts.iter_mut().find(|(key, _)| *key == value) {
+                    *count += 1;
+                } else if counts.len() < 8 {
+                    counts.push((value, 1));
+                } else {
+                    // Bound linear lookup cost for arbitrary user-provided cardinalities.
+                    let mut tree = counts.drain(..).collect::<BTreeMap<_, _>>();
+                    tree.insert(value, 1);
+                    *self = Self::Tree(tree);
                 }
             }
-            _ => {}
+            Self::Tree(counts) => *counts.entry(value).or_insert(0) += 1,
         }
     }
 
-    Value::Object(aggregations)
+    fn into_buckets(self) -> Vec<(&'a str, u64)> {
+        match self {
+            Self::Small(counts) => counts,
+            Self::Tree(counts) => counts.into_iter().collect(),
+        }
+    }
 }
 
 enum SimpleBucketAggregationState<'a> {
     Terms {
         name: &'a str,
         aggregation: &'a os_query_dsl::TermsAggregation,
-        counts: BTreeMap<&'a str, u64>,
+        counts: SimpleTermCounts<'a>,
+        field_hint: usize,
     },
     Range {
         name: &'a str,
@@ -33454,15 +34988,24 @@ enum SimpleBucketAggregationState<'a> {
         aggregation: &'a os_query_dsl::DateHistogramAggregation,
         counts: BTreeMap<i64, (String, u64)>,
         time_zone_offset_millis: i64,
+        rounding: Option<PreparedDateHistogramRounding>,
     },
 }
 
 fn collect_simple_bucket_aggregations_from_documents(
     documents: &[&StoredDocument],
     aggregation_map: &AggregationMap,
-) -> Option<Value> {
+) -> EngineResult<Option<Value>> {
+    collect_simple_bucket_aggregations_from_documents_with_budget(documents, aggregation_map, &BucketAllocationBudget::default())
+}
+
+fn collect_simple_bucket_aggregations_from_documents_with_budget(
+    documents: &[&StoredDocument],
+    aggregation_map: &AggregationMap,
+    bucket_budget: &BucketAllocationBudget,
+) -> EngineResult<Option<Value>> {
     if aggregation_map.is_empty() {
-        return Some(serde_json::json!({}));
+        return Ok(Some(serde_json::json!({})));
     }
 
     let mut states = Vec::with_capacity(aggregation_map.len());
@@ -33477,7 +35020,8 @@ fn collect_simple_bucket_aggregations_from_documents(
                 states.push(SimpleBucketAggregationState::Terms {
                     name,
                     aggregation: terms,
-                    counts: BTreeMap::new(),
+                    counts: SimpleTermCounts::Small(Vec::new()),
+                    field_hint: usize::MAX,
                 });
             }
             Aggregation::Range(range) if !range.field.contains('.') => {
@@ -33496,13 +35040,18 @@ fn collect_simple_bucket_aggregations_from_documents(
                     name,
                     aggregation: date_histogram,
                     counts: BTreeMap::new(),
+                    rounding: PreparedDateHistogramRounding::new(
+                        &date_histogram.interval,
+                        date_histogram.offset_millis,
+                        date_histogram.time_zone.as_deref(),
+                    ),
                     time_zone_offset_millis: date_histogram_time_zone_offset_millis(
                         date_histogram.time_zone.as_deref(),
                     )
                     .unwrap_or(0),
                 });
             }
-            _ => return None,
+            _ => return Ok(None),
         }
     }
 
@@ -33512,16 +35061,17 @@ fn collect_simple_bucket_aggregations_from_documents(
                 SimpleBucketAggregationState::Terms {
                     aggregation,
                     counts,
+                    field_hint,
                     ..
                 } => {
-                    if let Some(text) = document.top_level_string_fields.get(&aggregation.field) {
-                        *counts.entry(text.as_str()).or_insert(0) += 1;
+                    if let Some(text) = document.top_level_string_fields.get_with_hint(&aggregation.field, field_hint) {
+                        counts.increment(text.as_str());
                     } else if document
                         .source
                         .as_object()
                         .is_some_and(|object| object.contains_key(&aggregation.field))
                     {
-                        return None;
+                        return Ok(None);
                     }
                 }
                 SimpleBucketAggregationState::Range {
@@ -33540,13 +35090,14 @@ fn collect_simple_bucket_aggregations_from_documents(
                         .as_object()
                         .is_some_and(|object| object.contains_key(&aggregation.field))
                     {
-                        return None;
+                        return Ok(None);
                     }
                 }
                 SimpleBucketAggregationState::DateHistogram {
                     aggregation,
                     counts,
                     time_zone_offset_millis,
+                    rounding,
                     ..
                 } => {
                     if let Some(epoch_millis) = document
@@ -33554,12 +35105,8 @@ fn collect_simple_bucket_aggregations_from_documents(
                         .get(&aggregation.field)
                         .copied()
                     {
-                        let Some(bucket_key) = date_histogram_bucket_key_from_epoch_millis(
-                            epoch_millis,
-                            &aggregation.interval,
-                            aggregation.offset_millis,
-                            aggregation.time_zone.as_deref(),
-                        ) else {
+                        let Some(bucket_key) = rounding.as_ref()
+                            .and_then(|rounding| rounding.bucket_key(epoch_millis)) else {
                             continue;
                         };
                         if !date_histogram_bounds_contain(
@@ -33593,7 +35140,7 @@ fn collect_simple_bucket_aggregations_from_documents(
                         .as_object()
                         .is_some_and(|object| object.contains_key(&aggregation.field))
                     {
-                        return None;
+                        return Ok(None);
                     }
                 }
             }
@@ -33607,8 +35154,9 @@ fn collect_simple_bucket_aggregations_from_documents(
                 name,
                 aggregation,
                 counts,
+                ..
             } => {
-                let mut buckets = counts.into_iter().collect::<Vec<_>>();
+                let mut buckets = counts.into_buckets();
                 buckets.sort_by(|(left_key, left_count), (right_key, right_count)| {
                     right_count
                         .cmp(left_count)
@@ -33662,7 +35210,7 @@ fn collect_simple_bucket_aggregations_from_documents(
                 counts,
                 ..
             } => {
-                let bucket_values = date_histogram_bucket_values_from_counts(&counts, aggregation);
+                let bucket_values = date_histogram_bucket_values_from_counts_with_budget(&counts, aggregation, bucket_budget)?;
                 aggregations.insert(
                     name.to_string(),
                     date_histogram_bucket_surface_value(bucket_values, aggregation.keyed),
@@ -33670,7 +35218,7 @@ fn collect_simple_bucket_aggregations_from_documents(
             }
         }
     }
-    Some(Value::Object(aggregations))
+    Ok(Some(Value::Object(aggregations)))
 }
 
 fn collect_reduce_hints_for_documents(
@@ -34209,6 +35757,19 @@ fn shift_auto_date_histogram_week_buckets_to_reduce_anchor(buckets: &mut [Value]
 
 fn aggregation_map_requires_all_hits(aggregation_map: &AggregationMap) -> bool {
     aggregation_map.values().any(aggregation_requires_all_hits)
+}
+
+fn aggregation_map_requires_significance_background(aggregation_map: &AggregationMap) -> bool {
+    aggregation_map.values().any(|aggregation| match aggregation {
+        Aggregation::SignificantTerms(_) => true,
+        Aggregation::Plugin(plugin) => {
+            plugin_has_valid_request_surface_for_merge_or_finalize(plugin)
+                && (plugin_kind_uses_significant_terms_carrier(&plugin.kind)
+                    || plugin_subaggregation_map(plugin)
+                        .is_some_and(|map| aggregation_map_requires_significance_background(&map)))
+        }
+        _ => false,
+    })
 }
 
 fn aggregation_requires_all_hits(aggregation: &Aggregation) -> bool {
@@ -34949,116 +36510,128 @@ fn rewrite_top_hits_reduce_windows(
     }
 }
 
-fn finalize_merged_pipeline_aggregations(
+fn finalize_checked_aggregation_response(
     merged: &mut serde_json::Map<String, Value>,
+    aggregation_map: &AggregationMap,
+) -> EngineResult<()> {
+    finalize_checked_aggregation_response_with_limit(merged, aggregation_map, 65_535)
+}
+
+fn finalize_checked_aggregation_response_with_limit(
+    merged: &mut serde_json::Map<String, Value>,
+    aggregation_map: &AggregationMap,
+    max_buckets: u32,
+) -> EngineResult<()> {
+    finalize_selected_aggregation_buckets(merged, aggregation_map);
+    check_final_aggregation_bucket_count(merged, aggregation_map, max_buckets)?;
+    evaluate_selected_aggregation_pipelines(merged, aggregation_map);
+    Ok(())
+}
+
+fn aggregation_has_multi_bucket_surface(aggregation: &Aggregation) -> bool {
+    match aggregation {
+        Aggregation::Terms(_) | Aggregation::DateHistogram(_) | Aggregation::Histogram(_)
+        | Aggregation::Range(_) | Aggregation::Filters(_) | Aggregation::Composite(_)
+        | Aggregation::SignificantTerms(_) => true,
+        Aggregation::Plugin(plugin) => matches!(plugin.kind.as_str(),
+            "terms" | "multi_terms" | "rare_terms" | "significant_terms" | "significant_text"
+            | "date_histogram" | "auto_date_histogram" | "histogram" | "variable_width_histogram"
+            | "range" | "date_range" | "ip_range" | "geo_distance" | "filters"
+            | "adjacency_matrix" | "composite" | "geohash_grid" | "geotile_grid"
+        ),
+        _ => false,
+    }
+}
+
+fn plugin_has_single_bucket_surface(kind: &str) -> bool {
+    matches!(kind, "filter" | "missing" | "global" | "nested" | "reverse_nested"
+        | "sampler" | "random_sampler" | "diversified_sampler" | "children" | "parent")
+}
+
+fn evaluate_visible_nested_pipelines(
+    response: &mut serde_json::Map<String, Value>,
     aggregation_map: &AggregationMap,
 ) {
     for (name, aggregation) in aggregation_map {
-        match aggregation {
-            Aggregation::TopHits(top_hits) => {
-                finalize_merged_top_hits_aggregation_value(
-                    merged,
-                    name,
-                    top_hits.from,
-                    top_hits.size,
-                );
-            }
-            Aggregation::BucketSort(bucket_sort) => {
-                merged.insert(
-                    name.clone(),
-                    serde_json::json!({
-                        "buckets": collect_bucket_sort_aggregation_value(
-                            merged,
-                            &bucket_sort.aggregation,
-                            &bucket_sort.sort,
-                            bucket_sort.from,
-                            bucket_sort.size
-                        )
-                    }),
-                );
-            }
-            Aggregation::BucketCount(bucket_count) => {
-                merged.insert(
-                    name.clone(),
-                    collect_bucket_count_aggregation_value(merged, &bucket_count.aggregation),
-                );
-            }
-            Aggregation::Normalize(normalize) => {
-                merged.insert(
-                    name.clone(),
-                    serde_json::json!({
-                        "buckets": collect_normalize_aggregation_value(
-                            merged,
-                            &normalize.aggregation,
-                            &normalize.path
-                        )
-                    }),
-                );
-            }
-            Aggregation::BucketSelector(bucket_selector) => {
-                merged.insert(
-                    name.clone(),
-                    serde_json::json!({
-                        "buckets": collect_bucket_selector_aggregation_value(
-                            merged,
-                            &bucket_selector.aggregation,
-                            &bucket_selector.path,
-                            &bucket_selector.op,
-                            bucket_selector.value
-                        )
-                    }),
-                );
-            }
-            Aggregation::BucketScript(bucket_script) => {
-                merged.insert(
-                    name.clone(),
-                    serde_json::json!({
-                        "buckets": collect_bucket_script_aggregation_value(
-                            merged,
-                            &bucket_script.aggregation,
-                            &bucket_script.path,
-                            &bucket_script.script,
-                            &bucket_script.params
-                        )
-                    }),
-                );
-            }
-            Aggregation::Pipeline(pipeline) => {
-                merged.insert(name.clone(), collect_pipeline_aggregation(merged, pipeline));
-            }
-            Aggregation::Plugin(plugin) => {
-                if !plugin_has_valid_request_surface_for_merge_or_finalize(plugin) {
-                    merged.insert(name.clone(), collect_plugin_aggregation_placeholder(plugin));
-                    continue;
+        let Aggregation::Plugin(plugin) = aggregation else { continue; };
+        let Some(nested) = plugin_subaggregation_map(plugin) else { continue; };
+        let Some(value) = response.get_mut(name) else { continue; };
+        if aggregation_has_multi_bucket_surface(aggregation) {
+            let evaluate = |bucket: &mut Value| {
+                if let Some(object) = bucket.as_object_mut() {
+                    evaluate_selected_aggregation_pipelines(object, &nested);
                 }
-                if plugin.kind == "top_hits" {
-                    let Some((from, size, _)) = plugin_top_hits_window_and_sort(plugin) else {
-                        merged.insert(name.clone(), collect_plugin_aggregation_placeholder(plugin));
-                        continue;
-                    };
-                    finalize_merged_top_hits_aggregation_value(merged, name, from, size);
-                    if plugin_top_hits_uses_non_score_explicit_sort(plugin) {
-                        if let Some(value) = merged.get_mut(name) {
-                            clear_top_hits_score_surface(value);
-                        }
-                    }
-                } else if plugin.kind == "top_metrics" {
-                    if !plugin_top_metrics_has_valid_setup(plugin) {
-                        merged.insert(name.clone(), collect_plugin_aggregation_placeholder(plugin));
-                    } else {
-                        finalize_merged_top_metrics_aggregation_value(merged, name);
-                    }
-                } else if plugin_finalize_aggregation(plugin) {
-                    merged.insert(
-                        name.clone(),
-                        plugin_pipeline_aggregation_value(merged, plugin),
-                    );
-                }
+            };
+            match value.get_mut("buckets") {
+                Some(Value::Array(items)) => { for bucket in items { evaluate(bucket); } }
+                Some(Value::Object(items)) => { for bucket in items.values_mut() { evaluate(bucket); } }
+                _ => {}
             }
-            _ => {}
+        } else if plugin_has_single_bucket_surface(&plugin.kind) {
+            if let Some(object) = value.as_object_mut() {
+                evaluate_selected_aggregation_pipelines(object, &nested);
+            }
         }
     }
-    finalize_bucket_pipeline_aggregation_response(merged, aggregation_map);
+}
+
+fn check_final_aggregation_bucket_count(
+    response: &serde_json::Map<String, Value>,
+    aggregation_map: &AggregationMap,
+    max_buckets: u32,
+) -> EngineResult<()> {
+    fn visit(
+        response: &serde_json::Map<String, Value>,
+        aggregation_map: &AggregationMap,
+        max_buckets: u32,
+        count: &mut u64,
+    ) -> EngineResult<()> {
+        for (name, aggregation) in aggregation_map {
+            let Some(value) = response.get(name) else { continue; };
+            let multi_bucket = aggregation_has_multi_bucket_surface(aggregation);
+            let nested = match aggregation {
+                Aggregation::Plugin(plugin) => plugin_subaggregation_map(plugin),
+                _ => None,
+            };
+            if multi_bucket {
+                // Only the visible surface counts; merge carriers and metric payloads do not.
+                let buckets = value.get("buckets");
+                let len = match buckets {
+                    Some(Value::Array(items)) => items.len(),
+                    Some(Value::Object(items)) => items.len(),
+                    _ => 0,
+                };
+                *count = count.saturating_add(len as u64);
+                if *count > u64::from(max_buckets) {
+                    return Err(EngineError::TooManyBuckets { max_buckets, bucket_count: *count });
+                }
+                if let Some(nested) = &nested {
+                    let mut visit_bucket = |bucket: &Value| -> EngineResult<()> {
+                        if let Some(object) = bucket.as_object() { visit(object, nested, max_buckets, count)?; }
+                        Ok(())
+                    };
+                    match buckets {
+                        Some(Value::Array(items)) => { for bucket in items { visit_bucket(bucket)?; } }
+                        Some(Value::Object(items)) => { for bucket in items.values() { visit_bucket(bucket)?; } }
+                        _ => {}
+                    }
+                }
+            } else if let Aggregation::Plugin(plugin) = aggregation {
+                if plugin_has_single_bucket_surface(&plugin.kind) {
+                    if let (Some(nested), Some(object)) = (&nested, value.as_object()) {
+                        visit(object, nested, max_buckets, count)?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+    visit(response, aggregation_map, max_buckets, &mut 0)
+}
+
+
+
+fn finalize_selected_aggregation_buckets(merged: &mut serde_json::Map<String, Value>, aggregation_map: &AggregationMap) {
     for (name, aggregation) in aggregation_map {
         if let Aggregation::Metric(metric) = aggregation {
             if matches!(metric.kind, os_query_dsl::MetricAggregationKind::Avg) {
@@ -35203,6 +36776,116 @@ fn finalize_merged_pipeline_aggregations(
     }
 }
 
+fn evaluate_selected_aggregation_pipelines(merged: &mut serde_json::Map<String, Value>, aggregation_map: &AggregationMap) {
+    evaluate_visible_nested_pipelines(merged, aggregation_map);
+    for (name, aggregation) in aggregation_map {
+        match aggregation {
+            Aggregation::TopHits(top_hits) => {
+                finalize_merged_top_hits_aggregation_value(
+                    merged,
+                    name,
+                    top_hits.from,
+                    top_hits.size,
+                );
+            }
+            Aggregation::BucketSort(bucket_sort) => {
+                merged.insert(
+                    name.clone(),
+                    serde_json::json!({
+                        "buckets": collect_bucket_sort_aggregation_value(
+                            merged,
+                            &bucket_sort.aggregation,
+                            &bucket_sort.sort,
+                            bucket_sort.from,
+                            bucket_sort.size
+                        )
+                    }),
+                );
+            }
+            Aggregation::BucketCount(bucket_count) => {
+                merged.insert(
+                    name.clone(),
+                    collect_bucket_count_aggregation_value(merged, &bucket_count.aggregation),
+                );
+            }
+            Aggregation::Normalize(normalize) => {
+                merged.insert(
+                    name.clone(),
+                    serde_json::json!({
+                        "buckets": collect_normalize_aggregation_value(
+                            merged,
+                            &normalize.aggregation,
+                            &normalize.path
+                        )
+                    }),
+                );
+            }
+            Aggregation::BucketSelector(bucket_selector) => {
+                merged.insert(
+                    name.clone(),
+                    serde_json::json!({
+                        "buckets": collect_bucket_selector_aggregation_value(
+                            merged,
+                            &bucket_selector.aggregation,
+                            &bucket_selector.path,
+                            &bucket_selector.op,
+                            bucket_selector.value
+                        )
+                    }),
+                );
+            }
+            Aggregation::BucketScript(bucket_script) => {
+                merged.insert(
+                    name.clone(),
+                    serde_json::json!({
+                        "buckets": collect_bucket_script_aggregation_value(
+                            merged,
+                            &bucket_script.aggregation,
+                            &bucket_script.path,
+                            &bucket_script.script,
+                            &bucket_script.params
+                        )
+                    }),
+                );
+            }
+            Aggregation::Pipeline(pipeline) => {
+                merged.insert(name.clone(), collect_pipeline_aggregation(merged, pipeline));
+            }
+            Aggregation::Plugin(plugin) => {
+                if !plugin_has_valid_request_surface_for_merge_or_finalize(plugin) {
+                    merged.insert(name.clone(), collect_plugin_aggregation_placeholder(plugin));
+                    continue;
+                }
+                if plugin.kind == "top_hits" {
+                    let Some((from, size, _)) = plugin_top_hits_window_and_sort(plugin) else {
+                        merged.insert(name.clone(), collect_plugin_aggregation_placeholder(plugin));
+                        continue;
+                    };
+                    finalize_merged_top_hits_aggregation_value(merged, name, from, size);
+                    if plugin_top_hits_uses_non_score_explicit_sort(plugin) {
+                        if let Some(value) = merged.get_mut(name) {
+                            clear_top_hits_score_surface(value);
+                        }
+                    }
+                } else if plugin.kind == "top_metrics" {
+                    if !plugin_top_metrics_has_valid_setup(plugin) {
+                        merged.insert(name.clone(), collect_plugin_aggregation_placeholder(plugin));
+                    } else {
+                        finalize_merged_top_metrics_aggregation_value(merged, name);
+                    }
+                } else if plugin_finalize_aggregation(plugin) {
+                    merged.insert(
+                        name.clone(),
+                        plugin_pipeline_aggregation_value(merged, plugin),
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+    finalize_bucket_pipeline_aggregation_response(merged, aggregation_map);
+}
+
 fn finalize_wrapper_nested_aggregation_value(
     merged: &mut serde_json::Map<String, Value>,
     name: &str,
@@ -35225,7 +36908,7 @@ fn finalize_wrapper_nested_aggregation_value(
         })
         .map(|(field, value)| (field.clone(), value.clone()))
         .collect::<serde_json::Map<_, _>>();
-    finalize_merged_pipeline_aggregations(&mut nested, subaggregation_map);
+    finalize_selected_aggregation_buckets(&mut nested, subaggregation_map);
     if matches!(
         plugin.kind.as_str(),
         "global" | "sampler" | "random_sampler" | "diversified_sampler"
@@ -35275,7 +36958,7 @@ fn finalize_plugin_bucketed_nested_aggregation_value(
                 })
                 .map(|(field, value)| (field.clone(), value.clone()))
                 .collect::<serde_json::Map<_, _>>();
-            finalize_merged_pipeline_aggregations(&mut nested, subaggregation_map);
+            finalize_selected_aggregation_buckets(&mut nested, subaggregation_map);
             bucket_object.remove("_avg_count_hints");
             bucket_object.remove("_cardinality_value_hints");
             bucket_object.remove("_percentile_value_hints");
@@ -35339,7 +37022,7 @@ fn finalize_plugin_array_bucketed_nested_aggregation_value(
                 .collect::<serde_json::Map<String, Value>>();
             let mut nested =
                 array_bucketed_plugin_nested_fields(&Value::Object(bucket_object.clone()));
-            finalize_merged_pipeline_aggregations(&mut nested, subaggregation_map);
+            finalize_selected_aggregation_buckets(&mut nested, subaggregation_map);
             bucket_object.remove("_avg_count_hints");
             bucket_object.remove("_cardinality_value_hints");
             bucket_object.remove("_percentile_value_hints");
@@ -35588,7 +37271,7 @@ fn merge_terms_aggregation_value(
         right_count.cmp(&left_count).then_with(|| {
             let left_key = left.get("key").cloned().unwrap_or(Value::Null);
             let right_key = right.get("key").cloned().unwrap_or(Value::Null);
-            bucket_sort_key(&left_key).cmp(&bucket_sort_key(&right_key))
+            compare_bucket_keys(&left_key, &right_key)
         })
     });
     *entry = bucket_array_visible_and_carrier_value(merged_buckets);
@@ -35948,7 +37631,7 @@ fn order_plugin_terms_buckets(buckets: &mut Vec<Value>, plugin: &os_query_dsl::P
             .and_then(|value| value.as_u64())
             .unwrap_or(0);
         let ordering = match field {
-            "_key" => bucket_sort_key(&left_key).cmp(&bucket_sort_key(&right_key)),
+            "_key" => compare_bucket_keys(&left_key, &right_key),
             "_count" => left_count.cmp(&right_count),
             _ => right_count.cmp(&left_count),
         };
@@ -35956,7 +37639,7 @@ fn order_plugin_terms_buckets(buckets: &mut Vec<Value>, plugin: &os_query_dsl::P
             SortOrder::Asc => ordering,
             SortOrder::Desc => ordering.reverse(),
         };
-        ordering.then_with(|| bucket_sort_key(&left_key).cmp(&bucket_sort_key(&right_key)))
+        ordering.then_with(|| compare_bucket_keys(&left_key, &right_key))
     });
 }
 
@@ -36010,7 +37693,7 @@ fn order_plugin_rare_terms_buckets(
             .and_then(|value| value.as_u64())
             .unwrap_or(0);
         let ordering = match field {
-            "_key" => bucket_sort_key(&left_key).cmp(&bucket_sort_key(&right_key)),
+            "_key" => compare_bucket_keys(&left_key, &right_key),
             "_count" => left_count.cmp(&right_count),
             _ => left_count.cmp(&right_count),
         };
@@ -36018,7 +37701,7 @@ fn order_plugin_rare_terms_buckets(
             SortOrder::Asc => ordering,
             SortOrder::Desc => ordering.reverse(),
         };
-        ordering.then_with(|| bucket_sort_key(&left_key).cmp(&bucket_sort_key(&right_key)))
+        ordering.then_with(|| compare_bucket_keys(&left_key, &right_key))
     });
 }
 
@@ -36109,7 +37792,7 @@ fn collect_plugin_multi_terms_buckets_from_source(
     buckets.sort_by(|(left_key, left_count), (right_key, right_count)| {
         right_count
             .cmp(left_count)
-            .then_with(|| bucket_sort_key(left_key).cmp(&bucket_sort_key(right_key)))
+            .then_with(|| compare_bucket_keys(left_key, right_key))
     });
 
     let mut buckets = buckets
@@ -36200,15 +37883,30 @@ fn collect_plugin_adjacency_matrix_buckets(
     buckets
 }
 
+#[cfg(test)]
 fn collect_plugin_adjacency_matrix_bucket_values(
     entries: &[(String, Query)],
     separator: &str,
     bucket_value: impl Fn(&[&Query]) -> Option<Value>,
 ) -> serde_json::Map<String, Value> {
+    let result = try_collect_plugin_adjacency_matrix_bucket_values(
+        entries, separator, |queries| Ok::<_, std::convert::Infallible>(bucket_value(queries)),
+    );
+    match result {
+        Ok(buckets) => buckets,
+        Err(never) => match never {},
+    }
+}
+
+fn try_collect_plugin_adjacency_matrix_bucket_values<E>(
+    entries: &[(String, Query)],
+    separator: &str,
+    bucket_value: impl Fn(&[&Query]) -> Result<Option<Value>, E>,
+) -> Result<serde_json::Map<String, Value>, E> {
     let mut buckets = serde_json::Map::new();
     let count = entries.len();
     if count == 0 {
-        return buckets;
+        return Ok(buckets);
     }
     for mask in 1usize..(1usize << count) {
         let selected = entries
@@ -36218,7 +37916,7 @@ fn collect_plugin_adjacency_matrix_bucket_values(
             .map(|(_, entry)| entry)
             .collect::<Vec<_>>();
         let queries = selected.iter().map(|(_, query)| query).collect::<Vec<_>>();
-        let Some(value) = bucket_value(&queries) else {
+        let Some(value) = bucket_value(&queries)? else {
             continue;
         };
         let key = selected
@@ -36228,7 +37926,7 @@ fn collect_plugin_adjacency_matrix_bucket_values(
             .join(separator);
         buckets.insert(key, value);
     }
-    buckets
+    Ok(buckets)
 }
 
 fn multi_terms_key_component_string(value: &Value) -> String {
@@ -36261,7 +37959,7 @@ fn order_plugin_significant_terms_buckets(
         let left_score = left.get("score").and_then(Value::as_f64).unwrap_or(0.0);
         let right_score = right.get("score").and_then(Value::as_f64).unwrap_or(0.0);
         let ordering = match field {
-            "_key" => bucket_sort_key(&left_key).cmp(&bucket_sort_key(&right_key)),
+            "_key" => compare_bucket_keys(&left_key, &right_key),
             "_count" => left_count.cmp(&right_count),
             _ => left_score
                 .partial_cmp(&right_score)
@@ -36272,7 +37970,7 @@ fn order_plugin_significant_terms_buckets(
             SortOrder::Asc => ordering,
             SortOrder::Desc => ordering.reverse(),
         };
-        ordering.then_with(|| bucket_sort_key(&left_key).cmp(&bucket_sort_key(&right_key)))
+        ordering.then_with(|| compare_bucket_keys(&left_key, &right_key))
     });
 }
 
@@ -36349,7 +38047,7 @@ fn finalize_terms_aggregation_value(value: &mut Value, size: usize) {
         right_count.cmp(&left_count).then_with(|| {
             let left_key = left.get("key").cloned().unwrap_or(Value::Null);
             let right_key = right.get("key").cloned().unwrap_or(Value::Null);
-            bucket_sort_key(&left_key).cmp(&bucket_sort_key(&right_key))
+            compare_bucket_keys(&left_key, &right_key)
         })
     });
     visible_buckets.truncate(size);
@@ -36428,7 +38126,7 @@ fn sort_significant_terms_buckets_by_score_desc(buckets: &mut [Value]) {
             .then_with(|| {
                 let left_key = left.get("key").cloned().unwrap_or(Value::Null);
                 let right_key = right.get("key").cloned().unwrap_or(Value::Null);
-                bucket_sort_key(&left_key).cmp(&bucket_sort_key(&right_key))
+                compare_bucket_keys(&left_key, &right_key)
             })
     });
 }
@@ -37624,7 +39322,7 @@ fn merge_significant_terms_aggregation_value(
             .then_with(|| {
                 let left_key = left.get("key").cloned().unwrap_or(Value::Null);
                 let right_key = right.get("key").cloned().unwrap_or(Value::Null);
-                bucket_sort_key(&left_key).cmp(&bucket_sort_key(&right_key))
+                compare_bucket_keys(&left_key, &right_key)
             })
     });
     *entry = bucket_array_visible_and_carrier_value_with_fields(
@@ -38104,7 +39802,7 @@ fn merge_plugin_aggregation_value(
                     &cardinality_value_hints,
                     &percentile_value_hints,
                 );
-                finalize_merged_pipeline_aggregations(&mut nested_merged, &aggregation_map);
+                finalize_selected_aggregation_buckets(&mut nested_merged, &aggregation_map);
                 final_object = object_value_with_field_and_fields(
                     "doc_count",
                     Value::from(merged_doc_count),
@@ -38343,7 +40041,7 @@ fn merge_plugin_aggregation_value(
                         &cardinality_value_hints,
                         &percentile_value_hints,
                     );
-                    finalize_merged_pipeline_aggregations(&mut nested_merged, &aggregation_map);
+                    finalize_selected_aggregation_buckets(&mut nested_merged, &aggregation_map);
                     let doc_count = bucket_entry
                         .get("doc_count")
                         .and_then(|value| value.as_u64())
@@ -38419,7 +40117,7 @@ fn merge_plugin_aggregation_value(
                         &cardinality_value_hints,
                         &percentile_value_hints,
                     );
-                    finalize_merged_pipeline_aggregations(&mut nested_merged, &aggregation_map);
+                    finalize_selected_aggregation_buckets(&mut nested_merged, &aggregation_map);
                     let doc_count = bucket_entry
                         .get("doc_count")
                         .and_then(|value| value.as_u64())
@@ -38495,7 +40193,7 @@ fn merge_plugin_aggregation_value(
                         &cardinality_value_hints,
                         &percentile_value_hints,
                     );
-                    finalize_merged_pipeline_aggregations(&mut nested_merged, &aggregation_map);
+                    finalize_selected_aggregation_buckets(&mut nested_merged, &aggregation_map);
                     let object = bucket_entry.as_object().cloned().unwrap_or_default();
                     *bucket_entry = plugin_bucket_value_from_existing_fields(
                         object,
@@ -38566,7 +40264,7 @@ fn merge_plugin_aggregation_value(
                         &cardinality_value_hints,
                         &percentile_value_hints,
                     );
-                    finalize_merged_pipeline_aggregations(&mut nested_merged, &aggregation_map);
+                    finalize_selected_aggregation_buckets(&mut nested_merged, &aggregation_map);
                     let object = bucket_entry.as_object().cloned().unwrap_or_default();
                     *bucket_entry = plugin_bucket_value_from_existing_fields(
                         object,
@@ -38637,7 +40335,7 @@ fn merge_plugin_aggregation_value(
                         &cardinality_value_hints,
                         &percentile_value_hints,
                     );
-                    finalize_merged_pipeline_aggregations(&mut nested_merged, &aggregation_map);
+                    finalize_selected_aggregation_buckets(&mut nested_merged, &aggregation_map);
                     let object = bucket_entry.as_object().cloned().unwrap_or_default();
                     *bucket_entry = plugin_bucket_value_from_existing_fields(
                         object,
@@ -38708,7 +40406,7 @@ fn merge_plugin_aggregation_value(
                         &cardinality_value_hints,
                         &percentile_value_hints,
                     );
-                    finalize_merged_pipeline_aggregations(&mut nested_merged, &aggregation_map);
+                    finalize_selected_aggregation_buckets(&mut nested_merged, &aggregation_map);
                     let object = bucket_entry.as_object().cloned().unwrap_or_default();
                     *bucket_entry = plugin_bucket_value_from_existing_fields(
                         object,
@@ -38779,7 +40477,7 @@ fn merge_plugin_aggregation_value(
                         &cardinality_value_hints,
                         &percentile_value_hints,
                     );
-                    finalize_merged_pipeline_aggregations(&mut nested_merged, &aggregation_map);
+                    finalize_selected_aggregation_buckets(&mut nested_merged, &aggregation_map);
                     let object = bucket_entry.as_object().cloned().unwrap_or_default();
                     *bucket_entry = plugin_bucket_value_from_existing_fields(
                         object,
@@ -38999,7 +40697,7 @@ fn merge_plugin_aggregation_value(
                         &cardinality_value_hints,
                         &percentile_value_hints,
                     );
-                    finalize_merged_pipeline_aggregations(&mut nested_merged, &aggregation_map);
+                    finalize_selected_aggregation_buckets(&mut nested_merged, &aggregation_map);
                     let object = bucket_entry.as_object().cloned().unwrap_or_default();
                     *bucket_entry = plugin_bucket_value_from_existing_fields(
                         object,
@@ -39123,7 +40821,7 @@ fn merge_plugin_aggregation_value(
                             &cardinality_value_hints,
                             &percentile_value_hints,
                         );
-                        finalize_merged_pipeline_aggregations(&mut nested_merged, aggregation_map);
+                        finalize_selected_aggregation_buckets(&mut nested_merged, aggregation_map);
                         let object = bucket_entry.as_object().cloned().unwrap_or_default();
                         plugin_bucket_value_from_existing_fields(
                             object,
@@ -39244,7 +40942,7 @@ fn merge_plugin_aggregation_value(
                             &cardinality_value_hints,
                             &percentile_value_hints,
                         );
-                        finalize_merged_pipeline_aggregations(&mut nested_merged, aggregation_map);
+                        finalize_selected_aggregation_buckets(&mut nested_merged, aggregation_map);
                         let object = bucket_entry.as_object().cloned().unwrap_or_default();
                         plugin_bucket_value_from_existing_fields(
                             object,
@@ -39366,7 +41064,7 @@ fn merge_plugin_aggregation_value(
                                 &cardinality_value_hints,
                                 &percentile_value_hints,
                             );
-                            finalize_merged_pipeline_aggregations(
+                            finalize_selected_aggregation_buckets(
                                 &mut nested_merged,
                                 &aggregation_map,
                             );
@@ -39533,7 +41231,7 @@ fn merge_plugin_aggregation_value(
                             &cardinality_value_hints,
                             &percentile_value_hints,
                         );
-                        finalize_merged_pipeline_aggregations(&mut nested_merged, &aggregation_map);
+                        finalize_selected_aggregation_buckets(&mut nested_merged, &aggregation_map);
                         let object = bucket_entry.as_object().cloned().unwrap_or_default();
                         plugin_bucket_value_from_existing_fields(
                             object,
@@ -39656,7 +41354,7 @@ fn merge_plugin_aggregation_value(
                     &cardinality_value_hints,
                     &percentile_value_hints,
                 );
-                finalize_merged_pipeline_aggregations(&mut nested_merged, &aggregation_map);
+                finalize_selected_aggregation_buckets(&mut nested_merged, &aggregation_map);
                 final_object.retain(|key, _| key == "doc_count");
                 final_object = object_value_with_field_and_fields(
                     "doc_count",
@@ -39735,7 +41433,7 @@ fn merge_plugin_aggregation_value(
                         &cardinality_value_hints,
                         &percentile_value_hints,
                     );
-                    finalize_merged_pipeline_aggregations(&mut nested_merged, &aggregation_map);
+                    finalize_selected_aggregation_buckets(&mut nested_merged, &aggregation_map);
                     let doc_count = bucket_entry
                         .get("doc_count")
                         .and_then(|value| value.as_u64())
@@ -39810,7 +41508,7 @@ fn merge_plugin_aggregation_value(
                         &cardinality_value_hints,
                         &percentile_value_hints,
                     );
-                    finalize_merged_pipeline_aggregations(&mut nested_merged, &aggregation_map);
+                    finalize_selected_aggregation_buckets(&mut nested_merged, &aggregation_map);
                     let doc_count = bucket_entry
                         .get("doc_count")
                         .and_then(|value| value.as_u64())
@@ -39918,7 +41616,7 @@ fn merge_plugin_aggregation_value(
                     &cardinality_value_hints,
                     &percentile_value_hints,
                 );
-                finalize_merged_pipeline_aggregations(&mut nested_merged, &aggregation_map);
+                finalize_selected_aggregation_buckets(&mut nested_merged, &aggregation_map);
                 final_object.retain(|key, _| key == "doc_count");
                 final_object = object_value_with_field_and_fields(
                     "doc_count",
@@ -40037,7 +41735,7 @@ fn merge_plugin_aggregation_value(
                     &cardinality_value_hints,
                     &percentile_value_hints,
                 );
-                finalize_merged_pipeline_aggregations(&mut nested_merged, &aggregation_map);
+                finalize_selected_aggregation_buckets(&mut nested_merged, &aggregation_map);
                 final_object.retain(|key, _| key == "doc_count");
                 final_object = object_value_with_field_and_fields(
                     "doc_count",
@@ -40157,7 +41855,7 @@ fn merge_plugin_aggregation_value(
                             &cardinality_value_hints,
                             &percentile_value_hints,
                         );
-                        finalize_merged_pipeline_aggregations(&mut nested_merged, &aggregation_map);
+                        finalize_selected_aggregation_buckets(&mut nested_merged, &aggregation_map);
                         let object = bucket_entry.as_object().cloned().unwrap_or_default();
                         plugin_bucket_value_from_existing_fields(
                             object,
@@ -41098,11 +42796,20 @@ fn collect_plugin_aggregation_from_documents(
     index_name: &str,
     documents: &[&StoredDocument],
     plugin: &os_query_dsl::PluginAggregation,
-) -> Value {
+) -> EngineResult<Value> {
+    collect_plugin_aggregation_from_documents_with_budget(index_name, documents, plugin, &BucketAllocationBudget::default())
+}
+
+fn collect_plugin_aggregation_from_documents_with_budget(
+    index_name: &str,
+    documents: &[&StoredDocument],
+    plugin: &os_query_dsl::PluginAggregation,
+    bucket_budget: &BucketAllocationBudget,
+) -> EngineResult<Value> {
     if !plugin_has_valid_request_surface_for_collection(plugin) {
-        return collect_plugin_aggregation_placeholder(plugin);
+        return Ok(collect_plugin_aggregation_placeholder(plugin));
     }
-    match plugin.kind.as_str() {
+    Ok(match plugin.kind.as_str() {
         "value_count" => {
             let field = plugin
                 .params
@@ -41205,16 +42912,17 @@ fn collect_plugin_aggregation_from_documents(
                 .collect::<Vec<_>>();
             let (nested_aggregations, nested_reduce_hints) = plugin_subaggregation_map(plugin)
                 .map(|aggregation_map| {
-                    let nested_aggregations = collect_aggregations_from_documents(
+                    let nested_aggregations = collect_aggregations_from_documents_with_budget(
                         index_name,
                         &missing_documents,
                         &missing_documents,
                         &aggregation_map,
-                    );
+                        bucket_budget,
+                    )?;
                     let nested_reduce_hints =
                         collect_reduce_hints_for_documents(&missing_documents, &aggregation_map);
-                    (Some(nested_aggregations), Some(nested_reduce_hints))
-                })
+                    Ok((Some(nested_aggregations), Some(nested_reduce_hints)))
+                }).transpose()?
                 .unwrap_or((None, None));
             plugin_filter_aggregation_value(
                 plugin,
@@ -41338,7 +43046,7 @@ fn collect_plugin_aggregation_from_documents(
                 .to_string();
             let percents = if plugin_param_exists(plugin, "percents") {
                 let Some(values) = plugin_numeric_array_param(plugin, "percents") else {
-                    return collect_plugin_aggregation_placeholder(plugin);
+                    return Ok(collect_plugin_aggregation_placeholder(plugin));
                 };
                 Some(values)
             } else {
@@ -41364,7 +43072,7 @@ fn collect_plugin_aggregation_from_documents(
                 .unwrap_or_default()
                 .to_string();
             let Some(values) = plugin_numeric_array_param(plugin, "values") else {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             };
             let metric = os_query_dsl::MetricAggregation {
                 kind: os_query_dsl::MetricAggregationKind::PercentileRanks,
@@ -41492,22 +43200,23 @@ fn collect_plugin_aggregation_from_documents(
                 let mut bucket_values = buckets
                     .into_values()
                     .map(|(key, bucket_documents)| {
-                        let nested_aggregations = collect_aggregations_from_documents(
+                        let nested_aggregations = collect_aggregations_from_documents_with_budget(
                             index_name,
                             &bucket_documents,
                             &bucket_documents,
                             &aggregation_map,
-                        );
+                            bucket_budget,
+                        )?;
                         let nested_reduce_hints =
                             collect_reduce_hints_for_documents(&bucket_documents, &aggregation_map);
-                        plugin_terms_bucket_value(
+                        Ok(plugin_terms_bucket_value(
                             key,
                             bucket_documents.len() as u64,
                             Some(nested_aggregations),
                             Some(nested_reduce_hints),
-                        )
+                        ))
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<EngineResult<Vec<_>>>()?;
                 order_plugin_terms_buckets(&mut bucket_values, plugin);
                 plugin_bucket_surface_aggregation_value(plugin, Value::Array(bucket_values))
             } else {
@@ -41556,22 +43265,23 @@ fn collect_plugin_aggregation_from_documents(
                 let mut bucket_values = buckets
                     .into_values()
                     .map(|(key, bucket_documents)| {
-                        let nested_aggregations = collect_aggregations_from_documents(
+                        let nested_aggregations = collect_aggregations_from_documents_with_budget(
                             index_name,
                             &bucket_documents,
                             &bucket_documents,
                             &aggregation_map,
-                        );
+                            bucket_budget,
+                        )?;
                         let nested_reduce_hints =
                             collect_reduce_hints_for_documents(&bucket_documents, &aggregation_map);
-                        plugin_terms_bucket_value(
+                        Ok(plugin_terms_bucket_value(
                             key,
                             bucket_documents.len() as u64,
                             Some(nested_aggregations),
                             Some(nested_reduce_hints),
-                        )
+                        ))
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<EngineResult<Vec<_>>>()?;
                 order_plugin_rare_terms_buckets(&mut bucket_values, plugin);
                 plugin_bucket_surface_aggregation_value(plugin, Value::Array(bucket_values))
             } else {
@@ -41603,7 +43313,7 @@ fn collect_plugin_aggregation_from_documents(
                 .unwrap_or_default()
                 .to_string();
             let Some(ranges) = plugin_numeric_range_setup(plugin) else {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             };
             if let Some(aggregation_map) = plugin_subaggregation_map(plugin) {
                 let buckets = ranges
@@ -41628,21 +43338,22 @@ fn collect_plugin_aggregation_from_documents(
                             bucket.to.map(Value::from),
                             bucket_documents.len() as u64,
                         );
-                        let nested_aggregations = collect_aggregations_from_documents(
+                        let nested_aggregations = collect_aggregations_from_documents_with_budget(
                             index_name,
                             &bucket_documents,
                             &bucket_documents,
                             &aggregation_map,
-                        );
+                            bucket_budget,
+                        )?;
                         let nested_reduce_hints =
                             collect_reduce_hints_for_documents(&bucket_documents, &aggregation_map);
-                        plugin_bucket_value_from_existing_fields(
+                        Ok(plugin_bucket_value_from_existing_fields(
                             object,
                             Some(nested_aggregations),
                             Some(nested_reduce_hints),
-                        )
+                        ))
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<EngineResult<Vec<_>>>()?;
                 plugin_range_bucket_surface_aggregation_value(plugin, buckets)
             } else {
                 let range = os_query_dsl::RangeAggregation { field, ranges };
@@ -41662,7 +43373,7 @@ fn collect_plugin_aggregation_from_documents(
                 .unwrap_or_default()
                 .to_string();
             let Some(ranges) = plugin_ip_range_setup(plugin) else {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             };
             if let Some(aggregation_map) = plugin_subaggregation_map(plugin) {
                 let buckets = ranges
@@ -41689,21 +43400,22 @@ fn collect_plugin_aggregation_from_documents(
                             bucket.to.clone().map(Value::String),
                             bucket_documents.len() as u64,
                         );
-                        let nested_aggregations = collect_aggregations_from_documents(
+                        let nested_aggregations = collect_aggregations_from_documents_with_budget(
                             index_name,
                             &bucket_documents,
                             &bucket_documents,
                             &aggregation_map,
-                        );
+                            bucket_budget,
+                        )?;
                         let nested_reduce_hints =
                             collect_reduce_hints_for_documents(&bucket_documents, &aggregation_map);
-                        plugin_bucket_value_from_existing_fields(
+                        Ok(plugin_bucket_value_from_existing_fields(
                             object,
                             Some(nested_aggregations),
                             Some(nested_reduce_hints),
-                        )
+                        ))
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<EngineResult<Vec<_>>>()?;
                 plugin_range_bucket_surface_aggregation_value(plugin, buckets)
             } else {
                 let mut value =
@@ -41723,7 +43435,7 @@ fn collect_plugin_aggregation_from_documents(
                 .unwrap_or_default()
                 .to_string();
             let Some(ranges) = plugin_date_range_setup(plugin) else {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             };
             if let Some(aggregation_map) = plugin_subaggregation_map(plugin) {
                 let buckets = ranges
@@ -41752,21 +43464,22 @@ fn collect_plugin_aggregation_from_documents(
                             bucket.to.clone(),
                             bucket_documents.len() as u64,
                         );
-                        let nested_aggregations = collect_aggregations_from_documents(
+                        let nested_aggregations = collect_aggregations_from_documents_with_budget(
                             index_name,
                             &bucket_documents,
                             &bucket_documents,
                             &aggregation_map,
-                        );
+                            bucket_budget,
+                        )?;
                         let nested_reduce_hints =
                             collect_reduce_hints_for_documents(&bucket_documents, &aggregation_map);
-                        plugin_bucket_value_from_existing_fields(
+                        Ok(plugin_bucket_value_from_existing_fields(
                             object,
                             Some(nested_aggregations),
                             Some(nested_reduce_hints),
-                        )
+                        ))
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<EngineResult<Vec<_>>>()?;
                 plugin_range_bucket_surface_aggregation_value(plugin, buckets)
             } else {
                 let mut value =
@@ -41786,7 +43499,7 @@ fn collect_plugin_aggregation_from_documents(
                 .unwrap_or_default()
                 .to_string();
             let Some(((origin_lat, origin_lon), ranges)) = plugin_geo_distance_setup(plugin) else {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             };
             if let Some(aggregation_map) = plugin_subaggregation_map(plugin) {
                 let buckets = ranges
@@ -41812,21 +43525,22 @@ fn collect_plugin_aggregation_from_documents(
                             bucket.to.map(Value::from),
                             bucket_documents.len() as u64,
                         );
-                        let nested_aggregations = collect_aggregations_from_documents(
+                        let nested_aggregations = collect_aggregations_from_documents_with_budget(
                             index_name,
                             &bucket_documents,
                             &bucket_documents,
                             &aggregation_map,
-                        );
+                            bucket_budget,
+                        )?;
                         let nested_reduce_hints =
                             collect_reduce_hints_for_documents(&bucket_documents, &aggregation_map);
-                        plugin_bucket_value_from_existing_fields(
+                        Ok(plugin_bucket_value_from_existing_fields(
                             object,
                             Some(nested_aggregations),
                             Some(nested_reduce_hints),
-                        )
+                        ))
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<EngineResult<Vec<_>>>()?;
                 plugin_range_bucket_surface_aggregation_value(plugin, buckets)
             } else {
                 let mut value = collect_geo_distance_aggregation_from_documents(
@@ -41847,7 +43561,7 @@ fn collect_plugin_aggregation_from_documents(
                 .unwrap_or_default()
                 .to_string();
             let Some(ranges) = plugin_date_range_setup(plugin) else {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             };
             if let Some(aggregation_map) = plugin_subaggregation_map(plugin) {
                 let buckets = ranges
@@ -41876,21 +43590,22 @@ fn collect_plugin_aggregation_from_documents(
                             bucket.to.clone(),
                             bucket_documents.len() as u64,
                         );
-                        let nested_aggregations = collect_aggregations_from_documents(
+                        let nested_aggregations = collect_aggregations_from_documents_with_budget(
                             index_name,
                             &bucket_documents,
                             &bucket_documents,
                             &aggregation_map,
-                        );
+                            bucket_budget,
+                        )?;
                         let nested_reduce_hints =
                             collect_reduce_hints_for_documents(&bucket_documents, &aggregation_map);
-                        plugin_bucket_value_from_existing_fields(
+                        Ok(plugin_bucket_value_from_existing_fields(
                             object,
                             Some(nested_aggregations),
                             Some(nested_reduce_hints),
-                        )
+                        ))
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<EngineResult<Vec<_>>>()?;
                 plugin_range_bucket_surface_aggregation_value(plugin, buckets)
             } else {
                 let mut value =
@@ -41910,7 +43625,7 @@ fn collect_plugin_aggregation_from_documents(
                 .unwrap_or_default()
                 .to_string();
             let Some(((origin_lat, origin_lon), ranges)) = plugin_geo_distance_setup(plugin) else {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             };
             if let Some(aggregation_map) = plugin_subaggregation_map(plugin) {
                 let buckets = ranges
@@ -41936,21 +43651,22 @@ fn collect_plugin_aggregation_from_documents(
                             bucket.to.map(Value::from),
                             bucket_documents.len() as u64,
                         );
-                        let nested_aggregations = collect_aggregations_from_documents(
+                        let nested_aggregations = collect_aggregations_from_documents_with_budget(
                             index_name,
                             &bucket_documents,
                             &bucket_documents,
                             &aggregation_map,
-                        );
+                            bucket_budget,
+                        )?;
                         let nested_reduce_hints =
                             collect_reduce_hints_for_documents(&bucket_documents, &aggregation_map);
-                        plugin_bucket_value_from_existing_fields(
+                        Ok(plugin_bucket_value_from_existing_fields(
                             object,
                             Some(nested_aggregations),
                             Some(nested_reduce_hints),
-                        )
+                        ))
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<EngineResult<Vec<_>>>()?;
                 plugin_range_bucket_surface_aggregation_value(plugin, buckets)
             } else {
                 let mut value = collect_geo_distance_aggregation_from_values(
@@ -41975,7 +43691,7 @@ fn collect_plugin_aggregation_from_documents(
                 .unwrap_or_default()
                 .to_string();
             let Some(interval) = plugin_date_histogram_setup(plugin) else {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             };
             let mut buckets = BTreeMap::<i64, (String, Vec<&StoredDocument>)>::new();
             for document in documents {
@@ -42008,21 +43724,22 @@ fn collect_plugin_aggregation_from_documents(
                         .as_object()
                         .cloned()
                         .unwrap_or_default();
-                        let nested_aggregations = collect_aggregations_from_documents(
+                        let nested_aggregations = collect_aggregations_from_documents_with_budget(
                             index_name,
                             &bucket_documents,
                             &bucket_documents,
                             &aggregation_map,
-                        );
+                            bucket_budget,
+                        )?;
                         let nested_reduce_hints =
                             collect_reduce_hints_for_documents(&bucket_documents, &aggregation_map);
-                        plugin_bucket_value_from_existing_fields(
+                        Ok(plugin_bucket_value_from_existing_fields(
                             object,
                             Some(nested_aggregations),
                             Some(nested_reduce_hints),
-                        )
+                        ))
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<EngineResult<Vec<_>>>()?;
                 plugin_bucket_surface_aggregation_value(plugin, Value::Array(buckets))
             } else {
                 plugin_bucket_surface_aggregation_value(
@@ -42050,7 +43767,7 @@ fn collect_plugin_aggregation_from_documents(
                 .unwrap_or_default()
                 .to_string();
             let Some(interval) = plugin_histogram_setup(plugin) else {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             };
             if let Some(aggregation_map) = plugin_subaggregation_map(plugin) {
                 let mut buckets = BTreeMap::<u64, (f64, Vec<&StoredDocument>)>::new();
@@ -42095,21 +43812,22 @@ fn collect_plugin_aggregation_from_documents(
                         .as_object()
                         .cloned()
                         .unwrap_or_default();
-                        let nested_aggregations = collect_aggregations_from_documents(
+                        let nested_aggregations = collect_aggregations_from_documents_with_budget(
                             index_name,
                             &bucket_documents,
                             &bucket_documents,
                             &aggregation_map,
-                        );
+                            bucket_budget,
+                        )?;
                         let nested_reduce_hints =
                             collect_reduce_hints_for_documents(&bucket_documents, &aggregation_map);
-                        plugin_bucket_value_from_existing_fields(
+                        Ok(plugin_bucket_value_from_existing_fields(
                             object,
                             Some(nested_aggregations),
                             Some(nested_reduce_hints),
-                        )
+                        ))
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<EngineResult<Vec<_>>>()?;
                 plugin_bucket_surface_aggregation_value(plugin, Value::Array(buckets))
             } else {
                 let histogram = os_query_dsl::HistogramAggregation {
@@ -42135,7 +43853,7 @@ fn collect_plugin_aggregation_from_documents(
         }
         "composite" => {
             let Some((size, sources, after)) = plugin_composite_setup(plugin) else {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             };
             if let Some(aggregation_map) = plugin_subaggregation_map(plugin) {
                 let mut buckets = BTreeMap::<String, (Value, Vec<&StoredDocument>)>::new();
@@ -42175,21 +43893,22 @@ fn collect_plugin_aggregation_from_documents(
                         .as_object()
                         .cloned()
                         .unwrap_or_default();
-                        let nested_aggregations = collect_aggregations_from_documents(
+                        let nested_aggregations = collect_aggregations_from_documents_with_budget(
                             index_name,
                             &bucket_documents,
                             &bucket_documents,
                             &aggregation_map,
-                        );
+                            bucket_budget,
+                        )?;
                         let nested_reduce_hints =
                             collect_reduce_hints_for_documents(&bucket_documents, &aggregation_map);
-                        plugin_bucket_value_from_existing_fields(
+                        Ok(plugin_bucket_value_from_existing_fields(
                             object,
                             Some(nested_aggregations),
                             Some(nested_reduce_hints),
-                        )
+                        ))
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<EngineResult<Vec<_>>>()?;
                 bucket_values.sort_by(|left, right| {
                     compare_optional_owned_sort_values(
                         left.get("key").cloned(),
@@ -42281,7 +44000,7 @@ fn collect_plugin_aggregation_from_documents(
                 .unwrap_or_default()
                 .to_string();
             let Some(buckets) = plugin_bucket_target_count_setup(plugin) else {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             };
             let interval = choose_auto_date_histogram_interval_from_values(
                 documents.iter().filter_map(|document| {
@@ -42324,21 +44043,22 @@ fn collect_plugin_aggregation_from_documents(
                         .as_object()
                         .cloned()
                         .unwrap_or_default();
-                        let nested_aggregations = collect_aggregations_from_documents(
+                        let nested_aggregations = collect_aggregations_from_documents_with_budget(
                             index_name,
                             &bucket_documents,
                             &bucket_documents,
                             &aggregation_map,
-                        );
+                            bucket_budget,
+                        )?;
                         let nested_reduce_hints =
                             collect_reduce_hints_for_documents(&bucket_documents, &aggregation_map);
-                        plugin_bucket_value_from_existing_fields(
+                        Ok(plugin_bucket_value_from_existing_fields(
                             object,
                             Some(nested_aggregations),
                             Some(nested_reduce_hints),
-                        )
+                        ))
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<EngineResult<Vec<_>>>()?;
                 plugin_bucket_surface_aggregation_value_with_field(
                     plugin,
                     Value::Array(buckets),
@@ -42359,8 +44079,7 @@ fn collect_plugin_aggregation_from_documents(
                     hard_bounds: None,
                 };
                 let mut value =
-                    collect_date_histogram_aggregation_from_documents(documents, &date_histogram)
-                        .unwrap_or_else(|_| bucket_array_visible_and_carrier_value(Vec::new()));
+                    collect_date_histogram_aggregation_from_documents_with_budget(documents, &date_histogram, bucket_budget)?;
                 if let Some(object) = value.as_object_mut() {
                     let bucket_values = take_object_bucket_array_carrier(object);
                     value = plugin_bucket_surface_aggregation_value_with_field(
@@ -42381,7 +44100,7 @@ fn collect_plugin_aggregation_from_documents(
                 .unwrap_or_default()
                 .to_string();
             let Some(buckets) = plugin_bucket_target_count_setup(plugin) else {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             };
             let interval = choose_variable_width_histogram_interval_from_values(
                 documents.iter().filter_map(|document| {
@@ -42432,21 +44151,22 @@ fn collect_plugin_aggregation_from_documents(
                         .as_object()
                         .cloned()
                         .unwrap_or_default();
-                        let nested_aggregations = collect_aggregations_from_documents(
+                        let nested_aggregations = collect_aggregations_from_documents_with_budget(
                             index_name,
                             &bucket_documents,
                             &bucket_documents,
                             &aggregation_map,
-                        );
+                            bucket_budget,
+                        )?;
                         let nested_reduce_hints =
                             collect_reduce_hints_for_documents(&bucket_documents, &aggregation_map);
-                        plugin_bucket_value_from_existing_fields(
+                        Ok(plugin_bucket_value_from_existing_fields(
                             object,
                             Some(nested_aggregations),
                             Some(nested_reduce_hints),
-                        )
+                        ))
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<EngineResult<Vec<_>>>()?;
                 plugin_bucket_surface_aggregation_value_with_field(
                     plugin,
                     Value::Array(buckets),
@@ -42485,7 +44205,7 @@ fn collect_plugin_aggregation_from_documents(
                 .unwrap_or_default()
                 .to_string();
             let Some(interval) = plugin_date_histogram_setup(plugin) else {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             };
             if let Some(aggregation_map) = plugin_subaggregation_map(plugin) {
                 let mut buckets = BTreeMap::<i64, (String, Vec<&StoredDocument>)>::new();
@@ -42521,21 +44241,22 @@ fn collect_plugin_aggregation_from_documents(
                         .as_object()
                         .cloned()
                         .unwrap_or_default();
-                        let nested_aggregations = collect_aggregations_from_documents(
+                        let nested_aggregations = collect_aggregations_from_documents_with_budget(
                             index_name,
                             &bucket_documents,
                             &bucket_documents,
                             &aggregation_map,
-                        );
+                            bucket_budget,
+                        )?;
                         let nested_reduce_hints =
                             collect_reduce_hints_for_documents(&bucket_documents, &aggregation_map);
-                        plugin_bucket_value_from_existing_fields(
+                        Ok(plugin_bucket_value_from_existing_fields(
                             object,
                             Some(nested_aggregations),
                             Some(nested_reduce_hints),
-                        )
+                        ))
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<EngineResult<Vec<_>>>()?;
                 plugin_bucket_surface_aggregation_value(plugin, Value::Array(buckets))
             } else {
                 let date_histogram = os_query_dsl::DateHistogramAggregation {
@@ -42551,8 +44272,7 @@ fn collect_plugin_aggregation_from_documents(
                     hard_bounds: None,
                 };
                 let mut value =
-                    collect_date_histogram_aggregation_from_documents(documents, &date_histogram)
-                        .unwrap_or_else(|_| bucket_array_visible_and_carrier_value(Vec::new()));
+                    collect_date_histogram_aggregation_from_documents_with_budget(documents, &date_histogram, bucket_budget)?;
                 if let Some(object) = value.as_object_mut() {
                     let bucket_values = take_object_bucket_array_carrier(object);
                     value = plugin_bucket_surface_aggregation_value(
@@ -42568,10 +44288,10 @@ fn collect_plugin_aggregation_from_documents(
         }
         "top_hits" => {
             let Some((_, _, sort_specs)) = plugin_top_hits_window_and_sort(plugin) else {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             };
             if sort_specs.is_empty() || sort_specs.iter().any(|spec| spec.field == "_score") {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             }
             let mut value = collect_plugin_top_hits_aggregation_with_input_order(
                 &documents
@@ -42609,16 +44329,17 @@ fn collect_plugin_aggregation_from_documents(
                 .unwrap_or_default();
             let (nested_aggregations, nested_reduce_hints) = plugin_subaggregation_map(plugin)
                 .map(|aggregation_map| {
-                    let nested_aggregations = collect_aggregations_from_documents(
+                    let nested_aggregations = collect_aggregations_from_documents_with_budget(
                         index_name,
                         &filtered_documents,
                         &filtered_documents,
                         &aggregation_map,
-                    );
+                        bucket_budget,
+                    )?;
                     let nested_reduce_hints =
                         collect_reduce_hints_for_documents(&filtered_documents, &aggregation_map);
-                    (Some(nested_aggregations), Some(nested_reduce_hints))
-                })
+                    Ok((Some(nested_aggregations), Some(nested_reduce_hints)))
+                }).transpose()?
                 .unwrap_or((None, None));
             plugin_filter_aggregation_value(
                 plugin,
@@ -42629,7 +44350,7 @@ fn collect_plugin_aggregation_from_documents(
         }
         "filters" => {
             let Some(filters) = plugin_filters_setup(plugin) else {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             };
             let mut buckets = serde_json::Map::new();
             for (name, query) in filters {
@@ -42642,18 +44363,19 @@ fn collect_plugin_aggregation_from_documents(
                     .collect::<Vec<_>>();
                 let (nested_aggregations, nested_reduce_hints) = plugin_subaggregation_map(plugin)
                     .map(|aggregation_map| {
-                        let nested_aggregations = collect_aggregations_from_documents(
+                        let nested_aggregations = collect_aggregations_from_documents_with_budget(
                             index_name,
                             &filtered_documents,
                             &filtered_documents,
                             &aggregation_map,
-                        );
+                            bucket_budget,
+                        )?;
                         let nested_reduce_hints = collect_reduce_hints_for_documents(
                             &filtered_documents,
                             &aggregation_map,
                         );
-                        (Some(nested_aggregations), Some(nested_reduce_hints))
-                    })
+                        Ok((Some(nested_aggregations), Some(nested_reduce_hints)))
+                    }).transpose()?
                     .unwrap_or((None, None));
                 buckets.insert(
                     name,
@@ -42668,10 +44390,10 @@ fn collect_plugin_aggregation_from_documents(
         }
         "adjacency_matrix" => {
             let Some((separator, filters)) = plugin_adjacency_matrix_setup(plugin) else {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             };
             let buckets =
-                collect_plugin_adjacency_matrix_bucket_values(&filters, &separator, |queries| {
+                try_collect_plugin_adjacency_matrix_bucket_values(&filters, &separator, |queries| {
                     let filtered_documents = documents
                         .iter()
                         .copied()
@@ -42686,35 +44408,36 @@ fn collect_plugin_aggregation_from_documents(
                         })
                         .collect::<Vec<_>>();
                     if filtered_documents.is_empty() {
-                        return None;
+                        return Ok(None);
                     }
                     let (nested_aggregations, nested_reduce_hints) =
                         plugin_subaggregation_map(plugin)
                             .map(|aggregation_map| {
-                                let nested_aggregations = collect_aggregations_from_documents(
+                                let nested_aggregations = collect_aggregations_from_documents_with_budget(
                                     index_name,
                                     &filtered_documents,
                                     &filtered_documents,
                                     &aggregation_map,
-                                );
+                                    bucket_budget,
+                                )?;
                                 let nested_reduce_hints = collect_reduce_hints_for_documents(
                                     &filtered_documents,
                                     &aggregation_map,
                                 );
-                                (Some(nested_aggregations), Some(nested_reduce_hints))
-                            })
+                                Ok((Some(nested_aggregations), Some(nested_reduce_hints)))
+                            }).transpose()?
                             .unwrap_or((None, None));
-                    Some(plugin_filter_bucket_value(
+                    Ok(Some(plugin_filter_bucket_value(
                         filtered_documents.len() as u64,
                         nested_aggregations,
                         nested_reduce_hints,
-                    ))
-                });
+                    )))
+                })?;
             plugin_bucketed_filter_aggregation_value(plugin, buckets)
         }
         "multi_terms" => {
             let Some(sources) = plugin_multi_terms_setup(plugin) else {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             };
             if let Some(aggregation_map) = plugin_subaggregation_map(plugin) {
                 let mut buckets = BTreeMap::<String, (Value, String, Vec<&StoredDocument>)>::new();
@@ -42762,21 +44485,22 @@ fn collect_plugin_aggregation_from_documents(
                         .as_object()
                         .cloned()
                         .unwrap_or_default();
-                        let nested_aggregations = collect_aggregations_from_documents(
+                        let nested_aggregations = collect_aggregations_from_documents_with_budget(
                             index_name,
                             &bucket_documents,
                             &bucket_documents,
                             &aggregation_map,
-                        );
+                            bucket_budget,
+                        )?;
                         let nested_reduce_hints =
                             collect_reduce_hints_for_documents(&bucket_documents, &aggregation_map);
-                        plugin_bucket_value_from_existing_fields(
+                        Ok(plugin_bucket_value_from_existing_fields(
                             object,
                             Some(nested_aggregations),
                             Some(nested_reduce_hints),
-                        )
+                        ))
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<EngineResult<Vec<_>>>()?;
                 order_plugin_terms_buckets(&mut bucket_values, plugin);
                 plugin_bucket_surface_aggregation_value(plugin, Value::Array(bucket_values))
             } else {
@@ -42790,21 +44514,22 @@ fn collect_plugin_aggregation_from_documents(
         }
         "sampler" | "random_sampler" | "diversified_sampler" => {
             if plugin_sampler_setup(plugin).is_none() {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             }
             let sampled_documents = plugin_sampler_documents(documents, plugin);
             let (nested_aggregations, nested_reduce_hints) = plugin_subaggregation_map(plugin)
                 .map(|aggregation_map| {
-                    let nested_aggregations = collect_aggregations_from_documents(
+                    let nested_aggregations = collect_aggregations_from_documents_with_budget(
                         index_name,
                         &sampled_documents,
                         &sampled_documents,
                         &aggregation_map,
-                    );
+                        bucket_budget,
+                    )?;
                     let nested_reduce_hints =
                         collect_reduce_hints_for_documents(&sampled_documents, &aggregation_map);
-                    (nested_aggregations, nested_reduce_hints)
-                })
+                    Ok((nested_aggregations, nested_reduce_hints))
+                }).transpose()?
                 .map_or(
                     (None, None),
                     |(nested_aggregations, nested_reduce_hints)| {
@@ -42828,18 +44553,46 @@ fn collect_plugin_aggregation_from_documents(
             )
         }
         _ => collect_plugin_aggregation_placeholder(plugin),
-    }
+    })
 }
 
 fn collect_plugin_aggregation_from_hits_with_input_order(
     hits: &[SearchHit],
     plugin: &os_query_dsl::PluginAggregation,
     plugin_top_hits_input_order: PluginTopHitsInputOrder,
-) -> Value {
+) -> EngineResult<Value> {
+    collect_plugin_aggregation_from_hits_with_input_order_with_budget(hits, plugin, plugin_top_hits_input_order, &BucketAllocationBudget::default())
+}
+
+fn collect_plugin_aggregation_from_hits_with_input_order_with_budget(
+    hits: &[SearchHit],
+    plugin: &os_query_dsl::PluginAggregation,
+    plugin_top_hits_input_order: PluginTopHitsInputOrder,
+    bucket_budget: &BucketAllocationBudget,
+) -> EngineResult<Value> {
+    collect_plugin_aggregation_from_hits_with_input_order_and_background_with_budget(hits, plugin, plugin_top_hits_input_order, None, bucket_budget)
+}
+
+fn collect_plugin_aggregation_from_hits_with_input_order_and_background(
+    hits: &[SearchHit],
+    plugin: &os_query_dsl::PluginAggregation,
+    plugin_top_hits_input_order: PluginTopHitsInputOrder,
+    background_hits: Option<&[SearchHit]>,
+) -> EngineResult<Value> {
+    collect_plugin_aggregation_from_hits_with_input_order_and_background_with_budget(hits, plugin, plugin_top_hits_input_order, background_hits, &BucketAllocationBudget::default())
+}
+
+fn collect_plugin_aggregation_from_hits_with_input_order_and_background_with_budget(
+    hits: &[SearchHit],
+    plugin: &os_query_dsl::PluginAggregation,
+    plugin_top_hits_input_order: PluginTopHitsInputOrder,
+    background_hits: Option<&[SearchHit]>,
+    bucket_budget: &BucketAllocationBudget,
+) -> EngineResult<Value> {
     if !plugin_has_valid_request_surface_for_collection(plugin) {
-        return collect_plugin_aggregation_placeholder(plugin);
+        return Ok(collect_plugin_aggregation_placeholder(plugin));
     }
-    match plugin.kind.as_str() {
+    Ok(match plugin.kind.as_str() {
         "value_count" => {
             let field = plugin
                 .params
@@ -42942,16 +44695,18 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                 .collect::<Vec<_>>();
             let (nested_aggregations, nested_reduce_hints) = plugin_subaggregation_map(plugin)
                 .map(|aggregation_map| {
-                    let nested_aggregations = collect_aggregations_with_plugin_top_hits_input_order(
+                    let nested_aggregations = collect_aggregations_with_plugin_top_hits_input_order_and_background_with_budget(
                         &missing_hits,
                         &missing_hits,
                         &aggregation_map,
                         plugin_top_hits_input_order,
-                    );
+                        background_hits,
+                        bucket_budget,
+                    )?;
                     let nested_reduce_hints =
                         collect_reduce_hints_for_hits(&missing_hits, &aggregation_map);
-                    (Some(nested_aggregations), Some(nested_reduce_hints))
-                })
+                    Ok((Some(nested_aggregations), Some(nested_reduce_hints)))
+                }).transpose()?
                 .unwrap_or((None, None));
             plugin_filter_aggregation_value(
                 plugin,
@@ -43065,7 +44820,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                 .to_string();
             let percents = if plugin_param_exists(plugin, "percents") {
                 let Some(values) = plugin_numeric_array_param(plugin, "percents") else {
-                    return collect_plugin_aggregation_placeholder(plugin);
+                    return Ok(collect_plugin_aggregation_placeholder(plugin));
                 };
                 Some(values)
             } else {
@@ -43088,7 +44843,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                 .unwrap_or_default()
                 .to_string();
             let Some(values) = plugin_numeric_array_param(plugin, "values") else {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             };
             let metric = os_query_dsl::MetricAggregation {
                 kind: os_query_dsl::MetricAggregationKind::PercentileRanks,
@@ -43204,22 +44959,24 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                     .into_values()
                     .map(|(key, bucket_hits)| {
                         let nested_aggregations =
-                            collect_aggregations_with_plugin_top_hits_input_order(
+                            collect_aggregations_with_plugin_top_hits_input_order_and_background_with_budget(
                                 &bucket_hits,
                                 &bucket_hits,
                                 &aggregation_map,
                                 plugin_top_hits_input_order,
-                            );
+                                background_hits,
+                                bucket_budget,
+                            )?;
                         let nested_reduce_hints =
                             collect_reduce_hints_for_hits(&bucket_hits, &aggregation_map);
-                        plugin_terms_bucket_value(
+                        Ok(plugin_terms_bucket_value(
                             key,
                             bucket_hits.len() as u64,
                             Some(nested_aggregations),
                             Some(nested_reduce_hints),
-                        )
+                        ))
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<EngineResult<Vec<_>>>()?;
                 order_plugin_terms_buckets(&mut bucket_values, plugin);
                 plugin_bucket_surface_aggregation_value(plugin, Value::Array(bucket_values))
             } else {
@@ -43268,22 +45025,24 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                     .into_values()
                     .map(|(key, bucket_hits)| {
                         let nested_aggregations =
-                            collect_aggregations_with_plugin_top_hits_input_order(
+                            collect_aggregations_with_plugin_top_hits_input_order_and_background_with_budget(
                                 &bucket_hits,
                                 &bucket_hits,
                                 &aggregation_map,
                                 plugin_top_hits_input_order,
-                            );
+                                background_hits,
+                                bucket_budget,
+                            )?;
                         let nested_reduce_hints =
                             collect_reduce_hints_for_hits(&bucket_hits, &aggregation_map);
-                        plugin_terms_bucket_value(
+                        Ok(plugin_terms_bucket_value(
                             key,
                             bucket_hits.len() as u64,
                             Some(nested_aggregations),
                             Some(nested_reduce_hints),
-                        )
+                        ))
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<EngineResult<Vec<_>>>()?;
                 order_plugin_rare_terms_buckets(&mut bucket_values, plugin);
                 plugin_bucket_surface_aggregation_value(plugin, Value::Array(bucket_values))
             } else {
@@ -43315,7 +45074,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                 .unwrap_or_default()
                 .to_string();
             let Some(ranges) = plugin_numeric_range_setup(plugin) else {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             };
             if let Some(aggregation_map) = plugin_subaggregation_map(plugin) {
                 let buckets = ranges
@@ -43341,21 +45100,23 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                             bucket_hits.len() as u64,
                         );
                         let nested_aggregations =
-                            collect_aggregations_with_plugin_top_hits_input_order(
+                            collect_aggregations_with_plugin_top_hits_input_order_and_background_with_budget(
                                 &bucket_hits,
                                 &bucket_hits,
                                 &aggregation_map,
                                 plugin_top_hits_input_order,
-                            );
+                                background_hits,
+                                bucket_budget,
+                            )?;
                         let nested_reduce_hints =
                             collect_reduce_hints_for_hits(&bucket_hits, &aggregation_map);
-                        plugin_bucket_value_from_existing_fields(
+                        Ok(plugin_bucket_value_from_existing_fields(
                             object,
                             Some(nested_aggregations),
                             Some(nested_reduce_hints),
-                        )
+                        ))
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<EngineResult<Vec<_>>>()?;
                 plugin_range_bucket_surface_aggregation_value(plugin, buckets)
             } else {
                 let range = os_query_dsl::RangeAggregation { field, ranges };
@@ -43375,7 +45136,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                 .unwrap_or_default()
                 .to_string();
             let Some(ranges) = plugin_ip_range_setup(plugin) else {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             };
             if let Some(aggregation_map) = plugin_subaggregation_map(plugin) {
                 let buckets = ranges
@@ -43403,21 +45164,23 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                             bucket_hits.len() as u64,
                         );
                         let nested_aggregations =
-                            collect_aggregations_with_plugin_top_hits_input_order(
+                            collect_aggregations_with_plugin_top_hits_input_order_and_background_with_budget(
                                 &bucket_hits,
                                 &bucket_hits,
                                 &aggregation_map,
                                 plugin_top_hits_input_order,
-                            );
+                                background_hits,
+                                bucket_budget,
+                            )?;
                         let nested_reduce_hints =
                             collect_reduce_hints_for_hits(&bucket_hits, &aggregation_map);
-                        plugin_bucket_value_from_existing_fields(
+                        Ok(plugin_bucket_value_from_existing_fields(
                             object,
                             Some(nested_aggregations),
                             Some(nested_reduce_hints),
-                        )
+                        ))
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<EngineResult<Vec<_>>>()?;
                 plugin_range_bucket_surface_aggregation_value(plugin, buckets)
             } else {
                 let mut value = collect_ip_range_aggregation_from_values(
@@ -43440,7 +45203,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                 .unwrap_or_default()
                 .to_string();
             let Some(interval) = plugin_histogram_setup(plugin) else {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             };
             if let Some(aggregation_map) = plugin_subaggregation_map(plugin) {
                 let mut buckets = BTreeMap::<u64, (f64, Vec<SearchHit>)>::new();
@@ -43485,21 +45248,23 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                         .cloned()
                         .unwrap_or_default();
                         let nested_aggregations =
-                            collect_aggregations_with_plugin_top_hits_input_order(
+                            collect_aggregations_with_plugin_top_hits_input_order_and_background_with_budget(
                                 &bucket_hits,
                                 &bucket_hits,
                                 &aggregation_map,
                                 plugin_top_hits_input_order,
-                            );
+                                background_hits,
+                                bucket_budget,
+                            )?;
                         let nested_reduce_hints =
                             collect_reduce_hints_for_hits(&bucket_hits, &aggregation_map);
-                        plugin_bucket_value_from_existing_fields(
+                        Ok(plugin_bucket_value_from_existing_fields(
                             object,
                             Some(nested_aggregations),
                             Some(nested_reduce_hints),
-                        )
+                        ))
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<EngineResult<Vec<_>>>()?;
                 plugin_bucket_surface_aggregation_value(plugin, Value::Array(buckets))
             } else {
                 let histogram = os_query_dsl::HistogramAggregation {
@@ -43525,7 +45290,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
         }
         "composite" => {
             let Some((size, sources, after)) = plugin_composite_setup(plugin) else {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             };
             if let Some(aggregation_map) = plugin_subaggregation_map(plugin) {
                 let mut buckets = BTreeMap::<String, (Value, Vec<SearchHit>)>::new();
@@ -43566,21 +45331,23 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                         .cloned()
                         .unwrap_or_default();
                         let nested_aggregations =
-                            collect_aggregations_with_plugin_top_hits_input_order(
+                            collect_aggregations_with_plugin_top_hits_input_order_and_background_with_budget(
                                 &bucket_hits,
                                 &bucket_hits,
                                 &aggregation_map,
                                 plugin_top_hits_input_order,
-                            );
+                                background_hits,
+                                bucket_budget,
+                            )?;
                         let nested_reduce_hints =
                             collect_reduce_hints_for_hits(&bucket_hits, &aggregation_map);
-                        plugin_bucket_value_from_existing_fields(
+                        Ok(plugin_bucket_value_from_existing_fields(
                             object,
                             Some(nested_aggregations),
                             Some(nested_reduce_hints),
-                        )
+                        ))
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<EngineResult<Vec<_>>>()?;
                 bucket_values.sort_by(|left, right| {
                     compare_optional_owned_sort_values(
                         left.get("key").cloned(),
@@ -43672,7 +45439,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                 .unwrap_or_default()
                 .to_string();
             let Some(buckets) = plugin_bucket_target_count_setup(plugin) else {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             };
             let interval = choose_auto_date_histogram_interval_from_values(
                 hits.iter()
@@ -43714,21 +45481,23 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                         .cloned()
                         .unwrap_or_default();
                         let nested_aggregations =
-                            collect_aggregations_with_plugin_top_hits_input_order(
+                            collect_aggregations_with_plugin_top_hits_input_order_and_background_with_budget(
                                 &bucket_hits,
                                 &bucket_hits,
                                 &aggregation_map,
                                 plugin_top_hits_input_order,
-                            );
+                                background_hits,
+                                bucket_budget,
+                            )?;
                         let nested_reduce_hints =
                             collect_reduce_hints_for_hits(&bucket_hits, &aggregation_map);
-                        plugin_bucket_value_from_existing_fields(
+                        Ok(plugin_bucket_value_from_existing_fields(
                             object,
                             Some(nested_aggregations),
                             Some(nested_reduce_hints),
-                        )
+                        ))
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<EngineResult<Vec<_>>>()?;
                 plugin_bucket_surface_aggregation_value_with_field(
                     plugin,
                     Value::Array(buckets),
@@ -43748,8 +45517,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                     extended_bounds: None,
                     hard_bounds: None,
                 };
-                let mut value = collect_date_histogram_aggregation(hits, &date_histogram)
-                    .unwrap_or_else(|_| bucket_array_visible_and_carrier_value(Vec::new()));
+                let mut value = collect_date_histogram_aggregation_with_budget(hits, &date_histogram, bucket_budget)?;
                 if let Some(object) = value.as_object_mut() {
                     let bucket_values = take_object_bucket_array_carrier(object);
                     value = plugin_bucket_surface_aggregation_value_with_field(
@@ -43770,7 +45538,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                 .unwrap_or_default()
                 .to_string();
             let Some(buckets) = plugin_bucket_target_count_setup(plugin) else {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             };
             let interval = choose_variable_width_histogram_interval_from_values(
                 hits.iter()
@@ -43820,21 +45588,23 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                         .cloned()
                         .unwrap_or_default();
                         let nested_aggregations =
-                            collect_aggregations_with_plugin_top_hits_input_order(
+                            collect_aggregations_with_plugin_top_hits_input_order_and_background_with_budget(
                                 &bucket_hits,
                                 &bucket_hits,
                                 &aggregation_map,
                                 plugin_top_hits_input_order,
-                            );
+                                background_hits,
+                                bucket_budget,
+                            )?;
                         let nested_reduce_hints =
                             collect_reduce_hints_for_hits(&bucket_hits, &aggregation_map);
-                        plugin_bucket_value_from_existing_fields(
+                        Ok(plugin_bucket_value_from_existing_fields(
                             object,
                             Some(nested_aggregations),
                             Some(nested_reduce_hints),
-                        )
+                        ))
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<EngineResult<Vec<_>>>()?;
                 plugin_bucket_surface_aggregation_value_with_field(
                     plugin,
                     Value::Array(buckets),
@@ -43884,16 +45654,18 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                 .unwrap_or_default();
             let (nested_aggregations, nested_reduce_hints) = plugin_subaggregation_map(plugin)
                 .map(|aggregation_map| {
-                    let nested_aggregations = collect_aggregations_with_plugin_top_hits_input_order(
+                    let nested_aggregations = collect_aggregations_with_plugin_top_hits_input_order_and_background_with_budget(
                         &filtered_hits,
                         &filtered_hits,
                         &aggregation_map,
                         plugin_top_hits_input_order,
-                    );
+                        background_hits,
+                        bucket_budget,
+                    )?;
                     let nested_reduce_hints =
                         collect_reduce_hints_for_hits(&filtered_hits, &aggregation_map);
-                    (Some(nested_aggregations), Some(nested_reduce_hints))
-                })
+                    Ok((Some(nested_aggregations), Some(nested_reduce_hints)))
+                }).transpose()?
                 .unwrap_or((None, None));
             plugin_filter_aggregation_value(
                 plugin,
@@ -43904,7 +45676,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
         }
         "filters" => {
             let Some(filters) = plugin_filters_setup(plugin) else {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             };
             let mut buckets = serde_json::Map::new();
             for (name, query) in filters {
@@ -43916,16 +45688,18 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                 let (nested_aggregations, nested_reduce_hints) = plugin_subaggregation_map(plugin)
                     .map(|aggregation_map| {
                         let nested_aggregations =
-                            collect_aggregations_with_plugin_top_hits_input_order(
+                            collect_aggregations_with_plugin_top_hits_input_order_and_background_with_budget(
                                 &filtered_hits,
                                 &filtered_hits,
                                 &aggregation_map,
                                 plugin_top_hits_input_order,
-                            );
+                                background_hits,
+                                bucket_budget,
+                            )?;
                         let nested_reduce_hints =
                             collect_reduce_hints_for_hits(&filtered_hits, &aggregation_map);
-                        (Some(nested_aggregations), Some(nested_reduce_hints))
-                    })
+                        Ok((Some(nested_aggregations), Some(nested_reduce_hints)))
+                    }).transpose()?
                     .unwrap_or((None, None));
                 buckets.insert(
                     name,
@@ -43940,10 +45714,10 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
         }
         "adjacency_matrix" => {
             let Some((separator, filters)) = plugin_adjacency_matrix_setup(plugin) else {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             };
             let buckets =
-                collect_plugin_adjacency_matrix_bucket_values(&filters, &separator, |queries| {
+                try_collect_plugin_adjacency_matrix_bucket_values(&filters, &separator, |queries| {
                     let filtered_hits = hits
                         .iter()
                         .filter(|hit| {
@@ -43954,34 +45728,36 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                         .cloned()
                         .collect::<Vec<_>>();
                     if filtered_hits.is_empty() {
-                        return None;
+                        return Ok(None);
                     }
                     let (nested_aggregations, nested_reduce_hints) =
                         plugin_subaggregation_map(plugin)
                             .map(|aggregation_map| {
                                 let nested_aggregations =
-                                    collect_aggregations_with_plugin_top_hits_input_order(
+                                    collect_aggregations_with_plugin_top_hits_input_order_and_background_with_budget(
                                         &filtered_hits,
                                         &filtered_hits,
                                         &aggregation_map,
                                         plugin_top_hits_input_order,
-                                    );
+                                        background_hits,
+                                        bucket_budget,
+                                    )?;
                                 let nested_reduce_hints =
                                     collect_reduce_hints_for_hits(&filtered_hits, &aggregation_map);
-                                (Some(nested_aggregations), Some(nested_reduce_hints))
-                            })
+                                Ok((Some(nested_aggregations), Some(nested_reduce_hints)))
+                            }).transpose()?
                             .unwrap_or((None, None));
-                    Some(plugin_filter_bucket_value(
+                    Ok(Some(plugin_filter_bucket_value(
                         filtered_hits.len() as u64,
                         nested_aggregations,
                         nested_reduce_hints,
-                    ))
-                });
+                    )))
+                })?;
             plugin_bucketed_filter_aggregation_value(plugin, buckets)
         }
         "multi_terms" => {
             let Some(sources) = plugin_multi_terms_setup(plugin) else {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             };
             if let Some(aggregation_map) = plugin_subaggregation_map(plugin) {
                 let mut buckets = BTreeMap::<String, (Value, String, Vec<SearchHit>)>::new();
@@ -44030,21 +45806,23 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
                         .cloned()
                         .unwrap_or_default();
                         let nested_aggregations =
-                            collect_aggregations_with_plugin_top_hits_input_order(
+                            collect_aggregations_with_plugin_top_hits_input_order_and_background_with_budget(
                                 &bucket_hits,
                                 &bucket_hits,
                                 &aggregation_map,
                                 plugin_top_hits_input_order,
-                            );
+                                background_hits,
+                                bucket_budget,
+                            )?;
                         let nested_reduce_hints =
                             collect_reduce_hints_for_hits(&bucket_hits, &aggregation_map);
-                        plugin_bucket_value_from_existing_fields(
+                        Ok(plugin_bucket_value_from_existing_fields(
                             object,
                             Some(nested_aggregations),
                             Some(nested_reduce_hints),
-                        )
+                        ))
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<EngineResult<Vec<_>>>()?;
                 order_plugin_terms_buckets(&mut bucket_values, plugin);
                 plugin_bucket_surface_aggregation_value(plugin, Value::Array(bucket_values))
             } else {
@@ -44057,23 +45835,25 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
         }
         "sampler" | "random_sampler" | "diversified_sampler" => {
             if plugin_sampler_setup(plugin).is_none() {
-                return collect_plugin_aggregation_placeholder(plugin);
+                return Ok(collect_plugin_aggregation_placeholder(plugin));
             }
             let sampled_hits = plugin_sampler_hits(hits, plugin);
             let mut ordered_sampled_hits = sampled_hits.clone();
             ordered_sampled_hits.sort_by(compare_relevance_hits);
             let (nested_aggregations, nested_reduce_hints) = plugin_subaggregation_map(plugin)
                 .map(|aggregation_map| {
-                    let nested_aggregations = collect_aggregations_with_plugin_top_hits_input_order(
+                    let nested_aggregations = collect_aggregations_with_plugin_top_hits_input_order_and_background_with_budget(
                         &ordered_sampled_hits,
                         &ordered_sampled_hits,
                         &aggregation_map,
                         plugin_top_hits_input_order,
-                    );
+                        background_hits,
+                        bucket_budget,
+                    )?;
                     let nested_reduce_hints =
                         collect_reduce_hints_for_hits(&sampled_hits, &aggregation_map);
-                    (nested_aggregations, nested_reduce_hints)
-                })
+                    Ok((nested_aggregations, nested_reduce_hints))
+                }).transpose()?
                 .map_or(
                     (None, None),
                     |(nested_aggregations, nested_reduce_hints)| {
@@ -44097,7 +45877,7 @@ fn collect_plugin_aggregation_from_hits_with_input_order(
             )
         }
         _ => collect_plugin_aggregation_placeholder(plugin),
-    }
+    })
 }
 
 fn plugin_kind_still_requires_explicit_collection_wrapper_admission(
@@ -45299,6 +47079,14 @@ fn collect_date_histogram_aggregation(
     hits: &[SearchHit],
     date_histogram: &os_query_dsl::DateHistogramAggregation,
 ) -> EngineResult<Value> {
+    collect_date_histogram_aggregation_with_budget(hits, date_histogram, &BucketAllocationBudget::default())
+}
+
+fn collect_date_histogram_aggregation_with_budget(
+    hits: &[SearchHit],
+    date_histogram: &os_query_dsl::DateHistogramAggregation,
+    bucket_budget: &BucketAllocationBudget,
+) -> EngineResult<Value> {
     if normalize_date_histogram_interval(&date_histogram.interval).is_none() {
         return Err(invalid_request(format!(
             "unsupported date_histogram interval [{}]",
@@ -45320,7 +47108,7 @@ fn collect_date_histogram_aggregation(
             None => add_date_histogram_missing_bucket(&mut counts, date_histogram),
         }
     }
-    let bucket_values = date_histogram_bucket_values_from_counts(&counts, date_histogram);
+    let bucket_values = date_histogram_bucket_values_from_counts_with_budget(&counts, date_histogram, bucket_budget)?;
     Ok(date_histogram_bucket_surface_value(
         bucket_values,
         date_histogram.keyed,
@@ -45394,6 +47182,14 @@ fn add_date_histogram_missing_bucket(
 fn collect_date_histogram_aggregation_from_documents(
     documents: &[&StoredDocument],
     date_histogram: &os_query_dsl::DateHistogramAggregation,
+) -> EngineResult<Value> {
+    collect_date_histogram_aggregation_from_documents_with_budget(documents, date_histogram, &BucketAllocationBudget::default())
+}
+
+fn collect_date_histogram_aggregation_from_documents_with_budget(
+    documents: &[&StoredDocument],
+    date_histogram: &os_query_dsl::DateHistogramAggregation,
+    bucket_budget: &BucketAllocationBudget,
 ) -> EngineResult<Value> {
     if normalize_date_histogram_interval(&date_histogram.interval).is_none() {
         return Err(invalid_request(format!(
@@ -45494,54 +47290,81 @@ fn collect_date_histogram_aggregation_from_documents(
             }
         }
     }
-    let bucket_values = date_histogram_bucket_values_from_counts(&counts, date_histogram);
+    let bucket_values = date_histogram_bucket_values_from_counts_with_budget(&counts, date_histogram, bucket_budget)?;
     Ok(date_histogram_bucket_surface_value(
         bucket_values,
         date_histogram.keyed,
     ))
 }
 
+fn date_histogram_bound_key(
+    value: &Value,
+    interval: &str,
+    offset_millis: i64,
+    time_zone: Option<&str>,
+    format: Option<&str>,
+) -> Option<i64> {
+    let numeric = value.as_i64().or_else(|| {
+        (format == Some("epoch_millis")).then(|| value.as_str()?.parse::<i64>().ok()).flatten()
+    });
+    if let Some(epoch_millis) = numeric {
+        return date_histogram_bucket_key_from_epoch_millis(epoch_millis, interval, offset_millis, time_zone);
+    }
+    date_histogram_bucket(value, interval, offset_millis, time_zone, format).map(|(key, _)| key)
+}
+
 fn date_histogram_bucket_values_from_counts(
     counts: &std::collections::BTreeMap<i64, (String, u64)>,
     date_histogram: &os_query_dsl::DateHistogramAggregation,
-) -> Vec<Value> {
+) -> EngineResult<Vec<Value>> {
+    date_histogram_bucket_values_from_counts_with_budget(counts, date_histogram, &BucketAllocationBudget::default())
+}
+
+fn date_histogram_bucket_values_from_counts_with_budget(
+    counts: &std::collections::BTreeMap<i64, (String, u64)>,
+    date_histogram: &os_query_dsl::DateHistogramAggregation,
+    bucket_budget: &BucketAllocationBudget,
+) -> EngineResult<Vec<Value>> {
     let mut min_bucket = counts.keys().next().copied();
     let mut max_bucket = counts.keys().next_back().copied();
     if let Some(bounds) = &date_histogram.extended_bounds {
         if let Some(bound) = bounds.min.as_ref().and_then(|min| {
-            date_histogram_bucket(
-                &Value::String(min.clone()),
+            date_histogram_bound_key(
+                min,
                 &date_histogram.interval,
                 date_histogram.offset_millis,
                 date_histogram.time_zone.as_deref(),
                 date_histogram.format.as_deref(),
             )
-            .map(|(key, _)| key)
         }) {
             min_bucket = Some(min_bucket.map_or(bound, |current| current.min(bound)));
         }
         if let Some(bound) = bounds.max.as_ref().and_then(|max| {
-            date_histogram_bucket(
-                &Value::String(max.clone()),
+            date_histogram_bound_key(
+                max,
                 &date_histogram.interval,
                 date_histogram.offset_millis,
                 date_histogram.time_zone.as_deref(),
                 date_histogram.format.as_deref(),
             )
-            .map(|(key, _)| key)
         }) {
             max_bucket = Some(max_bucket.map_or(bound, |current| current.max(bound)));
         }
     }
     let Some(min_bucket) = min_bucket else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(max_bucket) = max_bucket else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let Some(step_millis) = date_histogram_fixed_step_millis(&date_histogram.interval) else {
-        return counts
+    let fixed_step = date_histogram_fixed_step_millis(&date_histogram.interval);
+    if fixed_step.is_none() || date_histogram.min_doc_count > 0 {
+        let selected = counts
             .iter()
+            // Keep the original grid, including an extended-bounds start point.
+            .filter(|(key, _)| fixed_step.map_or(true, |step| {
+                (i128::from(**key) - i128::from(min_bucket)) % i128::from(step) == 0
+            }))
             .filter(|(key, _)| {
                 date_histogram_bounds_contain(
                     date_histogram.hard_bounds.as_ref(),
@@ -45552,14 +47375,34 @@ fn date_histogram_bucket_values_from_counts(
                     date_histogram.format.as_deref(),
                 )
             })
-            .filter(|(_, (_, doc_count))| *doc_count >= date_histogram.min_doc_count)
-            .map(|(key, (key_as_string, doc_count))| {
+            .filter(|(_, (_, doc_count))| *doc_count >= date_histogram.min_doc_count);
+        bucket_budget.consume(selected.clone().count() as u64)?;
+        return Ok(selected.map(|(key, (key_as_string, doc_count))| {
                 date_histogram_bucket_value(*key, key_as_string.clone(), *doc_count)
             })
-            .collect();
-    };
+            .collect());
+    }
+    let step_millis = fixed_step.expect("fixed interval checked above");
+    let mut lower = i128::from(min_bucket);
+    let mut upper = i128::from(max_bucket);
+    if let Some(bounds) = &date_histogram.hard_bounds {
+        let round_bound = |value: &Value| date_histogram_bound_key(
+            value, &date_histogram.interval,
+            date_histogram.offset_millis, date_histogram.time_zone.as_deref(),
+            date_histogram.format.as_deref(),
+        ).map(i128::from);
+        if let Some(min) = bounds.min.as_ref().and_then(round_bound) { lower = lower.max(min); }
+        if let Some(max) = bounds.max.as_ref().and_then(round_bound) { upper = upper.min(max); }
+    }
+    let step = i128::from(step_millis);
+    // Keep the original grid while skipping excluded leading intervals.
+    let first = i128::from(min_bucket) + ((lower - i128::from(min_bucket) + step - 1) / step) * step;
+    if first > upper { return Ok(Vec::new()); }
+    let bucket_count = ((upper - first) / step + 1) as u64;
+    bucket_budget.consume(bucket_count)?;
     let mut bucket_values = Vec::new();
-    let mut key = min_bucket;
+    let mut key = first as i64;
+    let max_bucket = upper as i64;
     while key <= max_bucket {
         if !date_histogram_bounds_contain(
             date_histogram.hard_bounds.as_ref(),
@@ -45612,7 +47455,7 @@ fn date_histogram_bucket_values_from_counts(
         }
         key = next;
     }
-    bucket_values
+    Ok(bucket_values)
 }
 
 fn date_histogram_bounds_contain(
@@ -45627,28 +47470,26 @@ fn date_histogram_bounds_contain(
         return true;
     };
     if let Some(max) = bounds.max.as_ref().and_then(|max| {
-        date_histogram_bucket(
-            &Value::String(max.clone()),
+        date_histogram_bound_key(
+            max,
             interval,
             offset_millis,
             time_zone,
             format,
         )
-        .map(|(key, _)| key)
     }) {
         if key > max {
             return false;
         }
     }
     if let Some(min) = bounds.min.as_ref().and_then(|min| {
-        date_histogram_bucket(
-            &Value::String(min.clone()),
+        date_histogram_bound_key(
+            min,
             interval,
             offset_millis,
             time_zone,
             format,
         )
-        .map(|(key, _)| key)
     }) {
         if key < min {
             return false;
@@ -47090,7 +48931,7 @@ fn collect_terms_aggregation(hits: &[SearchHit], terms: &os_query_dsl::TermsAggr
     buckets.sort_by(|(left_key, left_count), (right_key, right_count)| {
         right_count
             .cmp(left_count)
-            .then_with(|| bucket_sort_key(left_key).cmp(&bucket_sort_key(right_key)))
+            .then_with(|| compare_bucket_keys(left_key, right_key))
     });
 
     let bucket_values = buckets
@@ -47125,17 +48966,6 @@ fn collect_terms_aggregation_from_documents(
                     }
                 }
                 let doc_count = string_buckets.entry(text.clone()).or_insert(0);
-                *doc_count += 1;
-                continue;
-            } else if let Some(text) = terms.missing.as_ref().and_then(Value::as_str) {
-                if !aggregation_term_is_allowed_by_include_exclude(
-                    &Value::String(text.to_string()),
-                    terms.include.as_ref(),
-                    terms.exclude.as_ref(),
-                ) {
-                    continue;
-                }
-                let doc_count = string_buckets.entry(text.to_string()).or_insert(0);
                 *doc_count += 1;
                 continue;
             }
@@ -47237,7 +49067,7 @@ fn collect_terms_aggregation_from_documents_generic(
     buckets.sort_by(|(left_key, left_count), (right_key, right_count)| {
         right_count
             .cmp(left_count)
-            .then_with(|| bucket_sort_key(left_key).cmp(&bucket_sort_key(right_key)))
+            .then_with(|| compare_bucket_keys(left_key, right_key))
     });
 
     let bucket_values = buckets
@@ -47331,11 +49161,11 @@ fn opensearch_terms_partition_hash(value: &[u8]) -> i64 {
     opensearch_murmur3_x86_32(value, 31)
 }
 
+#[cfg(test)]
 fn opensearch_routing_shard(routing: &str, shard_count: usize) -> usize {
-    if shard_count <= 1 {
-        return 0;
-    }
-    opensearch_routing_hash(routing).rem_euclid(shard_count as i64) as usize
+    IndexRouting::new(shard_count as u32, None, 1)
+        .expect("valid test layout")
+        .document_shard(opensearch_routing_hash(routing) as i32, 0) as usize
 }
 
 fn opensearch_routing_hash(routing: &str) -> i64 {
@@ -47897,6 +49727,40 @@ fn distinct_date_histogram_buckets_with_offset(
     buckets.into_iter().collect()
 }
 
+fn compare_bucket_keys(left: &Value, right: &Value) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    match (left, right) {
+        (Value::String(left), Value::String(right)) => left.cmp(right),
+        (Value::Bool(left), Value::Bool(right)) => left.cmp(right),
+        (Value::Number(left), Value::Number(right)) => {
+            let integer = |value: &serde_json::Number| {
+                value.as_i64().map(i128::from).or_else(|| value.as_u64().map(i128::from))
+            };
+            let compare_integer_float = |integer: i128, float: f64| {
+                // Integer keys fit i64/u64; saturating conversion also orders out-of-range floats.
+                integer.cmp(&(float as i128)).then_with(|| {
+                    0.0f64.partial_cmp(&float.fract()).unwrap_or(Ordering::Equal)
+                })
+            };
+            match (integer(left), integer(right)) {
+                (Some(left), Some(right)) => left.cmp(&right),
+                (Some(left), None) => compare_integer_float(left, right.as_f64().unwrap()),
+                (None, Some(right)) => compare_integer_float(right, left.as_f64().unwrap()).reverse(),
+                (None, None) => left.as_f64().partial_cmp(&right.as_f64()).unwrap_or(Ordering::Equal),
+            }
+        }
+        _ => {
+            let kind = |value: &Value| match value {
+                Value::Bool(_) => 1,
+                Value::Number(_) => 2,
+                Value::String(_) => 3,
+                _ => 0,
+            };
+            kind(left).cmp(&kind(right))
+        }
+    }
+}
+
 fn bucket_sort_key(value: &Value) -> String {
     match value {
         Value::String(value) => format!("s:{value}"),
@@ -47914,6 +49778,458 @@ mod tests {
     };
     use os_query_dsl::TopHitsAggregation;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn multi_field_schema_keeps_explicit_subfields() {
+        let fields = read_field_mappings(&serde_json::json!({"properties": {
+            "value": {"type": "text", "fields": {"raw": {"type": "keyword"}}},
+            "object": {"properties": {"value": {"type": "text", "fields": {
+                "exact": {"type": "keyword"}
+            }}}}
+        }})).unwrap();
+        for name in ["value.raw", "object.value.exact"] {
+            let mapping = fields.iter().find(|mapping| mapping.name == name)
+                .unwrap_or_else(|| panic!("missing multi-field {name}"));
+            assert_eq!(mapping.field_type, TantivyFieldType::Keyword);
+            assert!(mapping.indexed);
+            assert!(mapping.fast);
+        }
+    }
+
+    #[test]
+    fn multi_field_native_document_uses_parent_and_utf16_length_without_changing_source() {
+        let engine = TantivyEngine::default();
+        engine.create_index(CreateIndexRequest {
+            index: "multi-native".to_string(), settings: serde_json::json!({}),
+            mappings: serde_json::json!({"properties": {"value": {"type": "text", "fields": {
+                "raw": {"type": "keyword", "ignore_above": 256},
+                "all": {"type": "keyword"}
+            }}}}),
+        }).unwrap();
+        let short = "a".repeat(255);
+        let exact = "b".repeat(256);
+        let long = "c".repeat(257);
+        let supplementary = "\u{1f600}".repeat(128);
+        let supplementary_long = "\u{1f600}".repeat(129);
+        let source = serde_json::json!({"value": [short, exact, long, supplementary, supplementary_long, null, ""]});
+        engine.index_document(IndexDocumentRequest {
+            index: "multi-native".to_string(), id: "one".to_string(), source: source.clone(),
+        }).unwrap();
+        let store = engine.store.read().unwrap();
+        let index = &store.indices["multi-native"];
+        let document = index.documents.get("one").unwrap();
+        let (schema, fields) = build_tantivy_schema(&index.schema);
+        let native_index = TantivyIndexHandle::create_in_ram(schema);
+        let encoded = build_tantivy_document(&native_index, &fields, document).unwrap();
+        let actual: Vec<_> = encoded.get_all(fields["value.raw"].field)
+            .filter_map(|value| value.as_text()).map(str::to_owned).collect();
+        assert_eq!(actual, vec![short, exact, supplementary, "".to_string()]);
+        assert_eq!(encoded.get_all(fields["value.all"].field).count(), 6);
+        assert_eq!(document.source, source);
+        assert!(document.source.get("value.raw").is_none());
+    }
+
+    #[test]
+    fn multi_field_native_keyword_converts_scalars_and_rejects_objects() {
+        let mut schema = TantivySchemaDef::builder();
+        let field = schema.add_text_field("raw", STRING | STORED);
+        let mut document = TantivyDocument::default();
+        add_multi_field_keyword_value(&mut document, field,
+            &serde_json::json!([null, 123, false, ["ok", "too-long"]]), Some(5)).unwrap();
+        let actual: Vec<_> = document.get_all(field).filter_map(|value| value.as_text()).collect();
+        assert_eq!(actual, vec!["123", "false", "ok"]);
+        assert!(add_multi_field_keyword_value(&mut document, field, &serde_json::json!({}), None).is_err());
+    }
+
+    #[test]
+    fn multi_field_append_conversion_failure_does_not_queue_partial_documents() {
+        let engine = TantivyEngine::default();
+        engine.create_index(CreateIndexRequest {
+            index: "multi-append".to_string(), settings: serde_json::json!({}),
+            mappings: serde_json::json!({"properties": {"value": {"type": "text", "fields": {
+                "raw": {"type": "keyword"}
+            }}}}),
+        }).unwrap();
+        for (id, value) in [("one", "alpha"), ("two", "beta")] {
+            engine.index_document(IndexDocumentRequest {
+                index: "multi-append".to_string(), id: id.to_string(),
+                source: serde_json::json!({"value": value}),
+            }).unwrap();
+        }
+        let store = engine.store.read().unwrap();
+        let index = &store.indices["multi-append"];
+        let first = Arc::new(index.documents.get("one").unwrap().clone());
+        let second = Arc::new(index.documents.get("two").unwrap().clone());
+        let schema = index.schema.clone();
+        drop(store);
+        let mut state = TantivySearchState::build_from_documents(&schema,
+            std::iter::empty::<&StoredDocument>(), -1).unwrap();
+        let original = state.clone();
+        let mut invalid = second.as_ref().clone();
+        invalid.source = serde_json::json!({"value": {"invalid": "object"}});
+        let failed_batch = [Arc::clone(&first), Arc::new(invalid)];
+        assert!(state.append_documents(&failed_batch).is_err());
+        assert_eq!(state.native_text_compatibility, original.native_text_compatibility);
+        assert!(Arc::ptr_eq(&state.doc_ids_by_segment, &original.doc_ids_by_segment));
+        assert_eq!(state.searcher.num_docs(), 0);
+        // Flush the shared writer explicitly to expose any queued first document.
+        state.writer.lock().unwrap().commit().unwrap();
+        state.reader.reload().unwrap();
+        assert_eq!(state.reader.searcher().num_docs(), 0);
+
+        state.append_documents(&[first, second]).unwrap();
+        assert_eq!(state.searcher.num_docs(), 2);
+        assert_eq!(original.searcher.num_docs(), 0);
+        assert!(state.native_text_compatibility.supports("value"));
+        assert!(!original.native_text_compatibility.supports("value"));
+        let addresses = state.searcher.search(&AllQuery, &DocSetCollector).unwrap();
+        let ids: BTreeSet<_> = addresses.iter().map(|address|
+            state.document_id_for_address(&state.searcher, *address).unwrap()).collect();
+        assert_eq!(ids, BTreeSet::from(["one", "two"]));
+        for value in ["alpha", "beta"] {
+            let query = TermQuery::new(Term::from_field_text(state.fields["value.raw"].field, value),
+                IndexRecordOption::Basic);
+            assert_eq!(state.searcher.search(&query, &Count).unwrap(), 1);
+        }
+    }
+
+    #[test]
+    fn multi_field_source_metadata_preserves_legacy_serialization() {
+        let legacy = serde_json::json!({"name": "title", "field_type": "text",
+            "indexed": true, "stored": false, "fast": false});
+        let mapping: TantivyFieldMapping = serde_json::from_value(legacy.clone()).unwrap();
+        assert!(mapping.multi_field_source.is_none());
+        assert_eq!(serde_json::to_value(mapping).unwrap(), legacy);
+    }
+
+    #[test]
+    fn multi_field_keyword_queries_match_indexed_values_and_preserve_source() {
+        let engine = TantivyEngine::default();
+        engine.create_index(CreateIndexRequest {
+            index: "multi-query".to_string(), settings: serde_json::json!({}),
+            mappings: serde_json::json!({"properties": {"value": {"type": "text", "fields": {
+                "raw": {"type": "keyword", "ignore_above": 8}
+            }}}}),
+        }).unwrap();
+        let sources = BTreeMap::from([
+            ("one", serde_json::json!({"value": "Alpha"})),
+            ("two", serde_json::json!({"value": "alpha beta"})),
+            ("three", serde_json::json!({"value": ["beta", null]})),
+        ]);
+        for (id, source) in &sources {
+            engine.index_document(IndexDocumentRequest { index: "multi-query".to_string(),
+                id: id.to_string(), source: source.clone() }).unwrap();
+        }
+        engine.refresh(RefreshRequest { indices: vec!["multi-query".to_string()] }).unwrap();
+        for (query, expected) in [
+            (serde_json::json!({"term": {"value.raw": "Alpha"}}), vec!["one"]),
+            (serde_json::json!({"term": {"value.raw": {"value": "alpha", "case_insensitive": true}}}), vec!["one"]),
+            (serde_json::json!({"term": {"value.raw": "alpha beta"}}), vec![]),
+            (serde_json::json!({"terms": {"value.raw": ["Alpha", "beta"]}}), vec!["one", "three"]),
+            (serde_json::json!({"exists": {"field": "value.raw"}}), vec!["one", "three"]),
+        ] {
+            let expected: BTreeSet<_> = expected.into_iter().collect();
+            let parsed = parse_query(&query).unwrap();
+            {
+                let store = engine.store.read().unwrap();
+                let index = &store.indices["multi-query"];
+                for id in sources.keys() {
+                    assert_eq!(index.score_document_query(&parsed, index.documents.get(id).unwrap())
+                        .unwrap().is_some(), expected.contains(id), "source scoring: {query}, {id}");
+                }
+            }
+            let response = engine.search(serde_json::from_value(serde_json::json!({
+                "indices": ["multi-query"], "query": query, "aggregations": {},
+                "sort": [], "from": 0, "size": 10
+            })).unwrap()).unwrap();
+            assert_eq!(response.total_hits, expected.len() as u64, "native search: {query}");
+            let ids: BTreeSet<_> = response.hits.iter().map(|hit| hit.metadata.id.as_str()).collect();
+            assert_eq!(ids, expected, "native search: {query}");
+            for hit in &response.hits {
+                assert_eq!(hit.source, sources[hit.metadata.id.as_str()]);
+            }
+        }
+    }
+
+    #[test]
+    fn multi_field_schema_preserves_root_source_and_independent_options() {
+        let fields = read_field_mappings(&serde_json::json!({"properties": {
+            "object": {"properties": {"value": {"type": "text", "fields": {
+                "raw": {"type": "keyword", "ignore_above": 12, "normalizer": "casefold",
+                    "index": false, "store": true, "doc_values": false,
+                    "fields": {"exact": {"type": "keyword", "ignore_above": "24"}}},
+                "other": {"type": "keyword"}
+            }}}}
+        }})).unwrap();
+        let raw = fields.iter().find(|field| field.name == "object.value.raw").unwrap();
+        assert_eq!(raw.multi_field_source, Some(MultiFieldSource {
+            path: "object.value".to_string(), ignore_above: Some(12), normalizer: Some("casefold".to_string()),
+        }));
+        assert!(!raw.indexed);
+        assert!(!raw.fast);
+        assert!(raw.stored);
+        let exact = fields.iter().find(|field| field.name == "object.value.raw.exact").unwrap();
+        assert_eq!(exact.multi_field_source, Some(MultiFieldSource {
+            path: "object.value".to_string(), ignore_above: Some(24), normalizer: None,
+        }));
+        assert!(exact.indexed && exact.fast && !exact.stored);
+        let other = fields.iter().find(|field| field.name == "object.value.other").unwrap();
+        assert_eq!(other.multi_field_source.as_ref().unwrap().ignore_above, None);
+        assert_eq!(other.multi_field_source.as_ref().unwrap().normalizer, None);
+    }
+
+    #[test]
+    fn multi_field_schema_rejects_invalid_children_and_options() {
+        for children in [
+            serde_json::json!(null), serde_json::json!([{}]),
+            serde_json::json!({"raw": true}), serde_json::json!({"raw": {}}),
+            serde_json::json!({"bad.name": {"type": "keyword"}}),
+            serde_json::json!({"raw": {"type": "object"}}),
+            serde_json::json!({"raw": {"type": "nested"}}),
+            serde_json::json!({"raw": {"type": "alias"}}),
+            serde_json::json!({"raw": {"type": "keyword", "ignore_above": -1}}),
+            serde_json::json!({"raw": {"type": "keyword", "ignore_above": 2147483648_u64}}),
+            serde_json::json!({"raw": {"type": "keyword", "ignore_above": 1.5}}),
+            serde_json::json!({"raw": {"type": "keyword", "normalizer": 4}}),
+        ] {
+            assert!(read_field_mappings(&serde_json::json!({"properties": {
+                "value": {"type": "text", "fields": children}
+            }})).is_err(), "accepted invalid multi-fields: {children}");
+        }
+        assert_eq!(read_field_mappings(&serde_json::json!({"properties": {
+            "value": {"type": "text", "fields": []}
+        }})).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn multi_field_source_metadata_round_trips_parent_and_options() {
+        let mut mapping = read_field_mappings(&serde_json::json!({"properties": {
+            "title": {"type": "keyword", "index": false, "store": true, "doc_values": false}
+        }})).unwrap().remove(0);
+        mapping.name = "object.title.exact".to_string();
+        mapping.multi_field_source = Some(MultiFieldSource {
+            path: "object.title".to_string(), ignore_above: Some(256),
+            normalizer: Some("casefold".to_string()),
+        });
+        let serialized = serde_json::to_value(&mapping).unwrap();
+        assert_eq!(serialized["multi_field_source"], serde_json::json!({
+            "path": "object.title", "ignore_above": 256, "normalizer": "casefold"
+        }));
+        assert_eq!(serde_json::from_value::<TantivyFieldMapping>(serialized).unwrap(), mapping);
+        assert!(!mapping.indexed);
+        assert!(!mapping.fast);
+        assert!(mapping.stored);
+        let minimal: MultiFieldSource = serde_json::from_value(serde_json::json!({"path": "value"})).unwrap();
+        assert_eq!(minimal.ignore_above, None);
+        assert_eq!(minimal.normalizer, None);
+        assert_eq!(serde_json::to_value(minimal).unwrap(), serde_json::json!({"path": "value"}));
+    }
+
+    #[test]
+    fn multi_field_schema_adds_dynamic_keyword_subfield() {
+        let mut schema = map_opensearch_index_to_tantivy_schema(&CreateIndexRequest {
+            index: "multi-field-schema".to_string(), settings: serde_json::json!({}),
+            mappings: serde_json::json!({}),
+        }).unwrap();
+        assert!(ensure_dynamic_mappings_for_schema(&mut schema,
+            &serde_json::json!({"value": "alpha"})).unwrap());
+        let mapping = schema.fields.iter().find(|mapping| mapping.name == "value.keyword")
+            .expect("dynamic string must have a keyword subfield");
+        assert_eq!(mapping.field_type, TantivyFieldType::Keyword);
+        assert!(mapping.fast);
+        assert!(!ensure_dynamic_mappings_for_schema(&mut schema,
+            &serde_json::json!({"value": "beta"})).unwrap());
+    }
+
+    #[test]
+    fn dynamic_numeric_array_storage_respects_mapping_without_losing_indexed_values() {
+        let engine = TantivyEngine::default();
+        engine.create_index(CreateIndexRequest {
+            index: "numeric-storage".to_string(),
+            settings: serde_json::json!({"number_of_shards": 1}),
+            mappings: serde_json::json!({"properties": {
+                "kept": {"type": "double", "store": true}
+            }}),
+        }).unwrap();
+        let source = serde_json::json!({
+            "embedding": (0..384).map(|n| n as f64 + 0.25).collect::<Vec<_>>(),
+            "kept": [12.5, 42.5]
+        });
+        engine.replay_document(ReplayDocumentRequest {
+            index: "numeric-storage".to_string(),
+            metadata: DocumentMetadata { id: "one".to_string(), version: 1, seq_no: 0, primary_term: 1 },
+            coordination: WriteCoordinationMetadata::default(),
+            source: source.clone(),
+        }).unwrap();
+        engine.refresh(RefreshRequest { indices: vec!["numeric-storage".to_string()] }).unwrap();
+        {
+            let store = engine.store.read().unwrap();
+            let index = &store.indices["numeric-storage"];
+            let mapping = index.schema.fields.iter().find(|field| field.name == "embedding").unwrap();
+            assert_eq!(mapping.field_type, TantivyFieldType::F64);
+            assert!(mapping.indexed && mapping.fast && !mapping.stored);
+            let state = index.search_state.as_ref().unwrap();
+            let column = state.searcher.segment_readers()[0].fast_fields().f64("embedding").unwrap();
+            assert_eq!(column.values_for_doc(0).collect::<Vec<_>>(),
+                (0..384).map(|n| n as f64 + 0.25).collect::<Vec<_>>());
+            for value in [0.25, 200.25, 383.25] {
+                let query = TermQuery::new(
+                    Term::from_field_f64(state.fields["embedding"].field, value),
+                    IndexRecordOption::Basic,
+                );
+                assert_eq!(state.searcher.search(&query, &Count).unwrap(), 1);
+            }
+            let stored = state.searcher.doc(TantivyDocAddress { segment_ord: 0, doc_id: 0 }).unwrap();
+            assert_eq!(stored.get_all(state.fields["embedding"].field).count(), 0);
+            assert_eq!(stored.get_all(state.fields["kept"].field).count(), 2);
+            assert_eq!(stored.get_first(state.fields["_id"].field).unwrap().as_text(), Some("one"));
+        }
+        for value in [0.25, 200.25, 383.25] {
+            let response = engine.search(serde_json::from_value(serde_json::json!({
+                "indices": ["numeric-storage"], "query": {"term": {"embedding": value}},
+                "aggregations": {}, "sort": [], "from": 0, "size": 10
+            })).unwrap()).unwrap();
+            assert_eq!(response.total_hits, 1, "{value}");
+            assert_eq!(response.hits[0].source, source);
+        }
+    }
+
+    #[test]
+    fn bm25_frequency_maps_are_shared_without_crossing_refresh_snapshots() {
+        let engine = TantivyEngine::default();
+        engine.create_index(CreateIndexRequest {
+            index: "stats-share".to_string(),
+            settings: serde_json::json!({}),
+            mappings: serde_json::json!({"properties": {"title": {"type": "text"}}}),
+        }).unwrap();
+        engine.index_document(IndexDocumentRequest {
+            index: "stats-share".to_string(), id: "1".to_string(),
+            source: serde_json::json!({"title": "alpha alpha beta"}),
+        }).unwrap();
+        engine.refresh(RefreshRequest { indices: vec!["stats-share".to_string()] }).unwrap();
+        let old_index = engine.store.read().unwrap().indices["stats-share"].search_snapshot();
+        let old_stats = old_index.opensearch_bm25_field_stats("title", 0).unwrap();
+        let cached = old_index.opensearch_bm25_field_stats("title", 0).unwrap();
+        assert!(Arc::ptr_eq(&old_stats.term_doc_counts, &cached.term_doc_counts));
+        assert_eq!(old_stats.doc_count, 1);
+        assert_eq!(old_stats.avg_field_len, 3.0);
+        assert_eq!(old_stats.term_doc_counts.get("alpha"), Some(&1));
+        let mut context = Bm25Context::default();
+        for _ in 0..2 {
+            assert_eq!(old_index.with_opensearch_bm25_field_stats_for_query_context(
+                "title", old_index.refreshed_document_by_id("1").unwrap(), &mut context,
+                |stats| Arc::ptr_eq(&old_stats.term_doc_counts, &stats.term_doc_counts),
+            ), Some(true));
+        }
+        engine.index_document(IndexDocumentRequest {
+            index: "stats-share".to_string(), id: "2".to_string(),
+            source: serde_json::json!({"title": "gamma alpha"}),
+        }).unwrap();
+        engine.refresh(RefreshRequest { indices: vec!["stats-share".to_string()] }).unwrap();
+        let new_index = engine.store.read().unwrap().indices["stats-share"].search_snapshot();
+        let new_stats = new_index.opensearch_bm25_field_stats("title", 0).unwrap();
+        assert!(!Arc::ptr_eq(&old_stats.term_doc_counts, &new_stats.term_doc_counts));
+        assert_eq!(new_stats.doc_count, 2);
+        assert_eq!(new_stats.avg_field_len, 2.5);
+        assert_eq!(new_stats.term_doc_counts.get("alpha"), Some(&2));
+        assert_eq!(new_stats.term_doc_counts.get("gamma"), Some(&1));
+        assert!(!old_stats.term_doc_counts.contains_key("gamma"));
+        let old_again = old_index.opensearch_bm25_field_stats("title", 0).unwrap();
+        assert_eq!(old_again.doc_count, 1);
+        assert_eq!(old_again.term_doc_counts, old_stats.term_doc_counts);
+        let new_again = new_index.opensearch_bm25_field_stats("title", 0).unwrap();
+        assert_eq!(new_again.doc_count, 2);
+        assert_eq!(new_again.term_doc_counts, new_stats.term_doc_counts);
+        assert_eq!(new_index.with_opensearch_bm25_field_stats_for_query_context(
+            "title", new_index.refreshed_document_by_id("1").unwrap(), &mut context, |stats| stats.doc_count,
+        ), Some(2));
+    }
+
+    #[test]
+    fn bucket_key_comparison_preserves_numeric_precision_and_keyword_order() {
+        use std::cmp::Ordering::{Equal, Greater, Less};
+        let value = |n: i64| Value::from(n);
+        assert_eq!(compare_bucket_keys(&value(2), &value(10)), Less);
+        assert_eq!(compare_bucket_keys(&value(-2), &value(-10)), Greater);
+        assert_eq!(compare_bucket_keys(&value(9007199254740993), &Value::from(9007199254740992.0)), Greater);
+        assert_eq!(compare_bucket_keys(&value(i64::MAX), &Value::from(i64::MAX as f64)), Less);
+        assert_eq!(compare_bucket_keys(&Value::from(u64::MAX), &Value::from(u64::MAX as f64)), Less);
+        assert_eq!(compare_bucket_keys(&value(-2), &Value::from(-2.25)), Greater);
+        assert_eq!(compare_bucket_keys(&value(2), &Value::from(2.25)), Less);
+        assert_eq!(compare_bucket_keys(&value(0), &Value::from(-0.0)), Equal);
+        assert_eq!(compare_bucket_keys(&Value::from("10"), &Value::from("2")), Less);
+        assert_eq!(compare_bucket_keys(&Value::from("2024-01-01T00:00:00+02:00"), &Value::from("2023-12-31T23:00:00Z")), Greater);
+        let values = vec![Value::Null, Value::from(false), Value::from(true),
+            Value::from(-1e300), value(i64::MIN), Value::from(-2.25), value(-2),
+            Value::from(-0.0), value(0), value(2), Value::from(2.25), value(10),
+            value(9007199254740993), value(i64::MAX), Value::from(u64::MAX),
+            Value::from(1e300), Value::from("10"), Value::from("2")];
+        for left in &values {
+            for right in &values {
+                assert_eq!(compare_bucket_keys(left, right), compare_bucket_keys(right, left).reverse());
+                for last in &values {
+                    if compare_bucket_keys(left, right) != Greater && compare_bucket_keys(right, last) != Greater {
+                        assert_ne!(compare_bucket_keys(left, last), Greater);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn routing_schema_preserves_legacy_serialization_and_rejects_mismatch() {
+        let legacy = br#"{"number_of_shards":3,"number_of_replicas":0,"dynamic":true,"fields":[]}"#;
+        let mut schema: TantivyIndexSchema = serde_json::from_slice(legacy).unwrap();
+        assert!(schema.routing.is_none());
+        assert_eq!(serde_json::to_vec(&schema).unwrap(), legacy);
+        let layout = schema.index_routing().unwrap();
+        assert_eq!(layout.routing_shards(), 3);
+        let documents = ShardedDocuments::new(layout);
+        for route in ["tenant-a", "tenant-other-1", "tenant-b"] {
+            assert_eq!(documents.shard_id_for_write("doc", Some(route)),
+                       opensearch_routing_hash(route).rem_euclid(3) as u32);
+        }
+        schema.routing = Some(IndexRouting::new(4, Some(12), 1).unwrap());
+        assert!(schema.index_routing().is_err());
+    }
+
+    #[test]
+    fn routing_schema_and_document_placement_match_live_reference_vectors() {
+        for (extra, expected) in [
+            (serde_json::json!({}), [2, 2, 1, 2, 0]),
+            (serde_json::json!({"number_of_routing_shards": 3}), [2, 1, 2, 0, 1]),
+            (serde_json::json!({"number_of_routing_shards": 12}), [1, 0, 1, 0, 2]),
+        ] {
+            let mut settings = serde_json::json!({"number_of_shards": 3, "number_of_replicas": 0});
+            settings.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            let schema = map_opensearch_index_to_tantivy_schema(&CreateIndexRequest {
+                index: "routing-test".to_string(), settings, mappings: serde_json::json!({}),
+            }).unwrap();
+            let encoded = serde_json::to_vec(&schema).unwrap();
+            let recovered: TantivyIndexSchema = serde_json::from_slice(&encoded).unwrap();
+            assert_eq!(schema, recovered);
+            let documents = ShardedDocuments::new(recovered.index_routing().unwrap());
+            for (route, expected) in ["tenant-a", "tenant-other-1", "tenant-b", "tenant-c", "tenant-d"].into_iter().zip(expected) {
+                assert_eq!(documents.shard_id_for_write("doc", Some(route)), expected, "{route}");
+            }
+        }
+    }
+
+    #[test]
+    fn routing_schema_rejects_invalid_settings_before_index_creation() {
+        for settings in [
+            serde_json::json!({"number_of_shards": 3, "number_of_routing_shards": 2}),
+            serde_json::json!({"number_of_shards": 3, "number_of_routing_shards": 4}),
+            serde_json::json!({"number_of_shards": 3, "number_of_routing_shards": 12, "routing_partition_size": 13}),
+        ] {
+            let engine = TantivyEngine::default();
+            let error = engine.create_index(CreateIndexRequest {
+                index: "invalid-routing".to_string(), settings, mappings: serde_json::json!({}),
+            }).unwrap_err();
+            assert_eq!(error.status_code(), 400);
+            assert!(engine.index_schema("invalid-routing").is_none());
+        }
+    }
 
     #[test]
     fn scalar_comparison_preserves_numeric_operand_matrix() {
@@ -48442,6 +50758,184 @@ mod tests {
         );
     }
 
+    fn alias_filter_test_request(indices: &[&str], query: Value, filters: Value) -> SearchRequest {
+        SearchRequest {
+            indices: indices.iter().map(|index| index.to_string()).collect(),
+            query: serde_json::json!({"query": query, INTERNAL_SEARCH_ALIAS_FILTERS_FIELD: filters}),
+            stored_fields: None, source_fields: None, source_filter: None,
+            source_includes: None, source_include: None, source_excludes: None, source_exclude: None,
+            aggregations: serde_json::json!({}), highlight: None, sort: Vec::new(),
+            from: 0, size: 10, explain: false,
+        }
+    }
+
+    fn alias_filter_test_engine(shards: u32) -> TantivyEngine {
+        let engine = TantivyEngine::default();
+        for index in ["scope-a", "scope-b"] {
+            engine.create_index(CreateIndexRequest {
+                index: index.to_string(), settings: serde_json::json!({"number_of_shards": shards}),
+                mappings: serde_json::json!({"properties": {
+                    "tenant": {"type": "keyword"}, "title": {"type": "text"}, "value": {"type": "integer"}
+                }}),
+            }).unwrap();
+            for (id, tenant, title, value) in [
+                ("r1", "red", "common common", 10), ("r2", "red", "other", 20),
+                ("b1", "blue", "common", 100),
+            ] {
+                engine.index_document(IndexDocumentRequest {
+                    index: index.to_string(), id: id.to_string(),
+                    source: serde_json::json!({"tenant": tenant, "title": title, "value": value}),
+                }).unwrap();
+            }
+            engine.refresh(RefreshRequest { indices: vec![index.to_string()] }).unwrap();
+        }
+        engine
+    }
+
+    #[test]
+    fn alias_filter_scope_separates_global_query_post_filter_and_count() {
+        for shards in [1, 3] {
+            let engine = alias_filter_test_engine(shards);
+            for filters in [serde_json::json!({}), serde_json::json!({"scope-a": {"term": {"tenant": "red"}}})] {
+                for with_post_filter in [false, true] {
+                    for size in [0, 10] {
+                        let mut request = alias_filter_test_request(&["scope-a"],
+                            serde_json::json!({"term": {"value": 10}}), filters.clone());
+                        // min_score selects the request-filter path even for the unrestricted control.
+                        request.query["min_score"] = serde_json::json!(0);
+                        if with_post_filter {
+                            request.query["post_filter"] = serde_json::json!({"term": {"value": 20}});
+                        }
+                        request.size = size;
+                        request.aggregations = serde_json::json!({
+                            "matched": {"sum": {"field": "value"}},
+                            "all_visible": {"plugin": {"name": "core", "kind": "global", "params": {
+                                "aggregations": {"sum": {"sum": {"field": "value"}}}
+                            }}}
+                        });
+                        let response = engine.search(request).unwrap();
+                        assert_eq!(response.total_hits, if with_post_filter {0} else {1});
+                        assert_eq!(response.hits.len(), if with_post_filter || size == 0 {0} else {1});
+                        assert_eq!(response.aggregations["matched"]["value"], serde_json::json!(10.0));
+                        let filtered = !filters.as_object().unwrap().is_empty();
+                        assert_eq!(response.aggregations["all_visible"]["doc_count"], if filtered {2} else {3});
+                        assert_eq!(response.aggregations["all_visible"]["sum"]["value"],
+                                   serde_json::json!(if filtered {30.0} else {130.0}));
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn alias_filter_scope_is_per_index_intersects_shards_and_rejects_invalid_filters() {
+        let engine = alias_filter_test_engine(3);
+        let mut request = alias_filter_test_request(&["scope-a", "scope-b"], serde_json::json!({"match_all": {}}),
+            serde_json::json!({"scope-a": {"term": {"tenant": "red"}}, "scope-b": {"term": {"tenant": "blue"}}}));
+        request.aggregations = serde_json::json!({"all_visible": {"plugin": {"name": "core", "kind": "global", "params": {}}}});
+        let response = engine.search(request.clone()).unwrap();
+        assert_eq!(response.total_hits, 3);
+        assert_eq!(response.aggregations["all_visible"]["doc_count"], 3);
+        assert!(response.hits.iter().all(|hit| hit.source["tenant"] == if hit.index == "scope-a" {"red"} else {"blue"}));
+        let mut unrestricted_b = request.clone();
+        unrestricted_b.query[INTERNAL_SEARCH_ALIAS_FILTERS_FIELD].as_object_mut().unwrap().remove("scope-b");
+        assert_eq!(engine.search(unrestricted_b).unwrap().total_hits, 5);
+        request.query[INTERNAL_SEARCH_SHARD_SCOPE_FIELD] = serde_json::json!({"scope-a": [], "scope-b": []});
+        let response = engine.search(request).unwrap();
+        assert_eq!(response.total_hits, 0);
+        assert_eq!(response.aggregations["all_visible"]["doc_count"], 0);
+        for invalid in [Value::Null, serde_json::json!([]), serde_json::json!({"scope-a": null}),
+                        serde_json::json!({"scope-a": {"unknown_query": {}}})] {
+            assert!(engine.search(alias_filter_test_request(&["scope-a"],
+                serde_json::json!({"match_all": {}}), invalid)).is_err());
+        }
+    }
+
+    #[test]
+    fn alias_filter_scope_preserves_unfiltered_text_scores() {
+        for shards in [1, 3] {
+            let engine = alias_filter_test_engine(shards);
+            let query = serde_json::json!({"match": {"title": "common"}});
+            let unrestricted = engine.search(alias_filter_test_request(&["scope-a"], query.clone(), serde_json::json!({}))).unwrap();
+            let restricted = engine.search(alias_filter_test_request(&["scope-a"], query,
+                serde_json::json!({"scope-a": {"term": {"tenant": "red"}}}))).unwrap();
+            assert_eq!(restricted.total_hits, 1);
+            let expected = unrestricted.hits.iter().find(|hit| hit.metadata.id == "r1").unwrap();
+            assert_eq!(restricted.hits[0].score.to_bits(), expected.score.to_bits(), "shards={shards}");
+        }
+    }
+
+    #[test]
+    fn alias_filter_scope_global_ignores_match_none_but_preserves_slice() {
+        let engine = alias_filter_test_engine(3);
+        let mut total_scope_documents = 0;
+        for slice in 0..2 {
+            let mut request = alias_filter_test_request(&["scope-a"], serde_json::json!({"match_none": {}}),
+                serde_json::json!({"scope-a": {"term": {"tenant": "red"}}}));
+            request.query["slice"] = serde_json::json!({"id": slice, "max": 2});
+            request.aggregations = serde_json::json!({"all_visible": {"plugin": {"name": "core", "kind": "global", "params": {}}}});
+            let response = engine.search(request).unwrap();
+            assert_eq!(response.total_hits, 0);
+            total_scope_documents += response.aggregations["all_visible"]["doc_count"].as_u64().unwrap();
+        }
+        assert_eq!(total_scope_documents, 2);
+        for tenant in ["red", "blue", "red"] {
+            let response = engine.search(alias_filter_test_request(&["scope-a"], serde_json::json!({"match_all": {}}),
+                serde_json::json!({"scope-a": {"term": {"tenant": tenant}}}))).unwrap();
+            assert_eq!(response.total_hits, if tenant == "red" {2} else {1});
+            assert!(response.hits.iter().all(|hit| hit.source["tenant"] == tenant));
+        }
+    }
+
+    #[test]
+    fn alias_filter_scope_significance_background_survives_global_terms_and_filter_buckets() {
+        let significant = serde_json::json!({"significant_terms": {"field": "tenant", "size": 10}});
+        let significant_carrier = serde_json::json!({"plugin": {"name": "core", "kind": "significant_terms",
+            "params": {"field": "tenant", "size": 10}}});
+        let nested = serde_json::json!({"plugin": {"name": "core", "kind": "terms", "params": {
+            "field": "tenant", "size": 10, "aggregations": {
+                "sig": significant, "sig_carrier": significant_carrier,
+                "filtered": {"plugin": {"name": "core", "kind": "filter", "params": {
+                    "filter": {"match_all": {}}, "aggregations": {"sig": significant}
+                }}}
+            }
+        }}});
+        for shards in [1, 3] {
+            let engine = alias_filter_test_engine(shards);
+            for use_slice in [false, true] {
+                let mut request = alias_filter_test_request(&["scope-a"],
+                    serde_json::json!({"term": {"value": 10}}),
+                    serde_json::json!({"scope-a": {"term": {"tenant": "red"}}}));
+                if use_slice {
+                    request.query["slice"] = serde_json::json!({"id": 0, "max": 2});
+                }
+                request.aggregations = serde_json::json!({
+                    "sig": significant, "sig_carrier": significant_carrier, "nested": nested,
+                    "global_scope": {"plugin": {"name": "core", "kind": "global", "params": {
+                        "aggregations": {"sig": significant, "sig_carrier": significant_carrier, "nested": nested}
+                    }}}
+                });
+                let result = engine.search(request).unwrap().aggregations;
+                for parent in [&result, &result["global_scope"]] {
+                    assert_eq!(parent["sig"]["bg_count"], 3, "shards={shards}, slice={use_slice}: {parent}");
+                    assert_eq!(parent["sig_carrier"]["bg_count"], 3);
+                    for bucket in parent["nested"]["buckets"].as_array().unwrap() {
+                        assert_eq!(bucket["key"], "red");
+                        assert_eq!(bucket["sig"]["bg_count"], 3);
+                        assert_eq!(bucket["sig_carrier"]["bg_count"], 3);
+                        assert_eq!(bucket["filtered"]["sig"]["bg_count"], 3);
+                    }
+                }
+                if !use_slice {
+                    assert_eq!(result["global_scope"]["doc_count"], 2);
+                    assert_eq!(result["sig"]["doc_count"], 1);
+                    assert_eq!(result["global_scope"]["sig"]["doc_count"], 2);
+                    assert_eq!(result["sig"]["buckets"][0]["bg_count"], 2);
+                }
+            }
+        }
+    }
+
     #[test]
     fn per_shard_persistence_preserves_routing_and_recovers_into_manifest_shard() {
         let engine = TantivyEngine::default();
@@ -48906,6 +51400,145 @@ mod tests {
                 .collect::<Vec<_>>(),
             expected_ids
         );
+    }
+
+    #[test]
+    fn top_level_sort_values_reduce_arrays_and_treat_null_as_missing() {
+        let source = serde_json::json!({
+            "values": [null, 9, 2, 5], "empty": [], "nulls": [null],
+            "nil": null, "scalar": 4, "a.b": [8, 3], "a": {"b": [1, 7]}
+        });
+        assert_eq!(source_sort_value(&source, "values", SortOrder::Asc, None), Some(serde_json::json!(2)));
+        assert_eq!(source_sort_value(&source, "values", SortOrder::Desc, None), Some(serde_json::json!(9)));
+        for (mode, expected) in [
+            (os_engine::SortMode::Min, 2.0), (os_engine::SortMode::Max, 9.0),
+            (os_engine::SortMode::Avg, 16.0 / 3.0), (os_engine::SortMode::Sum, 16.0),
+        ] {
+            let actual = source_sort_value(&source, "values", SortOrder::Asc, Some(mode)).unwrap();
+            assert_eq!(actual.as_f64(), Some(expected));
+        }
+        for field in ["absent", "empty", "nulls", "nil"] {
+            assert_eq!(source_sort_value(&source, field, SortOrder::Asc, None), None, "{field}");
+        }
+        assert_eq!(source_sort_value(&source, "scalar", SortOrder::Asc, None), Some(serde_json::json!(4)));
+        assert_eq!(source_sort_value(&source, "a.b", SortOrder::Asc, None), Some(serde_json::json!(3)));
+    }
+
+    #[test]
+    fn deferred_sharded_pages_match_eager_reference_across_snapshots() {
+        let sorts = [
+            Vec::new(),
+            serde_json::from_value::<Vec<SortSpec>>(
+                serde_json::json!([{"field": "_score", "order": "desc"}]),
+            ).unwrap(),
+            serde_json::from_value::<Vec<SortSpec>>(
+                serde_json::json!([{"field": "rank", "order": "asc"}]),
+            ).unwrap(),
+            serde_json::from_value::<Vec<SortSpec>>(
+                serde_json::json!([
+                    {"field": "rank", "order": "asc"},
+                    {"field": "optional", "order": "desc"}
+                ]),
+            ).unwrap(),
+            serde_json::from_value::<Vec<SortSpec>>(
+                serde_json::json!([
+                    {"field": "optional", "order": "asc", "mode": "max"},
+                    {"field": "rank", "order": "desc"}
+                ]),
+            ).unwrap(),
+            serde_json::from_value::<Vec<SortSpec>>(
+                serde_json::json!([
+                    {"field": "optional", "order": "desc", "unmapped_type": "long"},
+                    {"field": "_id", "order": "desc"}
+                ]),
+            ).unwrap(),
+            serde_json::from_value::<Vec<SortSpec>>(
+                serde_json::json!([{"field": "_score", "order": "asc"}]),
+            ).unwrap(),
+        ];
+        let queries = [
+            serde_json::json!({"match_all": {}}),
+            serde_json::json!({"match": {"body": "target"}}),
+            serde_json::json!({"bool": {"filter": {"term": {"tag": "same"}}}}),
+            serde_json::json!({"constant_score": {"filter": {"match_all": {}}, "boost": 0}}),
+            serde_json::json!({"term": {"tag": "same"}}),
+            serde_json::json!({"match_none": {}}),
+            serde_json::json!({"nested": {"path": "children", "query": {"match_all": {}}}}),
+        ].map(|query| parse_query_value(&query).unwrap());
+        let scopes = [None, Some(BTreeSet::new()), Some(BTreeSet::from([0])),
+                      Some(BTreeSet::from([0, 2]))];
+        let mut native_cases = 0;
+        let mut fallback_cases = 0;
+        let mut explicit_page_cases = 0;
+        for (shards, count) in [(1, 32), (3, 2047), (3, 2048)] {
+            let engine = TantivyEngine::default();
+            engine.create_index(CreateIndexRequest {
+                index: "deferred-page".to_string(),
+                settings: serde_json::json!({"number_of_shards": shards}),
+                mappings: serde_json::json!({"properties": {
+                    "body": {"type": "text"}, "tag": {"type": "keyword"},
+                    "rank": {"type": "integer"}, "children": {"type": "nested"},
+                    "optional": {"type": "long"}
+                }}),
+            }).unwrap();
+            for id in 0..count {
+                engine.index_document_with_routing(IndexDocumentRequest {
+                    index: "deferred-page".to_string(), id: format!("{id:04}"),
+                    source: serde_json::json!({
+                        "body": if id % 3 == 0 { "target target extra" } else { "target" },
+                        "tag": "same", "rank": id % 11,
+                        "optional": match id % 4 {
+                            0 => serde_json::Value::Null,
+                            1 => serde_json::json!([]),
+                            2 => serde_json::json!([id % 7, id % 13]),
+                            _ => serde_json::json!(id % 5),
+                        },
+                        "children": [{"value": id}],
+                        "payload": [id, id + 1, id + 2]
+                    }),
+                }, Some(&format!("tenant-{}", id % 7))).unwrap();
+            }
+            engine.refresh(RefreshRequest { indices: vec!["deferred-page".to_string()] }).unwrap();
+            let old = engine.store.read().unwrap().indices["deferred-page"].search_snapshot();
+            engine.index_document_with_routing(IndexDocumentRequest {
+                index: "deferred-page".to_string(), id: "0000".to_string(),
+                source: serde_json::json!({"body": "changed", "tag": "other", "rank": -1}),
+            }, Some("tenant-0")).unwrap();
+            engine.refresh(RefreshRequest { indices: vec!["deferred-page".to_string()] }).unwrap();
+            let new = engine.store.read().unwrap().indices["deferred-page"].search_snapshot();
+            for index in [&old, &new] {
+                for query in &queries {
+                    for sort in &sorts {
+                        for scope in &scopes {
+                            for (from, size) in [(0, 0), (0, 7), (2, 3), (4096, 5)] {
+                                let expected = index.search_hits_page_for_query_native_sharded_tantivy_eager_reference(
+                                    "deferred-page", scope.as_ref(), query, sort, from, size,
+                                ).unwrap();
+                                let actual = index.search_hits_page_for_query_native_sharded_tantivy(
+                                    "deferred-page", scope.as_ref(), query, sort, from, size,
+                                ).unwrap();
+                                assert_eq!(actual, expected,
+                                    "shards={shards}, count={count}, from={from}, size={size}, query={query:?}, sort={sort:?}, scope={scope:?}");
+                                if let (Some((_, actual)), Some((_, expected))) = (&actual, &expected) {
+                                    native_cases += 1;
+                                    if !sort_uses_default_relevance_order(sort) && !actual.is_empty() {
+                                        explicit_page_cases += 1;
+                                    }
+                                    for (actual, expected) in actual.iter().zip(expected) {
+                                        assert_eq!(actual.score.to_bits(), expected.score.to_bits());
+                                    }
+                                } else {
+                                    fallback_cases += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(native_cases > 100);
+        assert!(fallback_cases > 100);
+        assert!(explicit_page_cases > 100);
     }
 
     #[test]
@@ -67934,8 +70567,7 @@ mod tests {
             })
             .unwrap();
 
-        let hybrid = engine
-            .search(SearchRequest {
+        let mut request = SearchRequest {
                 indices: vec!["vectors".to_string()],
                 query: serde_json::json!({
                     "bool": {
@@ -68079,9 +70711,24 @@ mod tests {
                 source_exclude: None,
                 highlight: None,
                 explain: false,
-            })
-            .unwrap();
+            };
 
+        let impossible = engine.search(request.clone()).unwrap();
+        assert!(impossible.hits.is_empty());
+        // This nested bool has one should clause, so a minimum of two cannot match.
+        let minimum = request.query.pointer_mut(
+            "/bool/must/0/bool/should/0/bool/must/0/bool/minimum_should_match",
+        ).unwrap();
+        assert_eq!(*minimum, serde_json::json!(2));
+        *minimum = serde_json::json!(1);
+        assert!(engine.search(request.clone()).unwrap().hits.is_empty());
+        // Its child also requires one should match despite containing only must clauses.
+        let minimum = request.query.pointer_mut(
+            "/bool/must/0/bool/should/0/bool/must/0/bool/should/0/bool/minimum_should_match",
+        ).unwrap();
+        assert_eq!(*minimum, serde_json::json!(1));
+        *minimum = serde_json::json!(0);
+        let hybrid = engine.search(request).unwrap();
         assert_eq!(search_hit_ids(&hybrid.hits), vec!["c"]);
         assert!(hybrid
             .phase_results
@@ -71290,9 +73937,10 @@ mod tests {
             .search_candidate_ids_for_query_reduced("vectors", &query)
             .unwrap()
             .unwrap();
+        // "banana" is above the inclusive "apple" term bound and matches the second group.
         assert_eq!(
             candidate_ids.into_iter().collect::<Vec<_>>(),
-            vec!["c".to_string(), "e".to_string()]
+            vec!["b".to_string(), "c".to_string(), "e".to_string()]
         );
     }
 
@@ -71406,34 +74054,37 @@ mod tests {
                 .iter()
                 .map(|document| document.metadata.id.as_str())
                 .collect::<Vec<_>>(),
-            vec!["c", "e"]
+            vec!["b", "c", "e"]
         );
 
         let context = index
             .search_hits_context_for_query_native_index_aware("vectors", &query)
             .unwrap()
             .unwrap();
-        assert_eq!(context.total_hits, 2);
-        assert_eq!(search_hit_ids(&context.hits), vec!["c", "e"]);
+        assert_eq!(context.total_hits, 3);
+        let expected_order = search_hit_ids(&context.hits);
+        let mut ids = expected_order.clone();
+        ids.sort();
+        assert_eq!(ids, vec!["b", "c", "e"]);
 
         let (total_hits, page_hits) = index
             .search_hits_page_for_query_index_aware("vectors", &query, &[], 0, 10)
             .unwrap()
             .unwrap();
-        assert_eq!(total_hits, 2);
-        assert_eq!(search_hit_ids(&page_hits), vec!["c", "e"]);
+        assert_eq!(total_hits, 3);
+        assert_eq!(search_hit_ids(&page_hits), expected_order);
 
         let window_hits = index
             .search_hits_window_for_query_index_aware("vectors", &query, &[], 10)
             .unwrap()
             .unwrap();
-        assert_eq!(search_hit_ids(&window_hits), vec!["c", "e"]);
+        assert_eq!(search_hit_ids(&window_hits), expected_order);
 
         assert_eq!(
             index
                 .count_documents_for_query_native_index_aware("vectors", &query)
                 .unwrap(),
-            Some(2)
+            Some(3)
         );
     }
 
@@ -79270,8 +81921,8 @@ mod tests {
                             "query": {
                                 "bool": {
                                     "must": [
-                                        { "term": { "author": "alice" } },
-                                        { "term": { "tag": "x" } }
+                                        { "term": { "comments.author": "alice" } },
+                                        { "term": { "comments.tag": "x" } }
                                     ]
                                 }
                             }
@@ -79375,8 +82026,8 @@ mod tests {
                             "query": {
                                 "bool": {
                                     "must": [
-                                        { "term": { "author": "alice" } },
-                                        { "term": { "tag": "x" } }
+                                        { "term": { "comments.author": "alice" } },
+                                        { "term": { "comments.tag": "x" } }
                                     ]
                                 }
                             }
@@ -138850,6 +141501,91 @@ mod tests {
     }
 
     #[test]
+    fn dynamic_array_mapping_matches_per_scalar_reference() {
+        fn reference(schema: &mut TantivyIndexSchema, name: &str, value: &Value) -> EngineResult<bool> {
+            match value {
+                Value::Object(object) => {
+                    let mut changed = false;
+                    for (child, value) in object {
+                        changed |= reference(schema, &format!("{name}.{child}"), value)?;
+                    }
+                    Ok(changed)
+                }
+                Value::Array(values) => {
+                    let mut changed = false;
+                    for value in values {
+                        match value {
+                            Value::Object(_) | Value::Array(_) => changed |= reference(schema, name, value)?,
+                            _ if infer_dynamic_field_type(value).is_some() => {
+                                changed |= ensure_dynamic_scalar_mapping(schema, name, value)?;
+                            }
+                            _ => {}
+                        }
+                    }
+                    Ok(changed)
+                }
+                _ => ensure_dynamic_scalar_mapping(schema, name, value),
+            }
+        }
+        let engine = TantivyEngine::default();
+        engine.create_index(CreateIndexRequest {
+            index: "array-reference".to_string(), settings: serde_json::json!({}),
+            mappings: serde_json::json!({}),
+        }).unwrap();
+        let empty = engine.index_schema("array-reference").unwrap();
+        let atoms = vec![serde_json::json!(null), serde_json::json!(1), serde_json::json!(1.5),
+            serde_json::json!("text"), serde_json::json!(true), serde_json::json!([]),
+            serde_json::json!({}), serde_json::json!({"child": 7}),
+            serde_json::json!([null, [2.5, {"child": "nested"}]]),
+            serde_json::json!({"child": [null, {"deep": true}]}),
+            serde_json::json!({"keyword": "collision"})];
+        for dynamic in [false, true] {
+            for initial in [serde_json::json!(null), serde_json::json!(0.25),
+                serde_json::json!("mapped"), serde_json::json!({"child": 0})] {
+                let mut base = empty.clone();
+                reference(&mut base, "values", &initial).unwrap();
+                base.dynamic = dynamic;
+                for first in &atoms {
+                    for second in &atoms {
+                        for value in [serde_json::json!([first, second]),
+                            serde_json::json!([null, [first], {"branch": second}, second])] {
+                            let mut expected_schema = base.clone();
+                            let mut actual_schema = base.clone();
+                            let expected = reference(&mut expected_schema, "values", &value)
+                                .map_err(|error| (error.status_code(), error.to_string()));
+                            let actual = ensure_dynamic_mapping_for_value(&mut actual_schema, "values", &value)
+                                .map_err(|error| (error.status_code(), error.to_string()));
+                            assert_eq!(actual, expected, "dynamic={dynamic}, initial={initial}, value={value}");
+                            assert_eq!(actual_schema, expected_schema, "value={value}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn dynamic_array_mapping_keeps_large_arrays_and_nested_discovery() {
+        let engine = TantivyEngine::default();
+        engine.create_index(CreateIndexRequest {
+            index: "array-large".to_string(), settings: serde_json::json!({}), mappings: serde_json::json!({}),
+        }).unwrap();
+        let mut schema = engine.index_schema("array-large").unwrap();
+        let mut numbers = (0..384).map(|i| serde_json::json!(i as f64 + 0.25)).collect::<Vec<_>>();
+        let source = serde_json::json!({"values": numbers});
+        assert!(ensure_dynamic_mappings_for_schema(&mut schema, &source).unwrap());
+        assert_eq!(field(&schema, "values").field_type, TantivyFieldType::F64);
+        let mapped = schema.clone();
+        assert!(!ensure_dynamic_mappings_for_schema(&mut schema, &source).unwrap());
+        assert_eq!(schema, mapped);
+        numbers.push(serde_json::json!([[{"new_child": [null, "child", "second"]}]]));
+        assert!(ensure_dynamic_mappings_for_schema(&mut schema, &serde_json::json!({"values": numbers})).unwrap());
+        assert_eq!(field(&schema, "values.new_child").field_type, TantivyFieldType::Text);
+        assert_eq!(field(&schema, "values.new_child.keyword").field_type, TantivyFieldType::Keyword);
+        assert_eq!(field(&schema, "values").field_type, TantivyFieldType::F64);
+    }
+
+    #[test]
     fn engine_retries_writes_after_dynamic_mapping_updates() {
         let engine = TantivyEngine::default();
         engine
@@ -139495,6 +142231,90 @@ mod tests {
     }
 
     #[test]
+    fn index_deletion_waits_for_persistence_but_not_refresh() {
+        let engine = Arc::new(TantivyEngine::default());
+        let request = CreateIndexRequest {
+            index: "persistence-generation".to_string(),
+            settings: serde_json::json!({}), mappings: serde_json::json!({}),
+        };
+        engine.create_index(request.clone()).unwrap();
+        let generation = engine.index_persistence_lock(&request.index).unwrap();
+        let guard = generation.lock().unwrap();
+        let worker_engine = Arc::clone(&engine);
+        let worker = std::thread::spawn(move || worker_engine.delete_index("persistence-generation"));
+        let started = std::time::Instant::now();
+        while Arc::strong_count(&generation) < 3 {
+            assert!(started.elapsed() < std::time::Duration::from_secs(5), "delete did not acquire its index identity");
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        engine.refresh(RefreshRequest { indices: vec![request.index.clone()] }).unwrap();
+        assert!(engine.index_schema(&request.index).is_some());
+        drop(guard);
+        worker.join().unwrap().unwrap();
+        engine.create_index(request.clone()).unwrap();
+        assert!(engine.ensure_index_generation(&request.index, &generation).is_err());
+    }
+
+    #[test]
+    fn recreated_index_uses_fresh_identity_and_replaces_previous_generation_logs() {
+        for shards in [1, 3] {
+            let engine = TantivyEngine::default();
+            let request = CreateIndexRequest {
+                index: "recreated-generation".to_string(),
+                settings: serde_json::json!({"number_of_shards": shards}),
+                mappings: serde_json::json!({}),
+            };
+            let root = unique_temp_path("os-tantivy-index-generation");
+            engine.create_index(request.clone()).unwrap();
+            let before = engine.shard_manifest(&request.index).unwrap();
+            let old_generation = engine.index_persistence_lock(&request.index).unwrap();
+            engine.index_document(IndexDocumentRequest {
+                index: request.index.clone(), id: "old".to_string(), source: serde_json::json!({"value": "old"}),
+            }).unwrap();
+            for shard in 0..shards {
+                engine.persist_index_shard_state(&request.index, shard, root.join(shard.to_string())).unwrap();
+            }
+            if shards == 1 {
+                engine.persist_shard_state(&request.index, root.join("legacy")).unwrap();
+            }
+            engine.delete_index(&request.index).unwrap();
+            engine.create_index(request.clone()).unwrap();
+            let after = engine.shard_manifest(&request.index).unwrap();
+            assert_eq!(before.schema_hash, after.schema_hash);
+            assert_ne!(before.index_uuid, after.index_uuid);
+            assert!(engine.ensure_index_generation(&request.index, &old_generation).is_err());
+            for shard in 0..shards {
+                let path = root.join(shard.to_string());
+                let manifest = engine.persist_index_shard_state(&request.index, shard, &path).unwrap();
+                assert_eq!(manifest.index_uuid, after.index_uuid);
+                assert!(replay_operations(&path, &manifest).unwrap().is_empty());
+            }
+            let write = engine.index_document(IndexDocumentRequest {
+                index: request.index.clone(), id: "new".to_string(), source: serde_json::json!({"value": "new"}),
+            }).unwrap();
+            assert_eq!(write.metadata.seq_no, 0);
+            let mut ids = Vec::new();
+            for shard in 0..shards {
+                let path = root.join(shard.to_string());
+                let manifest = engine.persist_index_shard_state(&request.index, shard, &path).unwrap();
+                ids.extend(replay_operations(&path, &manifest).unwrap().values().map(|doc| doc.metadata.id.clone()));
+            }
+            assert_eq!(ids, vec!["new"]);
+            if shards == 1 {
+                let manifest = engine.persist_shard_state(&request.index, root.join("legacy")).unwrap();
+                let documents = replay_operations(&root.join("legacy"), &manifest).unwrap();
+                assert_eq!(documents.len(), 1);
+                assert_eq!(documents.values().next().unwrap().metadata.id, "new");
+            }
+            let recovered = TantivyEngine::default();
+            recovered.create_index_from_schema_with_uuid(request.index.clone(),
+                map_opensearch_index_to_tantivy_schema(&request).unwrap(), after.index_uuid.clone()).unwrap();
+            assert_eq!(recovered.shard_manifest(&request.index).unwrap().index_uuid, after.index_uuid);
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
     fn engine_recovers_shard_identity_and_sequence_counters_from_manifest() {
         let engine = TantivyEngine::default();
         let create = CreateIndexRequest {
@@ -139664,6 +142484,7 @@ mod tests {
             number_of_shards: 1,
             number_of_replicas: 1,
             dynamic: true,
+            routing: None,
             fields: vec![TantivyFieldMapping {
                 name: "different".to_string(),
                 field_type: TantivyFieldType::Keyword,
@@ -139671,6 +142492,8 @@ mod tests {
                 stored: false,
                 fast: true,
                 knn_vector: None,
+                multi_field_source: None,
+                text_options: None,
             }],
         };
         let error = TantivyEngine::default()
@@ -151000,6 +153823,175 @@ mod tests {
     }
 
     #[test]
+    fn simple_term_counts_match_tree_across_promotion_and_insertion_orders() {
+        for cardinality in [0, 1, 3, 8, 9, 32, 1024] {
+            let keys = (0..cardinality)
+                .map(|i| format!("key-{i:04}"))
+                .collect::<Vec<_>>();
+            for reverse in [false, true] {
+                let mut counts = SimpleTermCounts::Small(Vec::new());
+                let mut expected = BTreeMap::new();
+                for round in 0..3 {
+                    for i in 0..cardinality {
+                        let index = if reverse { cardinality - i - 1 } else { i };
+                        let key = keys[index].as_str();
+                        for _ in 0..=round + index % 3 {
+                            counts.increment(key);
+                            *expected.entry(key).or_insert(0) += 1;
+                        }
+                    }
+                }
+                assert_eq!(
+                    matches!(&counts, SimpleTermCounts::Tree(_)),
+                    cardinality > 8
+                );
+                assert_eq!(
+                    counts
+                        .into_buckets()
+                        .into_iter()
+                        .collect::<BTreeMap<_, _>>(),
+                    expected
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn simple_term_aggregation_matches_reference_at_small_counter_boundary() {
+        for cardinality in [0, 1, 3, 8, 9, 32, 1024] {
+            let engine = TantivyEngine::default();
+            engine
+                .create_index(CreateIndexRequest {
+                    index: "terms-boundary".to_string(),
+                    settings: serde_json::json!({}),
+                    mappings: serde_json::json!({"properties": {"service": {"type": "keyword"}}}),
+                })
+                .unwrap();
+            for i in 0..cardinality * 3 {
+                engine.index_document(IndexDocumentRequest {
+                    index: "terms-boundary".to_string(),
+                    id: i.to_string(),
+                    source: serde_json::json!({"service": format!("key-{:04}", i % cardinality)}),
+                }).unwrap();
+            }
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "terms-boundary".to_string(),
+                    id: "missing".to_string(),
+                    source: serde_json::json!({}),
+                })
+                .unwrap();
+            let store = engine.store.read().unwrap();
+            let documents = store.indices["terms-boundary"]
+                .documents
+                .values()
+                .collect::<Vec<_>>();
+            for minimum in [1, 3, 4] {
+                let terms = os_query_dsl::TermsAggregation {
+                    field: "service".to_string(),
+                    size: 5,
+                    missing: None,
+                    min_doc_count: minimum,
+                    include: None,
+                    exclude: None,
+                };
+                let expected = collect_terms_aggregation_from_documents(&documents, &terms);
+                let aggregations =
+                    AggregationMap::from([("by_service".to_string(), Aggregation::Terms(terms))]);
+                let actual =
+                    collect_simple_bucket_aggregations_from_documents(&documents, &aggregations).unwrap()
+                        .unwrap();
+                assert_eq!(
+                    actual["by_service"], expected,
+                    "cardinality={cardinality} minimum={minimum}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn recovered_sequence_watermark_is_monotonic_and_refreshable_without_documents() {
+        let engine = TantivyEngine::default();
+        engine.create_index(CreateIndexRequest {
+            index: "sequence-watermark".to_string(), settings: serde_json::json!({}),
+            mappings: serde_json::json!({}),
+        }).unwrap();
+        assert!(engine.restore_next_sequence_number("sequence-watermark", -1).is_err());
+        assert!(engine.restore_next_sequence_number("missing", 3).is_err());
+        engine.restore_next_sequence_number("sequence-watermark", 7).unwrap();
+        engine.restore_next_sequence_number("sequence-watermark", 2).unwrap();
+        engine.refresh(RefreshRequest { indices: vec!["sequence-watermark".to_string()] }).unwrap();
+        let inserted = engine.index_document(IndexDocumentRequest {
+            index: "sequence-watermark".to_string(), id: "new".to_string(),
+            source: serde_json::json!({"value": 1}),
+        }).unwrap();
+        assert_eq!(inserted.metadata.seq_no, 7);
+        engine.refresh(RefreshRequest { indices: vec!["sequence-watermark".to_string()] }).unwrap();
+    }
+
+    #[test]
+    fn simple_bucket_scan_matches_individual_aggregations_in_both_document_orders() {
+        let engine = TantivyEngine::default();
+        engine.create_index(CreateIndexRequest {
+            index: "bucket-scan".to_string(),
+            settings: serde_json::json!({}),
+            mappings: serde_json::json!({"properties": {
+                "service": {"type": "keyword"}, "rank": {"type": "double"},
+                "timestamp": {"type": "date"}
+            }}),
+        }).unwrap();
+        for i in 0..80 {
+            let mut source = if i % 13 == 0 { serde_json::json!({}) } else {
+                serde_json::json!({"service": format!("service-{}", i % 9),
+                    "category": format!("category-{}", i % 3),
+                    "rank": (i % 17) as f64 - 3.5,
+                    "timestamp": 1704067200000_i64 + (i % 4) * 86400000_i64})
+            };
+            for field in 0..(i % 17) {
+                source.as_object_mut().unwrap().insert(format!("filler-{field:02}"), Value::String(field.to_string()));
+            }
+            engine.index_document(IndexDocumentRequest {
+                index: "bucket-scan".to_string(), id: i.to_string(), source,
+            }).unwrap();
+        }
+        let aggregations = parse_search_aggregation_map(&serde_json::json!({
+            "services": {"terms": {"field": "service", "size": 5, "min_doc_count": 2}},
+            "categories": {"terms": {"field": "category", "size": 2}},
+            "ranks": {"range": {"field": "rank", "ranges": [
+                {"to": 0.0}, {"from": -1.0, "to": 7.0}, {"from": 5.0}
+            ]}},
+            "days": {"date_histogram": {"field": "timestamp", "fixed_interval": "1d",
+                "time_zone": "+02:00", "min_doc_count": 0}}
+        })).unwrap();
+        {
+            let store = engine.store.read().unwrap();
+            let mut documents = store.indices["bucket-scan"].documents.values().collect::<Vec<_>>();
+            for _ in 0..2 {
+                let actual = collect_simple_bucket_aggregations_from_documents(&documents, &aggregations).unwrap().unwrap();
+                for (name, aggregation) in &aggregations {
+                    let expected = match aggregation {
+                        Aggregation::Terms(terms) => collect_terms_aggregation_from_documents(&documents, terms),
+                        Aggregation::Range(range) => collect_range_aggregation_from_documents(&documents, range),
+                        Aggregation::DateHistogram(histogram) => collect_date_histogram_aggregation_from_documents(&documents, histogram).unwrap(),
+                        _ => unreachable!(),
+                    };
+                    assert_eq!(actual[name], expected, "{name}");
+                }
+                documents.reverse();
+            }
+        }
+        for service in [serde_json::json!(["a", "b"]), serde_json::json!([]), Value::Null] {
+            engine.index_document(IndexDocumentRequest {
+                index: "bucket-scan".to_string(), id: "array".to_string(),
+                source: serde_json::json!({"service": service, "rank": 1.0}),
+            }).unwrap();
+            let store = engine.store.read().unwrap();
+            let documents = store.indices["bucket-scan"].documents.values().collect::<Vec<_>>();
+            assert!(collect_simple_bucket_aggregations_from_documents(&documents, &aggregations).unwrap().is_none());
+        }
+    }
+
+    #[test]
     fn simple_term_bucket_counts_borrow_keys_and_return_owned_results() {
         let engine = TantivyEngine::default();
         engine
@@ -151045,7 +154037,7 @@ mod tests {
                 .documents
                 .values()
                 .collect::<Vec<_>>();
-            collect_simple_bucket_aggregations_from_documents(&documents, &aggregations).unwrap()
+            collect_simple_bucket_aggregations_from_documents(&documents, &aggregations).unwrap().unwrap()
         };
         engine
             .index_document(IndexDocumentRequest {
@@ -151062,6 +154054,7 @@ mod tests {
                 .collect::<Vec<_>>();
             assert!(
                 collect_simple_bucket_aggregations_from_documents(&documents, &aggregations)
+                    .unwrap()
                     .is_none()
             );
         }
@@ -151391,6 +154384,62 @@ mod tests {
                 }
             })
         );
+    }
+
+    #[test]
+    fn terms_missing_preserves_present_arrays_and_only_fills_empty_values() {
+        let engine = TantivyEngine::default();
+        engine.create_index(CreateIndexRequest {
+            index: "terms-missing-arrays".to_string(),
+            settings: serde_json::json!({"number_of_shards": 1}),
+            mappings: serde_json::json!({"properties": {"service": {"type": "keyword"}}}),
+        }).unwrap();
+        for (id, source) in [
+            serde_json::json!({"service": ["api", "worker", "api"]}),
+            serde_json::json!({"service": "api"}),
+            serde_json::json!({}),
+            serde_json::json!({"service": null}),
+            serde_json::json!({"service": []}),
+            serde_json::json!({"service": [null, null]}),
+        ].into_iter().enumerate() {
+            engine.index_document(IndexDocumentRequest {
+                index: "terms-missing-arrays".to_string(), id: id.to_string(), source,
+            }).unwrap();
+        }
+        let store = engine.store.read().unwrap();
+        let documents = store.indices["terms-missing-arrays"].documents.values().collect::<Vec<_>>();
+        let terms = os_query_dsl::TermsAggregation {
+            field: "service".to_string(), size: 10,
+            missing: Some(serde_json::json!("unknown")), min_doc_count: 1,
+            include: None, exclude: None,
+        };
+        let actual = collect_terms_aggregation_from_documents(&documents, &terms);
+        assert_eq!(actual["buckets"], serde_json::json!([
+            {"key": "unknown", "doc_count": 4},
+            {"key": "api", "doc_count": 2},
+            {"key": "worker", "doc_count": 1},
+        ]));
+        assert_eq!(actual, collect_terms_aggregation_from_documents_generic(&documents, &terms));
+        for rotation in 0..documents.len() {
+            let mut ordered = documents.clone();
+            ordered.rotate_left(rotation);
+            for (include, exclude, minimum) in [
+                (None, None, 1),
+                (Some(serde_json::json!(["api", "unknown"])), None, 1),
+                (None, Some(serde_json::json!(["unknown"])), 1),
+                (None, None, 2),
+            ] {
+                let mut filtered = terms.clone();
+                filtered.include = include;
+                filtered.exclude = exclude;
+                filtered.min_doc_count = minimum;
+                assert_eq!(
+                    collect_terms_aggregation_from_documents(&ordered, &filtered),
+                    collect_terms_aggregation_from_documents_generic(&ordered, &filtered),
+                    "rotation={rotation}, terms={filtered:?}",
+                );
+            }
+        }
     }
 
     #[test]
@@ -156596,6 +159645,260 @@ mod tests {
     }
 
     #[test]
+    fn queued_refreshes_bound_append_work_at_request_time() {
+        for shards in [1, 3] {
+            for mutation in ["none", "append", "update", "delete"] {
+                let engine = Arc::new(TantivyEngine::default());
+                let name = "queued-refresh";
+                engine.create_index(CreateIndexRequest {
+                    index: name.to_string(),
+                    settings: serde_json::json!({"number_of_shards": shards}),
+                    mappings: serde_json::json!({"properties": {"message": {"type": "keyword"}}}),
+                }).unwrap();
+                engine.index_document(IndexDocumentRequest {
+                    index: name.to_string(), id: "seed".to_string(),
+                    source: serde_json::json!({"message": "original"}),
+                }).unwrap();
+                engine.refresh(RefreshRequest { indices: vec![name.to_string()] }).unwrap();
+                engine.index_document(IndexDocumentRequest {
+                    index: name.to_string(), id: "before".to_string(),
+                    source: serde_json::json!({"message": "before"}),
+                }).unwrap();
+
+                let owner = Arc::clone(&engine.store.read().unwrap().indices[name].refresh_lock);
+                let guard = owner.lock().unwrap();
+                let workers = (0..2).map(|_| {
+                    let engine = Arc::clone(&engine);
+                    std::thread::spawn(move || engine.refresh(RefreshRequest {
+                        indices: vec![name.to_string()],
+                    }))
+                }).collect::<Vec<_>>();
+                // Both requests have resolved this index but cannot acquire its owner lock.
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+                while Arc::strong_count(&owner) < 4 && std::time::Instant::now() < deadline {
+                    std::thread::yield_now();
+                }
+                let both_waiting = Arc::strong_count(&owner) == 4;
+                match mutation {
+                    "append" | "update" => {
+                        engine.index_document(IndexDocumentRequest {
+                            index: name.to_string(),
+                            id: if mutation == "append" { "after" } else { "seed" }.to_string(),
+                            source: serde_json::json!({"message": "changed"}),
+                        }).unwrap();
+                    }
+                    "delete" => {
+                        engine.delete_document(DeleteDocumentRequest {
+                            index: name.to_string(), id: "seed".to_string(),
+                        }).unwrap();
+                    }
+                    _ => {}
+                }
+                drop(guard);
+                let responses = workers.into_iter().map(|worker| worker.join().unwrap().unwrap())
+                    .collect::<Vec<_>>();
+                assert!(both_waiting, "workers did not resolve the index before the mutation");
+                assert_eq!(responses.iter().filter(|response| response.refreshed).count(), 1,
+                    "shards={shards}, mutation={mutation}");
+                {
+                    let store = engine.store.read().unwrap();
+                    let expected_sequence = if matches!(mutation, "none" | "append") { 1 } else { 2 };
+                    assert_eq!(store.indices[name].refreshed_seq_no, expected_sequence,
+                        "queued requests must not extend their append target after waiting");
+                }
+                let expected = match mutation {
+                    "append" => vec!["after", "before", "seed"],
+                    "delete" => vec!["before"],
+                    _ => vec!["before", "seed"],
+                };
+                let search_request = SearchRequest {
+                    indices: vec![name.to_string()], query: serde_json::json!({"match_all": {}}),
+                    aggregations: serde_json::json!({}), sort: Vec::new(), from: 0, size: 10,
+                    stored_fields: None, source_fields: None, source_filter: None,
+                    source_includes: None, source_include: None, source_excludes: None,
+                    source_exclude: None, highlight: None, explain: false,
+                };
+                let before_drain = engine.search(search_request.clone()).unwrap();
+                assert_eq!(before_drain.total_hits as usize,
+                    if mutation == "append" { 2 } else { expected.len() });
+                if mutation == "append" {
+                    assert!(before_drain.hits.iter().all(|hit| hit.metadata.id != "after"));
+                }
+                assert_eq!(engine.refresh(RefreshRequest { indices: vec![name.to_string()] })
+                    .unwrap().refreshed, mutation == "append");
+                let response = engine.search(search_request).unwrap();
+                let mut ids = response.hits.iter().map(|hit| hit.metadata.id.as_str()).collect::<Vec<_>>();
+                ids.sort_unstable();
+                assert_eq!(ids, expected, "shards={shards}, mutation={mutation}");
+                assert_eq!(response.total_hits as usize, expected.len());
+                for hit in &response.hits {
+                    let message = match hit.metadata.id.as_str() {
+                        "before" => "before",
+                        "seed" if mutation != "update" => "original",
+                        _ => "changed",
+                    };
+                    assert_eq!(hit.source["message"], message,
+                        "shards={shards}, mutation={mutation}, id={}", hit.metadata.id);
+                }
+                let store = engine.store.read().unwrap();
+                let index = &store.indices[name];
+                assert_eq!(index.refreshed_seq_no, if mutation == "none" { 1 } else { 2 });
+                assert_eq!(index.refreshed_seq_no, index.next_seq_no - 1);
+            }
+        }
+    }
+
+    #[test]
+    fn queued_refreshes_share_different_requested_targets() {
+        for shards in [1, 3] {
+            let engine = Arc::new(TantivyEngine::default());
+            let name = "queued-targets";
+            engine.create_index(CreateIndexRequest {
+                index: name.to_string(),
+                settings: serde_json::json!({"number_of_shards": shards}),
+                mappings: serde_json::json!({"properties": {"message": {"type": "keyword"}}}),
+            }).unwrap();
+            engine.index_document(IndexDocumentRequest {
+                index: name.to_string(), id: "0".to_string(),
+                source: serde_json::json!({"message": "0"}),
+            }).unwrap();
+            engine.refresh(RefreshRequest { indices: vec![name.to_string()] }).unwrap();
+            let owner = Arc::clone(&engine.store.read().unwrap().indices[name].refresh_lock);
+            let guard = owner.lock().unwrap();
+            let mut workers = Vec::new();
+            let mut all_waiting = true;
+            for target in 1..=3 {
+                engine.index_document(IndexDocumentRequest {
+                    index: name.to_string(), id: target.to_string(),
+                    source: serde_json::json!({"message": target.to_string()}),
+                }).unwrap();
+                let worker_engine = Arc::clone(&engine);
+                workers.push(std::thread::spawn(move || worker_engine.refresh(RefreshRequest {
+                    indices: vec![name.to_string()],
+                })));
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+                while Arc::strong_count(&owner) < target + 2 && std::time::Instant::now() < deadline {
+                    std::thread::yield_now();
+                }
+                all_waiting &= Arc::strong_count(&owner) == target + 2;
+            }
+            // No request includes this append, even though it precedes owner acquisition.
+            engine.index_document(IndexDocumentRequest {
+                index: name.to_string(), id: "later".to_string(),
+                source: serde_json::json!({"message": "later"}),
+            }).unwrap();
+            drop(guard);
+            let responses = workers.into_iter().map(|worker| worker.join().unwrap().unwrap())
+                .collect::<Vec<_>>();
+            assert!(all_waiting, "requests did not capture distinct targets");
+            assert_eq!(responses.iter().filter(|response| response.refreshed).count(), 1,
+                "all admitted targets must share one publication; shards={shards}");
+            assert_eq!(engine.store.read().unwrap().indices[name].refreshed_seq_no, 3);
+            let request = SearchRequest {
+                indices: vec![name.to_string()], query: serde_json::json!({"match_all": {}}),
+                aggregations: serde_json::json!({}), sort: Vec::new(), from: 0, size: 10,
+                stored_fields: None, source_fields: None, source_filter: None,
+                source_includes: None, source_include: None, source_excludes: None,
+                source_exclude: None, highlight: None, explain: false,
+            };
+            let response = engine.search(request.clone()).unwrap();
+            let mut ids = response.hits.iter().map(|hit| hit.metadata.id.as_str()).collect::<Vec<_>>();
+            ids.sort_unstable();
+            assert_eq!(ids, vec!["0", "1", "2", "3"]);
+            assert_eq!(response.total_hits, 4);
+            assert!(response.hits.iter().all(|hit| hit.source["message"] == hit.metadata.id));
+            assert!(engine.refresh(RefreshRequest { indices: vec![name.to_string()] }).unwrap().refreshed);
+            let response = engine.search(request).unwrap();
+            assert_eq!(response.total_hits, 5);
+            assert!(response.hits.iter().any(|hit| hit.metadata.id == "later" && hit.source["message"] == "later"));
+            assert_eq!(engine.store.read().unwrap().indices[name].refreshed_seq_no, 4);
+            assert!(!engine.refresh(RefreshRequest { indices: vec![name.to_string()] }).unwrap().refreshed);
+        }
+    }
+
+    #[test]
+    fn waiting_refresh_rejects_a_recreated_index_with_the_same_name() {
+        let engine = Arc::new(TantivyEngine::default());
+        let request = CreateIndexRequest {
+            index: "refresh-generation".to_string(),
+            settings: serde_json::json!({}), mappings: serde_json::json!({}),
+        };
+        engine.create_index(request.clone()).unwrap();
+        let refresh_lock = Arc::clone(&engine.store.read().unwrap()
+            .indices["refresh-generation"].refresh_lock);
+        let guard = refresh_lock.lock().unwrap();
+        let worker_engine = Arc::clone(&engine);
+        let worker = std::thread::spawn(move || worker_engine.refresh(RefreshRequest {
+            indices: vec!["refresh-generation".to_string()],
+        }));
+        let started = std::time::Instant::now();
+        while Arc::strong_count(&refresh_lock) < 3 {
+            assert!(started.elapsed() < std::time::Duration::from_secs(5), "refresh did not acquire its index identity");
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        engine.delete_index("refresh-generation").unwrap();
+        engine.create_index(request).unwrap();
+        engine.index_document(IndexDocumentRequest {
+            index: "refresh-generation".to_string(), id: "new".to_string(),
+            source: serde_json::json!({"value": 1}),
+        }).unwrap();
+        drop(guard);
+        assert!(matches!(worker.join().unwrap(), Err(EngineError::IndexNotFound { .. })));
+        let store = engine.store.read().unwrap();
+        let index = &store.indices["refresh-generation"];
+        assert!(!Arc::ptr_eq(&index.refresh_lock, &refresh_lock));
+        assert_eq!(index.refreshed_seq_no, -1);
+        assert_eq!(index.next_seq_no, 1);
+    }
+
+    #[test]
+    fn text_range_uses_indexed_tokens_for_hits_and_count() {
+        for shards in [1, 3] {
+            let engine = TantivyEngine::default();
+            engine.create_index(CreateIndexRequest {
+                index: "text-range".to_string(),
+                settings: serde_json::json!({"number_of_shards": shards}),
+                mappings: serde_json::json!({"properties": {"message": {"type": "text"}}}),
+            }).unwrap();
+            for (id, message) in [("1", "Zebra apple"), ("2", "banana"), ("3", "cherry")] {
+                engine.index_document(IndexDocumentRequest {
+                    index: "text-range".to_string(), id: id.to_string(),
+                    source: serde_json::json!({"message": message}),
+                }).unwrap();
+            }
+            engine.refresh(RefreshRequest { indices: vec!["text-range".to_string()] }).unwrap();
+            engine.create_index(CreateIndexRequest {
+                index: "text-range-empty".to_string(),
+                settings: serde_json::json!({"number_of_shards": shards}),
+                mappings: serde_json::json!({"properties": {"message": {"type": "text"}}}),
+            }).unwrap();
+            for (bounds, expected) in [
+                (serde_json::json!({"gte": "a", "lt": "b"}), vec!["1"]),
+                (serde_json::json!({"gte": "a"}), vec!["1", "2", "3"]),
+            ] {
+                for boolean in [false, true] {
+                    let range = serde_json::json!({"range": {"message": bounds}});
+                    let query = if boolean { serde_json::json!({"bool": {"filter": range}}) } else { range };
+                    for size in [0, 10] {
+                        let response = engine.search(SearchRequest {
+                            indices: vec!["text-range".to_string(), "text-range-empty".to_string()], query: query.clone(),
+                            aggregations: serde_json::json!({}), sort: vec![], from: 0, size,
+                            stored_fields: None, source_fields: None, source_filter: None,
+                            source_includes: None, source_include: None,
+                            source_excludes: None, source_exclude: None,
+                            highlight: None, explain: false,
+                        }).unwrap();
+                        assert_eq!(response.total_hits, expected.len() as u64, "{shards}/{boolean}/{size}: {query}");
+                        let mut ids = search_hit_ids(&response.hits);
+                        ids.sort();
+                        assert_eq!(ids, if size == 0 { vec![] } else { expected.clone() });
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn native_tantivy_path_executes_keyword_range_query() {
         let engine = TantivyEngine::default();
         engine
@@ -158067,8 +161370,8 @@ mod tests {
                 "query": {
                     "bool": {
                         "must": [
-                            { "term": { "author": "alice" } },
-                            { "term": { "tag": "x" } }
+                            { "term": { "comments.author": "alice" } },
+                            { "term": { "comments.tag": "x" } }
                         ]
                     }
                 }
@@ -158169,6 +161472,30 @@ mod tests {
     }
 
     #[test]
+    fn engine_refresh_writer_separates_large_segments_from_small_batches() {
+        let engine = TantivyEngine::default();
+        engine.create_index(CreateIndexRequest {
+            index: "merge-policy".to_string(), settings: serde_json::json!({}),
+            mappings: serde_json::json!({}),
+        }).unwrap();
+        engine.index_document(IndexDocumentRequest {
+            index: "merge-policy".to_string(), id: "one".to_string(),
+            source: serde_json::json!({"value": [1.25, 2.25]}),
+        }).unwrap();
+        engine.refresh(RefreshRequest { indices: vec!["merge-policy".to_string()] }).unwrap();
+        let store = engine.store.read().unwrap();
+        let state = store.indices["merge-policy"].search_state.as_ref().unwrap();
+        let seed = state.index.new_segment_meta(SegmentId::generate_random(), 1667);
+        let mut segments = vec![seed.clone()];
+        segments.extend((0..8).map(|_| state.index.new_segment_meta(SegmentId::generate_random(), 4)));
+        let policy = state.writer.lock().unwrap().get_merge_policy();
+        let merges = policy.compute_merge_candidates(&segments);
+        assert_eq!(merges.len(), 1);
+        assert_eq!(merges[0].0.len(), 8);
+        assert!(!merges[0].0.contains(&seed.id()));
+    }
+
+    #[test]
     fn doc_id_lookup_shares_unchanged_segments_and_survives_merge() {
         let mut schema = TantivySchemaDef::builder();
         let id_field = schema.add_text_field("_id", STRING | STORED);
@@ -158179,6 +161506,8 @@ mod tests {
                 field: id_field,
                 field_type: TantivyFieldType::Keyword,
                 fast: false,
+                multi_field_source: None,
+                text_position_gap: None,
             },
         )]);
         let mut writer = index.writer_with_num_threads(1, 50_000_000).unwrap();
@@ -158188,7 +161517,7 @@ mod tests {
             .reload_policy(ReloadPolicy::Manual)
             .try_into()
             .unwrap();
-        let empty = build_tantivy_doc_id_lookup(&reader, &fields, None).unwrap();
+        let empty = build_tantivy_doc_id_lookup(&reader.searcher(), &fields, None).unwrap();
         assert!(empty.segment_ids.is_empty());
         let mut previous = empty;
         for batch in 0..3 {
@@ -158199,8 +161528,8 @@ mod tests {
             }
             writer.commit().unwrap();
             reader.reload().unwrap();
-            let current = build_tantivy_doc_id_lookup(&reader, &fields, Some(&previous)).unwrap();
-            let rebuilt = build_tantivy_doc_id_lookup(&reader, &fields, None).unwrap();
+            let current = build_tantivy_doc_id_lookup(&reader.searcher(), &fields, Some(&previous)).unwrap();
+            let rebuilt = build_tantivy_doc_id_lookup(&reader.searcher(), &fields, None).unwrap();
             assert_eq!(current.segment_ids, rebuilt.segment_ids);
             assert_eq!(current.doc_ids_by_segment, rebuilt.doc_ids_by_segment);
             assert_eq!(current.segment_ids.len(), batch + 1);
@@ -158224,7 +161553,7 @@ mod tests {
         writer.delete_term(Term::from_field_text(id_field, "document-0"));
         writer.commit().unwrap();
         reader.reload().unwrap();
-        let deleted = build_tantivy_doc_id_lookup(&reader, &fields, Some(&previous)).unwrap();
+        let deleted = build_tantivy_doc_id_lookup(&reader.searcher(), &fields, Some(&previous)).unwrap();
         for (ordinal, segment_id) in deleted.segment_ids.iter().enumerate() {
             let old_ordinal = previous
                 .segment_ids
@@ -158241,8 +161570,8 @@ mod tests {
             .wait()
             .unwrap();
         reader.reload().unwrap();
-        let merged = build_tantivy_doc_id_lookup(&reader, &fields, Some(&deleted)).unwrap();
-        let rebuilt = build_tantivy_doc_id_lookup(&reader, &fields, None).unwrap();
+        let merged = build_tantivy_doc_id_lookup(&reader.searcher(), &fields, Some(&deleted)).unwrap();
+        let rebuilt = build_tantivy_doc_id_lookup(&reader.searcher(), &fields, None).unwrap();
         assert_eq!(merged.segment_ids.len(), 1);
         assert_eq!(merged.doc_ids_by_segment, rebuilt.doc_ids_by_segment);
         assert_eq!(merged.doc_ids_by_segment[0].len(), 11);
@@ -158269,7 +161598,7 @@ mod tests {
         drop(deleted);
         assert_eq!(merged.doc_ids_by_segment, rebuilt.doc_ids_by_segment);
         let missing_field =
-            build_tantivy_doc_id_lookup(&reader, &BTreeMap::new(), Some(&merged)).unwrap();
+            build_tantivy_doc_id_lookup(&reader.searcher(), &BTreeMap::new(), Some(&merged)).unwrap();
         assert!(missing_field.segment_ids.is_empty());
         assert!(missing_field.doc_ids_by_segment.is_empty());
     }
@@ -158500,6 +161829,53 @@ mod tests {
     }
 
     #[test]
+    fn bool_scoring_rejects_unattainable_should_minimum() {
+        let engine = TantivyEngine::default();
+        engine.create_index(CreateIndexRequest {
+            index: "should-minimum".to_string(),
+            settings: serde_json::json!({}),
+            mappings: serde_json::json!({}),
+        }).unwrap();
+        engine.index_document(IndexDocumentRequest {
+            index: "should-minimum".to_string(),
+            id: "1".to_string(),
+            source: serde_json::json!({"service": "checkout"}),
+        }).unwrap();
+        engine.refresh(RefreshRequest { indices: vec!["should-minimum".to_string()] }).unwrap();
+        let store = engine.store.read().unwrap();
+        let index = &store.indices["should-minimum"];
+        let document = index.documents.values().next().unwrap();
+        for (value, expected_score) in [
+            (serde_json::json!({"bool": {"should": [{"match_all": {}}], "minimum_should_match": 2}}), None),
+            (serde_json::json!({"bool": {"must": [{"match_all": {}}], "should": [{"match_all": {}}], "minimum_should_match": 2}}), None),
+            (serde_json::json!({"bool": {"filter": [{"match_all": {}}], "minimum_should_match": 1}}), None),
+            (serde_json::json!({"bool": {"must": [{"match_all": {}}], "minimum_should_match": 1}}), None),
+            (serde_json::json!({"bool": {"must_not": [{"match_none": {}}], "minimum_should_match": 1}}), Some(0.0f32)),
+            (serde_json::json!({"bool": {"should": [{"match_all": {}}, {"match_none": {}}], "minimum_should_match": 2}}), None),
+            (serde_json::json!({"bool": {"should": [{"match_all": {}}, {"match_all": {}}], "minimum_should_match": 2}}), Some(2.0)),
+            (serde_json::json!({"bool": {"should": [{"match_all": {}}], "minimum_should_match": 1}}), Some(1.0)),
+            (serde_json::json!({"bool": {"minimum_should_match": 2}}), Some(1.0)),
+            (serde_json::json!({"bool": {"filter": [{"match_all": {}}], "minimum_should_match": 0}}), Some(0.0)),
+        ] {
+            let expected = expected_score.is_some();
+            let query = parse_query(&value).unwrap();
+            assert_eq!(document_matches_query(&query, "1", &document.source), expected, "predicate: {value}");
+            assert_eq!(document_matches_query_for_candidate_reduction(&query, "1", document), expected, "candidate predicate: {value}");
+            assert_eq!(index.reduced_candidate_ids_for_query("should-minimum", &query).unwrap().contains("1"), expected, "candidate ids: {value}");
+            let excluded = parse_query(&serde_json::json!({"bool": {"must_not": [value.clone()]}})).unwrap();
+            assert_eq!(document_matches_query_for_candidate_reduction(&excluded, "1", document), !expected, "exclusion predicate: {value}");
+            if !expected {
+                assert!(index.reduced_candidate_ids_for_query("should-minimum", &excluded).unwrap().contains("1"), "exclusion must not lose a matching document: {value}");
+            }
+            assert_eq!(index.score_document_query_with_bm25_context(&excluded, document, &mut Bm25Context::default()).unwrap().is_some(), !expected, "exclusion scoring: {value}");
+            let Query::Bool { clauses } = query else { panic!("expected bool") };
+            assert_eq!(index.score_bool_query_with_bm25_context(
+                &clauses, document, &mut Bm25Context::default(),
+            ).unwrap().map(f32::to_bits), expected_score.map(f32::to_bits), "scoring: {value}");
+        }
+    }
+
+    #[test]
     fn bool_should_accumulation_preserves_scores_and_error_precedence() {
         let engine = TantivyEngine::default();
         engine
@@ -158533,7 +161909,7 @@ mod tests {
         let reference = |clauses: &BoolQuery,
                          document: &StoredDocument|
          -> EngineResult<Option<f32>> {
-            let mut context = BTreeMap::new();
+            let mut context = Bm25Context::default();
             let mut score = 0.0;
             for query in &clauses.must {
                 let Some(value) =
@@ -158567,8 +161943,7 @@ mod tests {
                 })
                 .collect::<EngineResult<Vec<_>>>()?;
             let count = should.iter().filter(|score| score.is_some()).count() as u32;
-            let required =
-                effective_bool_minimum_should_match(clauses).min(clauses.should.len() as u32);
+            let required = effective_bool_minimum_should_match(clauses);
             if count < required {
                 return Ok(None);
             }
@@ -158612,7 +161987,7 @@ mod tests {
                             .score_bool_query_with_bm25_context(
                                 &clauses,
                                 document,
-                                &mut BTreeMap::new(),
+                                &mut Bm25Context::default(),
                             )
                             .map(|score| score.map(f32::to_bits))
                             .map_err(|error| error.to_string());
@@ -158673,6 +162048,260 @@ mod tests {
             StoredIndex::native_nested_candidate_ids_from_index(&index, 2, "comments", &absent,),
             Some(BTreeSet::new())
         );
+    }
+
+    #[test]
+    fn native_nested_candidate_set_merge_preserves_scopes_and_visibility() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "nested-set-merge".to_string(),
+                settings: serde_json::json!({"number_of_shards": 3}),
+                mappings: serde_json::json!({"properties": {"events": {"type": "nested"}}}),
+            })
+            .unwrap();
+        for id in 0..24 {
+            let kind = if id % 2 == 0 { "payment" } else { "cache" };
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "nested-set-merge".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({"events": [
+                        {"kind": kind, "status": "accepted"},
+                        {"kind": kind, "status": "accepted"}
+                    ]}),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["nested-set-merge".to_string()],
+            })
+            .unwrap();
+        engine
+            .index_document(IndexDocumentRequest {
+                index: "nested-set-merge".to_string(),
+                id: "pending".to_string(),
+                source: serde_json::json!({"events": [{"kind": "payment", "status": "accepted"}]}),
+            })
+            .unwrap();
+        let query = parse_query(&serde_json::json!({"bool": {"must": [
+            {"term": {"events.kind": "payment"}},
+            {"term": {"events.status": "accepted"}}
+        ]}}))
+        .unwrap();
+        let store = engine.store.read().unwrap();
+        let index = &store.indices["nested-set-merge"];
+        for selected in [
+            None,
+            Some(BTreeSet::from([0])),
+            Some(BTreeSet::from([1, 2])),
+            Some(BTreeSet::from([0, 1, 2])),
+            Some(BTreeSet::new()),
+        ] {
+            let expected = index
+                .documents
+                .shards
+                .iter()
+                .filter(|(id, _)| selected.as_ref().map_or(true, |ids| ids.contains(id)))
+                .flat_map(|(_, shard)| shard.refreshed_documents_by_id.values())
+                .filter(|document| document.source["events"][0]["kind"] == "payment")
+                .map(|document| document.metadata.id.as_str())
+                .collect::<BTreeSet<_>>();
+            let actual =
+                index.native_nested_candidate_ids_scoped("events", &query, selected.as_ref());
+            assert_eq!(actual, expected, "selected={selected:?}");
+            assert!(!actual.contains("pending"));
+        }
+    }
+
+    #[test]
+    fn nested_bool_candidates_and_pages_preserve_child_boolean_semantics() {
+        let engine = TantivyEngine::default();
+        engine.create_index(CreateIndexRequest {
+            index: "nested-bool".to_string(),
+            settings: serde_json::json!({"number_of_shards": 3}),
+            mappings: serde_json::json!({"properties": {"events": {"type": "nested", "properties": {
+                "kind": {"type": "keyword"}, "status": {"type": "keyword"}
+            }}}}),
+        }).unwrap();
+        for (id, events) in [
+            (
+                "a",
+                serde_json::json!([{"kind": "payment", "status": "blocked"}]),
+            ),
+            (
+                "b",
+                serde_json::json!([{"kind": "payment", "status": "accepted"}]),
+            ),
+            (
+                "c",
+                serde_json::json!([{"kind": "cache", "status": "accepted"}]),
+            ),
+            (
+                "d",
+                serde_json::json!([{"kind": "payment", "status": "blocked"}, {"kind": "cache", "status": "accepted"}]),
+            ),
+            (
+                "e",
+                serde_json::json!([{"kind": "payment", "status": "accepted"}, {"kind": "payment", "status": "accepted"}]),
+            ),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "nested-bool".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({"events": events}),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["nested-bool".to_string()],
+            })
+            .unwrap();
+        engine
+            .index_document(IndexDocumentRequest {
+                index: "nested-bool".to_string(),
+                id: "pending".to_string(),
+                source: serde_json::json!({"events": [{"kind": "payment", "status": "accepted"}]}),
+            })
+            .unwrap();
+        let payment = serde_json::json!({"term": {"events.kind": "payment"}});
+        let blocked = serde_json::json!({"term": {"events.status": "blocked"}});
+        let accepted = serde_json::json!({"term": {"events.status": "accepted"}});
+        let cases = [
+            (
+                serde_json::json!({"must": [payment]}),
+                vec!["a", "b", "d", "e"],
+            ),
+            (
+                serde_json::json!({"must": [payment], "must_not": [blocked]}),
+                vec!["b", "e"],
+            ),
+            (
+                serde_json::json!({"must": [payment], "should": [accepted], "minimum_should_match": 1}),
+                vec!["b", "e"],
+            ),
+            (
+                serde_json::json!({"should": [payment], "must_not": [blocked]}),
+                vec!["b", "e"],
+            ),
+            (
+                serde_json::json!({"must_not": [blocked]}),
+                vec!["b", "c", "d", "e"],
+            ),
+            (
+                serde_json::json!({"must": [payment], "should": [payment, accepted], "minimum_should_match": 2}),
+                vec!["b", "e"],
+            ),
+            (
+                serde_json::json!({"must": [payment], "should": [accepted]}),
+                vec!["a", "b", "d", "e"],
+            ),
+            (
+                serde_json::json!({"should": [payment], "minimum_should_match": 2}),
+                vec![],
+            ),
+            (
+                serde_json::json!({"should": [payment, payment], "minimum_should_match": 2}),
+                vec!["a", "b", "d", "e"],
+            ),
+            (
+                serde_json::json!({"should": [payment], "minimum_should_match": 0}),
+                vec!["a", "b", "d", "e"],
+            ),
+            (serde_json::json!({}), vec!["a", "b", "c", "d", "e"]),
+            (serde_json::json!({"minimum_should_match": 1}), vec!["a", "b", "c", "d", "e"]),
+            (serde_json::json!({"must": [{"term": {"kind": "payment"}}]}), vec![]),
+            (serde_json::json!({"must_not": [{"term": {"status": "blocked"}}]}), vec!["a", "b", "c", "d", "e"]),
+            (
+                serde_json::json!({"must_not": [{"term": {"events.status": {"value": "BLOCKED", "case_insensitive": true}}}]}),
+                vec!["b", "c", "d", "e"],
+            ),
+            (
+                serde_json::json!({"must": [payment], "must_not": [{"term": {"events.status": "missing"}}]}),
+                vec!["a", "b", "d", "e"],
+            ),
+        ];
+        let store = engine.store.read().unwrap();
+        let index = &store.indices["nested-bool"];
+        for (clauses, expected) in cases {
+            let inner = parse_query(&serde_json::json!({"bool": clauses})).unwrap();
+            let query = Query::Nested {
+                path: "events".to_string(),
+                query: Box::new(inner.clone()),
+            };
+            let source_ids = index
+                .documents
+                .shards
+                .values()
+                .flat_map(|shard| shard.refreshed_documents_by_id.values())
+                .filter(|doc| {
+                    nested_query_matches_source(&doc.metadata.id, &doc.source, "events", &inner)
+                })
+                .map(|doc| doc.metadata.id.as_str())
+                .collect::<BTreeSet<_>>();
+            assert_eq!(
+                source_ids,
+                expected.iter().copied().collect(),
+                "source: {clauses}"
+            );
+            for selected in [
+                None,
+                Some(BTreeSet::from([0])),
+                Some(BTreeSet::from([1, 2])),
+                Some(BTreeSet::new()),
+            ] {
+                let expected_scoped = index
+                    .documents
+                    .shards
+                    .iter()
+                    .filter(|(id, _)| selected.as_ref().map_or(true, |ids| ids.contains(id)))
+                    .flat_map(|(_, shard)| shard.refreshed_documents_by_id.values())
+                    .map(|doc| doc.metadata.id.as_str())
+                    .filter(|id| expected.contains(id))
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                let actual =
+                    index.native_nested_candidate_ids_scoped("events", &inner, selected.as_ref());
+                assert_eq!(
+                    actual.into_iter().collect::<Vec<_>>(),
+                    expected_scoped,
+                    "candidates: {clauses}, {selected:?}"
+                );
+                for (from, size) in [(0, 0), (0, 10), (1, 1)] {
+                    let (total, hits) = index
+                        .search_hits_page_for_query_native_scoped(
+                            "nested-bool",
+                            selected.as_ref(),
+                            &query,
+                            &[],
+                            from,
+                            size,
+                        )
+                        .unwrap()
+                        .unwrap();
+                    assert_eq!(
+                        total as usize,
+                        expected_scoped.len(),
+                        "total: {clauses}, {selected:?}"
+                    );
+                    let expected_page = expected_scoped
+                        .iter()
+                        .skip(from)
+                        .take(size)
+                        .copied()
+                        .collect::<Vec<_>>();
+                    assert_eq!(
+                        search_hit_ids(&hits),
+                        expected_page,
+                        "page: {clauses}, {selected:?}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
@@ -168011,6 +171640,575 @@ mod tests {
                 }
             })
         );
+    }
+
+    #[test]
+    fn document_and_hit_aggregation_errors_are_not_empty_successes() {
+        let mut aggregations = parse_search_aggregation_map(&serde_json::json!({
+            "dates": {"date_histogram": {"field": "event_time", "calendar_interval": "day"}},
+            "terms": {"terms": {"field": "service"}}
+        })).unwrap();
+        let Aggregation::DateHistogram(dates) = aggregations.get_mut("dates").unwrap() else {
+            panic!("expected date histogram");
+        };
+        dates.interval = "unsupported".to_string();
+        let expected = collect_date_histogram_aggregation_from_documents(&[], dates).unwrap_err();
+        assert!(collect_simple_bucket_aggregations_from_documents(&[], &aggregations).unwrap().is_none());
+        assert_eq!(collect_aggregations_from_documents("logs", &[], &[], &aggregations), Err(expected.clone()));
+        for order in [PluginTopHitsInputOrder::CallerFinal, PluginTopHitsInputOrder::NeedsExplicitSort] {
+            assert_eq!(collect_aggregations_with_plugin_top_hits_input_order(&[], &[], &aggregations, order), Err(expected.clone()));
+            for background in [None, Some([].as_slice())] {
+                assert_eq!(collect_aggregations_with_plugin_top_hits_input_order_and_background(
+                    &[], &[], &aggregations, order, background,
+                ), Err(expected.clone()));
+            }
+        }
+    }
+
+    #[test]
+    fn fallible_adjacency_collection_stops_on_resource_error() {
+        use std::cell::Cell;
+        let entries = vec![("a".to_string(), Query::MatchAll), ("b".to_string(), Query::MatchAll)];
+        for stop_at in [1, 2, 3] {
+            let calls = Cell::new(0);
+            let expected = EngineError::TooManyBuckets { max_buckets: 1, bucket_count: 2 };
+            let result = try_collect_plugin_adjacency_matrix_bucket_values(&entries, "&", |_| {
+                calls.set(calls.get() + 1);
+                if calls.get() == stop_at { Err(expected.clone()) }
+                else { Ok(Some(serde_json::json!({"doc_count": 1}))) }
+            });
+            assert_eq!(result, Err(expected));
+            assert_eq!(calls.get(), stop_at);
+        }
+        let expected = collect_plugin_adjacency_matrix_bucket_values(&entries, "&", |_| Some(serde_json::json!({"doc_count": 1})));
+        let actual = try_collect_plugin_adjacency_matrix_bucket_values(&entries, "&", |_| Ok::<_, EngineError>(Some(serde_json::json!({"doc_count": 1})))).unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn intermediate_merges_defer_nested_pipelines_until_the_final_limit_check() {
+        let map = parse_search_aggregation_map(&serde_json::json!({"all": {"plugin": {
+            "name": "core", "kind": "global", "params": {"aggregations": {
+                "services": {"terms": {"field": "service", "size": 1}},
+                "computed": {"sum_bucket": {"buckets_path": "services>_count"}}
+            }}
+        }}})).unwrap();
+        let partial = serde_json::json!({"all": {"doc_count": 1,
+            "services": {"buckets": [{"key": "a", "doc_count": 1}]}
+        }});
+        let mut merged = serde_json::Map::new();
+        for _ in 0..2 {
+            merge_native_aggregation_response(&mut merged, &map, partial.clone(),
+                &BTreeMap::new(), &BTreeMap::new(), &BTreeMap::new());
+            assert!(merged["all"].get("computed").is_none());
+        }
+        let mut rejected = merged.clone();
+        assert!(finalize_checked_aggregation_response_with_limit(&mut rejected, &map, 0).is_err());
+        assert!(rejected["all"].get("computed").is_none());
+        finalize_checked_aggregation_response_with_limit(&mut merged, &map, 1).unwrap();
+        assert_eq!(merged["all"]["computed"]["value"], serde_json::json!(2.0));
+    }
+
+    #[test]
+    fn collectors_defer_pipeline_results_until_finalization() {
+        let child = serde_json::json!({
+            "services": {"terms": {"field": "service", "size": 1}},
+            "computed": {"sum_bucket": {"buckets_path": "services>_count"}}
+        });
+        for (request, pointer) in [
+            (child.clone(), ""),
+            (serde_json::json!({"all": {"plugin": {"name": "core", "kind": "global", "params": {"aggregations": child}}}}), "/all"),
+        ] {
+            let map = parse_search_aggregation_map(&request).unwrap();
+            let mut results = vec![collect_aggregations_from_documents("logs", &[], &[], &map).unwrap()];
+            for order in [PluginTopHitsInputOrder::CallerFinal, PluginTopHitsInputOrder::NeedsExplicitSort] {
+                results.push(collect_aggregations_with_plugin_top_hits_input_order(&[], &[], &map, order).unwrap());
+            }
+            for mut result in results {
+                assert!(result.pointer(pointer).unwrap().get("computed").is_none());
+                finalize_checked_aggregation_response(result.as_object_mut().unwrap(), &map).unwrap();
+                assert_eq!(result.pointer(pointer).unwrap()["computed"]["value"], serde_json::json!(0.0));
+            }
+        }
+    }
+
+    #[test]
+    fn pipeline_selection_and_phases_reach_public_single_and_multi_index_search() {
+        let engine = TantivyEngine::default();
+        for index in ["pipeline-a", "pipeline-b"] {
+            engine.create_index(CreateIndexRequest {
+                index: index.into(), settings: serde_json::json!({}),
+                mappings: serde_json::json!({"properties": {"service": {"type": "keyword"}}}),
+            }).unwrap();
+            for (id, service) in ["a", "a", "b"].into_iter().enumerate() {
+                engine.index_document(IndexDocumentRequest {
+                    index: index.into(), id: id.to_string(), source: serde_json::json!({"service": service}),
+                }).unwrap();
+            }
+        }
+        engine.refresh(RefreshRequest {indices: vec!["pipeline-a".into(), "pipeline-b".into()]}).unwrap();
+        let child = serde_json::json!({
+            "services": {"terms": {"field": "service", "size": 1}},
+            "a_total": {"sum_bucket": {"buckets_path": "services>_count"}},
+            "z_total": {"sum_bucket": {"buckets_path": "services>_count"}}
+        });
+        for indices in [vec!["pipeline-a".into()], vec!["pipeline-a".into(), "pipeline-b".into()]] {
+            for size in [0, 10] {
+                for (aggregations, pointer) in [
+                    (child.clone(), ""),
+                    (serde_json::json!({"all": {"plugin": {"name": "core", "kind": "global", "params": {"aggregations": child.clone()}}}}), "/all"),
+                ] {
+                    let result = engine.search(SearchRequest {
+                        indices: indices.clone(), query: serde_json::json!({"match_all": {}}),
+                        stored_fields: None, source_fields: None, source_filter: None,
+                        source_includes: None, source_include: None, source_excludes: None, source_exclude: None,
+                        aggregations, highlight: None, sort: Vec::new(), from: 0, size, explain: false,
+                    }).unwrap();
+                    let value = result.aggregations.pointer(pointer).unwrap();
+                    assert_eq!(value["services"]["buckets"].as_array().unwrap().len(), 1);
+                    for total in ["a_total", "z_total"] {
+                        assert_eq!(value[total]["value"], serde_json::json!((indices.len() * 2) as f64), "{indices:?}/{size}/{pointer}/{total}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn pipeline_phase_waits_for_the_whole_tree_bucket_limit() {
+        let children = serde_json::json!({
+            "groups": {"terms": {"field": "service", "size": 1}},
+            "computed": {"sum_bucket": {"buckets_path": "groups>_count"}}
+        });
+        let child_value = serde_json::json!({"doc_count": 3, "groups": {"buckets": [
+            {"key": "selected", "doc_count": 2}, {"key": "discarded", "doc_count": 1}
+        ]}});
+        for (kind, params, parent, limit, pointers) in [
+            ("global", serde_json::json!({"aggregations": children.clone()}), child_value.clone(), 1,
+                vec!["/parent"]),
+            ("filters", serde_json::json!({"filters": {"a": {"match_all": {}}, "b": {"match_all": {}}}, "aggregations": children.clone()}),
+                serde_json::json!({"buckets": {"a": child_value.clone(), "b": child_value.clone()}}), 4,
+                vec!["/parent/buckets/a", "/parent/buckets/b"]),
+            ("terms", serde_json::json!({"field": "parent", "size": 1, "aggregations": children}),
+                serde_json::json!({"buckets": [
+                    {"key": "a", "doc_count": 3, "groups": child_value["groups"].clone()},
+                    {"key": "b", "doc_count": 1, "groups": child_value["groups"].clone()}
+                ]}), 2, vec!["/parent/buckets/0"]),
+        ] {
+            let map = parse_search_aggregation_map(&serde_json::json!({"parent": {"plugin": {
+                "name": "core", "kind": kind, "params": params
+            }}})).unwrap();
+            let original = serde_json::json!({"parent": parent});
+            let mut rejected = original.clone();
+            assert!(matches!(finalize_checked_aggregation_response_with_limit(
+                rejected.as_object_mut().unwrap(), &map, limit - 1,
+            ), Err(EngineError::TooManyBuckets { .. })), "{kind}");
+            for pointer in &pointers {
+                assert!(rejected.pointer(pointer).unwrap().get("computed").is_none(), "pipeline ran before rejection: {kind}/{pointer}");
+            }
+            let mut accepted = original;
+            finalize_checked_aggregation_response_with_limit(accepted.as_object_mut().unwrap(), &map, limit).unwrap();
+            for pointer in &pointers {
+                assert_eq!(accepted.pointer(pointer).unwrap()["computed"]["value"], serde_json::json!(2.0), "{kind}/{pointer}");
+            }
+            if kind == "terms" {
+                for bucket in accepted["parent"]["_merge_buckets"].as_array().unwrap() {
+                    assert!(bucket.get("computed").is_none(), "carrier pipeline should not run");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn final_pipeline_uses_selected_terms_buckets_instead_of_merge_carriers() {
+        for terms in [
+            serde_json::json!({"terms": {"field": "service", "size": 1}}),
+            serde_json::json!({"plugin": {"name": "core", "kind": "terms", "params": {"field": "service", "size": 1}}}),
+        ] {
+            let map = parse_search_aggregation_map(&serde_json::json!({
+                "services": terms,
+                "a_total": {"sum_bucket": {"buckets_path": "services>_count"}},
+                "z_total": {"sum_bucket": {"buckets_path": "services>_count"}}
+            })).unwrap();
+            let mut response = serde_json::json!({"services": {"buckets": [
+                {"key": "selected", "doc_count": 2}, {"key": "discarded", "doc_count": 1}
+            ]}});
+            finalize_checked_aggregation_response(response.as_object_mut().unwrap(), &map).unwrap();
+            assert_eq!(response["services"]["buckets"].as_array().unwrap().len(), 1);
+            assert_eq!(response["services"]["_merge_buckets"].as_array().unwrap().len(), 2);
+            assert_eq!(response["a_total"]["value"], serde_json::json!(2.0));
+            assert_eq!(response["z_total"]["value"], serde_json::json!(2.0));
+        }
+        let keyed = serde_json::json!({"buckets": {"visible": {"doc_count": 2}},
+            "_merge_buckets": {"hidden": {"doc_count": 99}}});
+        assert_eq!(pipeline_bucket_values(&keyed), vec![serde_json::json!({"key": "visible", "doc_count": 2})]);
+        assert_eq!(pipeline_bucket_values(&serde_json::json!({"buckets": [], "_merge_buckets": [{}]})), Vec::<Value>::new());
+        assert_eq!(pipeline_bucket_values(&serde_json::json!({"_merge_buckets": [{"doc_count": 1}]})), vec![serde_json::json!({"doc_count": 1})]);
+    }
+
+    #[test]
+    fn final_bucket_budget_counts_visible_selected_children_not_carriers() {
+        let map = parse_search_aggregation_map(&serde_json::json!({
+            "services": {"plugin": {"name": "core", "kind": "terms", "params": {
+                "field": "service", "size": 1, "aggregations": {
+                    "dates": {"date_histogram": {"field": "event_time", "fixed_interval": "1m"}}
+                }
+            }}}
+        })).unwrap();
+        let mut response = serde_json::json!({"services": {"buckets": [
+            {"key": "a", "doc_count": 2, "dates": {"buckets": [{"key": 0, "doc_count": 1}, {"key": 60000, "doc_count": 1}]}},
+            {"key": "b", "doc_count": 1, "dates": {"buckets": [{"key": 0, "doc_count": 1}, {"key": 60000, "doc_count": 0}]}}
+        ]}});
+        let object = response.as_object_mut().unwrap();
+        finalize_selected_aggregation_buckets(object, &map);
+        assert_eq!(object["services"]["buckets"].as_array().unwrap().len(), 1);
+        assert_eq!(object["services"]["_merge_buckets"].as_array().unwrap().len(), 2);
+        assert_eq!(check_final_aggregation_bucket_count(object, &map, 3), Ok(()));
+        assert_eq!(check_final_aggregation_bucket_count(object, &map, 2), Err(EngineError::TooManyBuckets {
+            max_buckets: 2, bucket_count: 3,
+        }));
+    }
+
+    #[test]
+    fn final_bucket_budget_uses_dsl_and_counts_keyed_nested_buckets() {
+        let map = parse_search_aggregation_map(&serde_json::json!({
+            "buckets": {"sum": {"field": "value"}}, "documents": {"top_hits": {"size": 1}}
+        })).unwrap();
+        let response = serde_json::json!({
+            "buckets": {"value": 10, "buckets": [{}, {}]},
+            "documents": {"hits": {"hits": [{"_source": {"buckets": [{}, {}]}}]}}
+        });
+        assert_eq!(check_final_aggregation_bucket_count(response.as_object().unwrap(), &map, 0), Ok(()));
+        let map = parse_search_aggregation_map(&serde_json::json!({
+            "all": {"plugin": {"name": "core", "kind": "global", "params": {"aggregations": {
+                "groups": {"plugin": {"name": "core", "kind": "filters", "params": {
+                    "filters": {"a": {"match_all": {}}, "b": {"match_all": {}}},
+                    "aggregations": {"terms": {"terms": {"field": "service"}}}
+                }}}
+            }}}}
+        })).unwrap();
+        let response = serde_json::json!({"all": {"doc_count": 1, "groups": {"buckets": {
+            "a": {"doc_count": 1, "terms": {"buckets": [{"key": "a", "doc_count": 1}]}},
+            "b": {"doc_count": 1, "terms": {"buckets": [{"key": "b", "doc_count": 1}]}}
+        }}}});
+        assert_eq!(check_final_aggregation_bucket_count(response.as_object().unwrap(), &map, 4), Ok(()));
+        assert_eq!(check_final_aggregation_bucket_count(response.as_object().unwrap(), &map, 3), Err(EngineError::TooManyBuckets {
+            max_buckets: 3, bucket_count: 4,
+        }));
+    }
+
+    #[test]
+    fn final_bucket_budget_reaches_single_and_multi_index_search() {
+        let engine = TantivyEngine::default();
+        for index in ["final-limit-a", "final-limit-b"] {
+            engine.create_index(CreateIndexRequest {
+                index: index.into(), settings: serde_json::json!({}),
+                mappings: serde_json::json!({"properties": {"value": {"type": "double"}}}),
+            }).unwrap();
+            engine.index_document(IndexDocumentRequest {
+                index: index.into(), id: "1".into(), source: serde_json::json!({"value": 0.5}),
+            }).unwrap();
+        }
+        engine.refresh(RefreshRequest {indices: vec!["final-limit-a".into(), "final-limit-b".into()]}).unwrap();
+        let ranges = (0..32_768).map(|i| serde_json::json!({"from": i, "to": i + 1})).collect::<Vec<_>>();
+        let range = serde_json::json!({"range": {"field": "value", "ranges": ranges}});
+        for indices in [vec!["final-limit-a".into()], vec!["final-limit-a".into(), "final-limit-b".into()]] {
+            for size in [0, 10] {
+                let error = engine.search(SearchRequest {
+                    indices: indices.clone(), query: serde_json::json!({"match_all": {}}),
+                    stored_fields: None, source_fields: None, source_filter: None,
+                    source_includes: None, source_include: None, source_excludes: None, source_exclude: None,
+                    aggregations: serde_json::json!({"first": range.clone(), "second": range.clone()}),
+                    highlight: None, sort: Vec::new(), from: 0, size, explain: false,
+                }).unwrap_err();
+                assert_eq!(error, EngineError::TooManyBuckets {max_buckets: 65_535, bucket_count: 65_536}, "{indices:?}/{size}");
+            }
+        }
+    }
+
+    #[test]
+    fn shared_date_budget_reaches_document_hit_and_nested_collectors() {
+        let date = serde_json::json!({"date_histogram": {
+            "field": "event_time", "fixed_interval": "1m",
+            "extended_bounds": {"min": 0, "max": 60_000}
+        }});
+        let siblings = serde_json::json!({"first": date.clone(), "second": date});
+        let global = serde_json::json!({"all": {"plugin": {"name": "core", "kind": "global",
+            "params": {"aggregations": siblings.clone()}
+        }}});
+        for value in [siblings, global] {
+            let aggregations = parse_search_aggregation_map(&value).unwrap();
+            let expected = Err(EngineError::TooManyBuckets { max_buckets: 3, bucket_count: 4 });
+            assert_eq!(collect_aggregations_from_documents_with_budget(
+                "logs", &[], &[], &aggregations, &BucketAllocationBudget::new(3),
+            ), expected, "document/{value}");
+            assert!(collect_aggregations_from_documents_with_budget(
+                "logs", &[], &[], &aggregations, &BucketAllocationBudget::new(4),
+            ).is_ok());
+            for order in [PluginTopHitsInputOrder::CallerFinal, PluginTopHitsInputOrder::NeedsExplicitSort] {
+                for background in [None, Some([].as_slice())] {
+                    assert_eq!(collect_aggregations_with_plugin_top_hits_input_order_and_background_with_budget(
+                        &[], &[], &aggregations, order, background, &BucketAllocationBudget::new(3),
+                    ), expected, "hit/{value}");
+                    assert!(collect_aggregations_with_plugin_top_hits_input_order_and_background_with_budget(
+                        &[], &[], &aggregations, order, background, &BucketAllocationBudget::new(4),
+                    ).is_ok());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn shared_date_budget_rejects_sibling_and_terms_bucket_totals_in_search() {
+        let engine = TantivyEngine::default();
+        engine.create_index(CreateIndexRequest {
+            index: "shared-date-budget".into(), settings: serde_json::json!({}),
+            mappings: serde_json::json!({"properties": {"event_time": {"type": "date"}, "service": {"type": "keyword"}}}),
+        }).unwrap();
+        for service in ["a", "b"] {
+            engine.index_document(IndexDocumentRequest {
+                index: "shared-date-budget".into(), id: service.into(),
+                source: serde_json::json!({"event_time": "1970-01-01T00:00:00Z", "service": service}),
+            }).unwrap();
+        }
+        engine.refresh(RefreshRequest {indices: vec!["shared-date-budget".into()]}).unwrap();
+        let date = serde_json::json!({"date_histogram": {
+            "field": "event_time", "fixed_interval": "1m",
+            "extended_bounds": {"min": 0, "max": 1_966_020_000_i64}
+        }});
+        let siblings = serde_json::json!({"first": date.clone(), "second": date.clone()});
+        for aggregations in [
+            siblings.clone(),
+            serde_json::json!({"all": {"plugin": {"name": "core", "kind": "global", "params": {"aggregations": siblings}}}}),
+            serde_json::json!({"services": {"plugin": {"name": "core", "kind": "terms", "params": {
+                "field": "service", "aggregations": {"dates": date}
+            }}}}),
+        ] {
+            for size in [0, 10] {
+                let error = engine.search(SearchRequest {
+                    indices: vec!["shared-date-budget".into()], query: serde_json::json!({"match_all": {}}),
+                    stored_fields: None, source_fields: None, source_filter: None,
+                    source_includes: None, source_include: None, source_excludes: None, source_exclude: None,
+                    aggregations: aggregations.clone(), highlight: None, sort: Vec::new(), from: 0, size, explain: false,
+                }).unwrap_err();
+                assert_eq!(error, EngineError::TooManyBuckets {max_buckets: 65_535, bucket_count: 65_536});
+            }
+        }
+    }
+
+    #[test]
+    fn date_bucket_generation_guard_preflights_wide_and_bounded_ranges() {
+        for count in [0, 65_534, 65_535] { BucketAllocationBudget::default().consume(count).unwrap(); }
+        assert_eq!(BucketAllocationBudget::default().consume(65_536), Err(EngineError::TooManyBuckets { max_buckets: 65_535, bucket_count: 65_536 }));
+        let parsed = parse_search_aggregation_map(&serde_json::json!({
+            "dates": {"date_histogram": {"field": "event_time", "calendar_interval": "minute", "format": "epoch_millis"}}
+        })).unwrap();
+        let Aggregation::DateHistogram(template) = &parsed["dates"] else { panic!("expected date histogram") };
+        let counts = BTreeMap::from([
+            (-60_000, ("first".to_string(), 1)),
+            (i64::MAX - 60_000, ("last".to_string(), 1)),
+        ]);
+        assert!(matches!(date_histogram_bucket_values_from_counts(&counts, template), Err(EngineError::TooManyBuckets { .. })));
+        let mut bounded = template.clone();
+        bounded.hard_bounds = Some(os_query_dsl::DateHistogramBounds {
+            min: Some("1970-01-01T00:00:00Z".into()), max: Some("1970-01-01T00:01:00Z".into()),
+        });
+        assert_eq!(date_histogram_bucket_values_from_counts(&counts, &bounded).unwrap(), vec![
+            date_histogram_bucket_value(0, "0".into(), 0),
+            date_histogram_bucket_value(60_000, "60000".into(), 0),
+        ]);
+        for (min, max) in [(serde_json::json!(0), serde_json::json!(60000)), (serde_json::json!("0"), serde_json::json!("60000"))] {
+            let mut numeric = bounded.clone();
+            numeric.hard_bounds = Some(os_query_dsl::DateHistogramBounds {min: Some(min), max: Some(max)});
+            assert_eq!(date_histogram_bucket_values_from_counts(&counts, &numeric).unwrap(), date_histogram_bucket_values_from_counts(&counts, &bounded).unwrap());
+        }
+        bounded.hard_bounds.as_mut().unwrap().min = Some("1970-01-01T00:02:00Z".into());
+        assert!(date_histogram_bucket_values_from_counts(&counts, &bounded).unwrap().is_empty());
+    }
+
+    #[test]
+    fn date_bucket_generation_guard_reaches_public_engine_search() {
+        let engine = TantivyEngine::default();
+        engine.create_index(CreateIndexRequest {
+            index: "date-limit".into(), settings: serde_json::json!({}),
+            mappings: serde_json::json!({"properties": {"event_time": {"type": "date"}, "service": {"type": "keyword"}}}),
+        }).unwrap();
+        engine.index_document(IndexDocumentRequest {
+            index: "date-limit".into(), id: "1".into(),
+            source: serde_json::json!({"event_time": "1970-01-01T00:00:00Z", "service": "a"}),
+        }).unwrap();
+        engine.refresh(RefreshRequest {indices: vec!["date-limit".into()]}).unwrap();
+        let dates = serde_json::json!({"dates": {"date_histogram": {
+            "field": "event_time", "calendar_interval": "minute",
+            "extended_bounds": {"min": "1970-01-01T00:00:00Z", "max": "1970-02-15T12:15:00Z"}
+        }}});
+        let mut numeric_dates = dates.clone();
+        numeric_dates["dates"]["date_histogram"]["extended_bounds"] = serde_json::json!({"min": 0, "max": 3_932_100_000_i64});
+        let mut string_dates = dates.clone();
+        string_dates["dates"]["date_histogram"]["format"] = serde_json::json!("epoch_millis");
+        string_dates["dates"]["date_histogram"]["extended_bounds"] = serde_json::json!({"min": "0", "max": "3932100000"});
+        for aggregations in [
+            dates.clone(),
+            serde_json::json!({"all": {"plugin": {"name": "core", "kind": "global", "params": {"aggregations": dates.clone()}}}}),
+            serde_json::json!({"services": {"plugin": {"name": "core", "kind": "terms", "params": {"field": "service", "aggregations": dates.clone()}}}}),
+            numeric_dates.clone(),
+            serde_json::json!({"all": {"plugin": {"name": "core", "kind": "global", "params": {"aggregations": numeric_dates.clone()}}}}),
+            serde_json::json!({"services": {"plugin": {"name": "core", "kind": "terms", "params": {"field": "service", "aggregations": numeric_dates}}}}),
+            string_dates,
+        ] {
+            for size in [0, 10] {
+                let error = engine.search(SearchRequest {
+                    indices: vec!["date-limit".into()], query: serde_json::json!({"match_all": {}}),
+                    stored_fields: None, source_fields: None, source_filter: None,
+                    source_includes: None, source_include: None, source_excludes: None, source_exclude: None,
+                    aggregations: aggregations.clone(), highlight: None, sort: Vec::new(), from: 0, size, explain: false,
+                }).unwrap_err();
+                assert_eq!(error, EngineError::TooManyBuckets {max_buckets: 65_535, bucket_count: 65_536}, "{aggregations}/{size}");
+                assert_eq!(error.status_code(), 503);
+            }
+        }
+    }
+
+    #[test]
+    fn date_histogram_sparse_positive_counts_match_dense_reference() {
+        let parsed = parse_search_aggregation_map(&serde_json::json!({
+            "dates": {"date_histogram": {"field": "event_time", "calendar_interval": "minute"}}
+        })).unwrap();
+        let Aggregation::DateHistogram(template) = &parsed["dates"] else { panic!("expected date histogram") };
+        for keys in [vec![], vec![-120_000, -60_000, 0, 120_000], vec![-120_001, -60_000, 0, 60_001, 180_000]] {
+            let counts: BTreeMap<_, _> = keys.iter().enumerate()
+                .map(|(i, key)| (*key, (format!("stored-{key}"), i as u64 % 4))).collect();
+            for interval in ["minute", "hour", "day", "week", "month", "year"] {
+                for (zone, offset) in [
+                    (None, 0),
+                    (Some("+01:00"), 30_000),
+                    (Some("-03:30"), -30_000),
+                    (Some("invalid-zone"), 0),
+                ] {
+                    for extended in [false, true] {
+                        for hard in [false, true] {
+                            let mut aggregation = template.clone();
+                            aggregation.interval = interval.to_string();
+                            aggregation.time_zone = zone.map(str::to_string);
+                            aggregation.offset_millis = offset;
+                            aggregation.format = Some("epoch_millis".to_string());
+                            let bounds = os_query_dsl::DateHistogramBounds {
+                                min: Some("1969-12-31T23:59:00Z".into()), max: Some("1970-01-01T00:01:00Z".into()),
+                            };
+                            aggregation.extended_bounds = extended.then(|| os_query_dsl::DateHistogramBounds {
+                                min: Some("1969-12-31T23:57:00Z".into()), max: Some("1970-01-01T00:04:00Z".into()),
+                            });
+                            aggregation.hard_bounds = hard.then_some(bounds);
+                            aggregation.min_doc_count = 0;
+                            let dense = date_histogram_bucket_values_from_counts(&counts, &aggregation).unwrap();
+                            for minimum in 1..=4 {
+                                aggregation.min_doc_count = minimum;
+                                let expected: Vec<_> = dense.iter().filter(|bucket|
+                                    bucket["doc_count"].as_u64().unwrap() >= minimum).cloned().collect();
+                                assert_eq!(date_histogram_bucket_values_from_counts(&counts, &aggregation).unwrap(),
+                                    expected, "{keys:?}/{interval}/{zone:?}/{offset}/{extended}/{hard}/{minimum}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn date_histogram_sparse_positive_counts_handle_extreme_gaps() {
+        let parsed = parse_search_aggregation_map(&serde_json::json!({
+            "dates": {"date_histogram": {"field": "event_time", "calendar_interval": "minute", "min_doc_count": 1}}
+        })).unwrap();
+        let Aggregation::DateHistogram(aggregation) = &parsed["dates"] else { panic!("expected date histogram") };
+        let first = i64::MIN + 1;
+        // Span both signs without overflowing the grid-distance calculation.
+        let last = i64::try_from(i128::from(first)
+            + ((i128::from(i64::MAX) - i128::from(first)) / 60_000 * 60_000)).unwrap();
+        let counts = BTreeMap::from([
+            (first, ("first".to_string(), 1)),
+            (last, ("last".to_string(), 2)),
+        ]);
+        let buckets = date_histogram_bucket_values_from_counts(&counts, aggregation).unwrap();
+        assert_eq!(buckets.len(), 2);
+        assert_eq!(buckets[0]["key"], serde_json::json!(first));
+        assert_eq!(buckets[1]["key"], serde_json::json!(last));
+    }
+
+    #[test]
+    fn prepared_date_histogram_rounding_preserves_boundaries() {
+        for (interval, offset, zone, epoch, expected) in [
+            ("day", 0, None, 0, Some(0)),
+            ("1d", 0, None, -1, Some(-86_400_000)),
+            ("hour", 0, None, 3_600_001, Some(3_600_000)),
+            ("minute", 0, None, -1, Some(-60_000)),
+            ("day", 3_600_000, None, 0, Some(-82_800_000)),
+            ("day", 0, Some("+01:00"), 0, Some(-3_600_000)),
+            ("week", 0, None, 0, Some(-259_200_000)),
+            ("month", 0, None, 0, Some(0)),
+            ("year", 0, None, 0, Some(0)),
+            ("day", 0, Some("+01:00"), i64::MAX, None),
+            ("day", 1, None, i64::MIN, None),
+        ] {
+            let prepared = PreparedDateHistogramRounding::new(interval, offset, zone).unwrap();
+            assert_eq!(prepared.bucket_key(epoch), expected, "{interval}/{offset}/{zone:?}/{epoch}");
+        }
+        assert!(PreparedDateHistogramRounding::new("unsupported", 0, None).is_none());
+        assert!(PreparedDateHistogramRounding::new("day", 0, Some("invalid-zone")).is_none());
+    }
+
+    #[test]
+    fn prepared_date_histogram_matches_general_collector() {
+        let engine = TantivyEngine::default();
+        engine.create_index(CreateIndexRequest {
+            index: "prepared-date".to_string(), settings: serde_json::json!({}),
+            mappings: serde_json::json!({"properties": {"event_time": {"type": "date"}}}),
+        }).unwrap();
+        for (id, source) in [
+            ("old", serde_json::json!({"event_time": "1969-12-31T23:59:59Z"})),
+            ("epoch", serde_json::json!({"event_time": "1970-01-01T00:00:00Z"})),
+            ("leap", serde_json::json!({"event_time": "2024-02-29T23:59:59Z"})),
+            ("missing", serde_json::json!({})),
+        ] {
+            engine.index_document(IndexDocumentRequest {
+                index: "prepared-date".to_string(), id: id.to_string(), source,
+            }).unwrap();
+        }
+        let store = engine.store.read().unwrap();
+        let compact_documents = [
+            &store.indices["prepared-date"].documents["old"],
+            &store.indices["prepared-date"].documents["epoch"],
+            &store.indices["prepared-date"].documents["missing"],
+        ];
+        let modern_documents = [
+            &store.indices["prepared-date"].documents["leap"],
+            &store.indices["prepared-date"].documents["missing"],
+        ];
+        // Exercise empty buckets without traversing decades of minute buckets.
+        for (documents, min_doc_count) in [
+            (compact_documents.as_slice(), 0), (compact_documents.as_slice(), 1),
+            (modern_documents.as_slice(), 0), (modern_documents.as_slice(), 1),
+        ] {
+        for interval in ["minute", "1m", "hour", "1h", "day", "1d", "week", "1w", "month", "1M", "year", "1y"] {
+            for zone in [None, Some("+01:00"), Some("-03:30"), Some("invalid-zone")] {
+                for offset in [-3_600_000, 0, 3_600_000] {
+                    let mut aggregations = parse_search_aggregation_map(&serde_json::json!({
+                        "dates": {"date_histogram": {"field": "event_time", "calendar_interval": "day", "min_doc_count": min_doc_count}}
+                    })).unwrap();
+                    let Aggregation::DateHistogram(aggregation) = aggregations.get_mut("dates").unwrap() else {
+                        panic!("expected date histogram");
+                    };
+                    aggregation.interval = interval.to_string();
+                    aggregation.time_zone = zone.map(str::to_string);
+                    aggregation.offset_millis = offset;
+                    let expected = collect_date_histogram_aggregation_from_documents(documents, aggregation).unwrap();
+                    let actual = collect_simple_bucket_aggregations_from_documents(documents, &aggregations).unwrap()
+                        .expect("scalar date fields must use the prepared path");
+                    assert_eq!(actual["dates"], expected, "{interval}/{zone:?}/{offset}/{min_doc_count}");
+                }
+            }
+        }
+        }
     }
 
     #[test]

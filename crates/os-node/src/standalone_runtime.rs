@@ -1,4 +1,6 @@
 use crate::alias_mutation_route_registration;
+#[path = "source_bm25.rs"]
+mod source_bm25;
 use crate::alias_read_route_registration;
 use crate::allocation_explain_route_registration;
 use crate::cluster_settings_route_registration;
@@ -30,13 +32,14 @@ use base64::Engine as _;
 use bytes::BytesMut;
 use os_core::version::OPENSEARCH_3_7_0_TRANSPORT;
 use os_core::Version;
+use os_core::index_routing::IndexRouting;
 use os_engine::{
     persist_shard_manifest, shard_manifest_checksum, CreateIndexRequest, DeleteDocumentRequest,
     EngineError, IndexDocumentRequest, IndexEngine, RefreshRequest, ReplayDocumentRequest,
     SearchRequest, SearchResponse, SearchShardStats, ShardManifest, SortOrder, SortScript,
     SortSpec, WriteCoordinationMetadata, SHARD_MANIFEST_FILE_NAME,
 };
-use os_engine_tantivy::TantivyEngine;
+use os_engine_tantivy::{MultiFieldSource, TantivyEngine};
 use os_node_rest_core::{
     parse_authentication_users_json, AuthenticationServiceAccount, AuthenticationUser,
     AuthenticationUsersFile, RestServerConfig,
@@ -1534,19 +1537,31 @@ fn parse_csv_values(value: &str) -> Vec<String> {
         .collect()
 }
 
-fn security_authentication_users_file() -> Result<AuthenticationUsersFile, String> {
-    if let Ok(path) = env::var("SECURITY_AUTHENTICATION_USERS_FILE") {
+fn security_authentication_users_file(
+    configured_path: Option<&Path>,
+) -> Result<AuthenticationUsersFile, String> {
+    let legacy_path = env::var_os("SECURITY_AUTHENTICATION_USERS_FILE").map(PathBuf::from);
+    if let Some(path) = configured_path.or(legacy_path.as_deref()) {
         let raw = fs::read_to_string(&path).map_err(|error| {
-            format!("unable to read authentication users file [{path}]: {error}")
+            format!(
+                "unable to read authentication users file [{}]: {error}",
+                path.display()
+            )
         })?;
-        return parse_authentication_users_json(&raw)
-            .map_err(|error| format!("invalid authentication users file [{path}]: {error}"));
+        return parse_authentication_users_json(&raw).map_err(|error| {
+            format!(
+                "invalid authentication users file [{}]: {error}",
+                path.display()
+            )
+        });
     }
     Ok(security_authentication_users_file_from_env())
 }
 
-fn security_expected_basic_credentials() -> Result<Vec<(String, String)>, String> {
-    let users_file = security_authentication_users_file()?;
+fn security_expected_basic_credentials(
+    configured_path: Option<&Path>,
+) -> Result<Vec<(String, String)>, String> {
+    let users_file = security_authentication_users_file(configured_path)?;
     let mut credentials = users_file
         .users
         .into_iter()
@@ -1568,9 +1583,10 @@ struct SecuritySubject {
     tenants: Vec<String>,
 }
 
-fn security_basic_credentials_with_roles() -> Result<Vec<(String, String, SecuritySubject)>, String>
-{
-    let users_file = security_authentication_users_file()?;
+fn security_basic_credentials_with_roles(
+    configured_path: Option<&Path>,
+) -> Result<Vec<(String, String, SecuritySubject)>, String> {
+    let users_file = security_authentication_users_file(configured_path)?;
     let mut credentials = users_file
         .users
         .into_iter()
@@ -1718,44 +1734,49 @@ fn unsupported_security_plugin_api_response(path: &str) -> RestResponse {
     )
 }
 
-fn authenticated_security_subject(
-    request: &RestRequest,
-) -> Result<Option<SecuritySubject>, RestResponse> {
-    if !security_profile_enabled() {
-        return Ok(None);
+impl SteelNode {
+    fn authenticated_security_subject(
+        &self,
+        request: &RestRequest,
+    ) -> Result<Option<SecuritySubject>, RestResponse> {
+        if !security_profile_enabled() {
+            return Ok(None);
+        }
+        let Some(header_value) = request
+            .headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+            .map(|(_, value)| value.as_str())
+        else {
+            return Err(unauthorized_security_response(format!(
+                "missing authentication credentials for REST request [{}]",
+                request.path
+            )));
+        };
+        let Some((username, password)) = decode_basic_authorization_credentials(header_value)
+        else {
+            return Err(unauthorized_security_response(format!(
+                "unable to authenticate user for REST request [{}]",
+                request.path
+            )));
+        };
+        let credentials =
+            security_basic_credentials_with_roles(self.authentication_users_path.as_deref())
+                .map_err(unauthorized_security_response)?;
+        let Some((_, _, subject)) =
+            credentials
+                .into_iter()
+                .find(|(expected_username, expected_password, _)| {
+                    *expected_username == username && *expected_password == password
+                })
+        else {
+            return Err(unauthorized_security_response(format!(
+                "unable to authenticate user [{}] for REST request [{}]",
+                username, request.path
+            )));
+        };
+        Ok(Some(subject))
     }
-    let Some(header_value) = request
-        .headers
-        .iter()
-        .find(|(name, _)| name.eq_ignore_ascii_case("authorization"))
-        .map(|(_, value)| value.as_str())
-    else {
-        return Err(unauthorized_security_response(format!(
-            "missing authentication credentials for REST request [{}]",
-            request.path
-        )));
-    };
-    let Some((username, password)) = decode_basic_authorization_credentials(header_value) else {
-        return Err(unauthorized_security_response(format!(
-            "unable to authenticate user for REST request [{}]",
-            request.path
-        )));
-    };
-    let credentials =
-        security_basic_credentials_with_roles().map_err(unauthorized_security_response)?;
-    let Some((_, _, subject)) =
-        credentials
-            .into_iter()
-            .find(|(expected_username, expected_password, _)| {
-                *expected_username == username && *expected_password == password
-            })
-    else {
-        return Err(unauthorized_security_response(format!(
-            "unable to authenticate user [{}] for REST request [{}]",
-            username, request.path
-        )));
-    };
-    Ok(Some(subject))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1775,31 +1796,34 @@ fn security_role_has_permission(role: Option<&str>, permission: SecurityPermissi
     }
 }
 
-fn require_security_permission(
-    request: &RestRequest,
-    permission: SecurityPermission,
-    route_family: &str,
-) -> Result<Option<&'static str>, RestResponse> {
-    let subject = authenticated_security_subject(request)?;
-    let role = subject.as_ref().map(|subject| subject.role);
-    if !security_role_has_permission(role, permission) {
-        return Err(forbidden_security_response(format!(
-            "role [{}] has no permissions for {route_family} request [{}]",
-            role.unwrap_or("anonymous"),
-            request.path
-        )));
-    }
-    if let Some(subject) = subject.as_ref() {
-        if let Some(target) = security_index_target_from_request_path(&request.path) {
-            if !security_subject_can_access_index_target(subject, target) {
-                return Err(forbidden_security_response(format!(
-                    "subject [{}] has no tenant permissions for {route_family} target [{}]",
-                    subject.username, target
-                )));
+impl SteelNode {
+    fn require_security_permission(
+        &self,
+        request: &RestRequest,
+        permission: SecurityPermission,
+        route_family: &str,
+    ) -> Result<Option<&'static str>, RestResponse> {
+        let subject = self.authenticated_security_subject(request)?;
+        let role = subject.as_ref().map(|subject| subject.role);
+        if !security_role_has_permission(role, permission) {
+            return Err(forbidden_security_response(format!(
+                "role [{}] has no permissions for {route_family} request [{}]",
+                role.unwrap_or("anonymous"),
+                request.path
+            )));
+        }
+        if let Some(subject) = subject.as_ref() {
+            if let Some(target) = security_index_target_from_request_path(&request.path) {
+                if !security_subject_can_access_index_target(subject, target) {
+                    return Err(forbidden_security_response(format!(
+                        "subject [{}] has no tenant permissions for {route_family} target [{}]",
+                        subject.username, target
+                    )));
+                }
             }
         }
+        Ok(role)
     }
-    Ok(role)
 }
 
 fn security_index_target_from_request_path(path: &str) -> Option<&str> {
@@ -1865,8 +1889,11 @@ fn security_role_can_write_target(
     }
 }
 
-fn require_admin_ml_role(request: &RestRequest) -> Result<(), RestResponse> {
-    require_security_permission(request, SecurityPermission::ClusterAdmin, "ML Commons").map(|_| ())
+impl SteelNode {
+    fn require_admin_ml_role(&self, request: &RestRequest) -> Result<(), RestResponse> {
+        self.require_security_permission(request, SecurityPermission::ClusterAdmin, "ML Commons")
+            .map(|_| ())
+    }
 }
 
 fn bounded_text_embedding(text: &str) -> Value {
@@ -4169,6 +4196,7 @@ fn minimal_publication_state_response(
 #[derive(Clone, Debug)]
 pub struct SteelNode {
     pub info: NodeInfo,
+    authentication_users_path: Option<PathBuf>,
     pub rest_config: Option<RestServerConfig>,
     pub extension_registry: ExtensionBoundaryRegistry,
     pub extension_lifecycle_executions: Arc<Mutex<Vec<ExtensionLifecycleExecution>>>,
@@ -4193,6 +4221,7 @@ pub struct SteelNode {
     runtime_thread_pool_condvar: Arc<Condvar>,
     nodes_usage_since_millis: u64,
     pub documents_state: Arc<Mutex<DocumentMap>>,
+    document_deletion_sequences: Arc<Mutex<DocumentDeletionSequences>>,
     index_top_level_array_fields: Arc<Mutex<BTreeMap<String, BTreeSet<String>>>>,
     pub unrefreshed_document_keys: Arc<Mutex<BTreeMap<String, BTreeSet<String>>>>,
     pending_native_deletes: Arc<Mutex<BTreeMap<String, BTreeMap<String, PendingNativeDelete>>>>,
@@ -4231,6 +4260,7 @@ pub struct SteelNode {
 
 #[derive(Clone, Debug)]
 struct PendingNativeDelete {
+    identity: Arc<()>,
     id: String,
     routing: Option<String>,
     seq_no: i64,
@@ -4321,6 +4351,7 @@ pub struct StoredDocument {
 
 pub type SharedStoredDocument = Arc<StoredDocument>;
 pub type DocumentMap = BTreeMap<String, SharedStoredDocument>;
+pub type DocumentDeletionSequences = BTreeMap<String, BTreeMap<u32, BTreeMap<String, i64>>>;
 
 fn index_top_level_array_fields_from_documents(
     documents: &DocumentMap,
@@ -4368,6 +4399,13 @@ fn load_development_shard_manifest(shard_path: &Path) -> Option<ShardManifest> {
     let expected_checksum = shard_manifest_checksum(&manifest).ok()?;
     (manifest_envelope.get("checksum").and_then(Value::as_u64) == Some(expected_checksum))
         .then_some(manifest)
+}
+
+fn shard_manifest_matches_index_identity(manifest: &ShardManifest, entry: &Value) -> bool {
+    match entry.get("_steelsearch_index_uuid") {
+        None => true,
+        Some(uuid) => uuid.as_str().is_some_and(|uuid| !uuid.is_empty() && uuid == manifest.index_uuid),
+    }
 }
 
 fn unrefreshed_document_keys_from_runtime(
@@ -4443,6 +4481,8 @@ pub struct SharedRuntimeState {
     pub created_indices: BTreeSet<String>,
     pub metadata_manifest: Value,
     pub documents: BTreeMap<String, StoredDocument>,
+    #[serde(default)]
+    pub document_deletion_sequences: DocumentDeletionSequences,
     #[serde(default)]
     pub pit_contexts: BTreeMap<String, PersistedPitContext>,
     pub next_seq_no: u64,
@@ -4601,6 +4641,13 @@ pub struct PitContext {
     pub keep_alive_millis: u64,
     pub expires_at_millis: u128,
     pub creation_time_millis: u128,
+}
+
+#[derive(Debug, PartialEq)]
+struct ResolvedSearchTargets {
+    indices: Vec<String>,
+    // Missing entries are unrestricted, including direct index selections.
+    alias_filters: BTreeMap<String, Value>,
 }
 
 const DEFAULT_MAX_PIT_KEEP_ALIVE_MILLIS: u64 = 86_400_000;
@@ -4765,6 +4812,7 @@ impl SteelNode {
     pub fn new(info: NodeInfo) -> Self {
         let node = Self {
             info,
+            authentication_users_path: None,
             rest_config: None,
             extension_registry: ExtensionBoundaryRegistry::default(),
             extension_lifecycle_executions: Arc::new(Mutex::new(Vec::new())),
@@ -4793,6 +4841,7 @@ impl SteelNode {
             runtime_thread_pool_condvar: Arc::new(Condvar::new()),
             nodes_usage_since_millis: current_time_millis(),
             documents_state: Arc::new(Mutex::new(BTreeMap::new())),
+            document_deletion_sequences: Arc::new(Mutex::new(BTreeMap::new())),
             index_top_level_array_fields: Arc::new(Mutex::new(BTreeMap::new())),
             unrefreshed_document_keys: Arc::new(Mutex::new(BTreeMap::new())),
             pending_native_deletes: Arc::new(Mutex::new(BTreeMap::new())),
@@ -4830,6 +4879,11 @@ impl SteelNode {
         };
         node.activate_registered_extensions();
         node
+    }
+
+    pub fn with_authentication_users_file(mut self, path: Option<PathBuf>) -> Self {
+        self.authentication_users_path = path;
+        self
     }
 
     pub fn with_rest_config(mut self, config: RestServerConfig) -> Self {
@@ -5928,6 +5982,10 @@ impl SteelNode {
 
     pub fn handle_rest_request(&self, request: RestRequest) -> RestResponse {
         self.sync_shared_runtime_state_from_disk_if_enabled();
+        if self.shared_runtime_state_recovery_failed() {
+            return build_shared_runtime_state_recovery_unavailable_response()
+                .with_opaque_id_from(&request);
+        }
         let mut normalized_request = request.clone();
         if normalized_request.query_params.is_empty() && normalized_request.path.contains('?') {
             let (path, query_params) = split_path_and_query(&normalized_request.path);
@@ -6039,7 +6097,7 @@ impl SteelNode {
                         "unable to authenticate user for REST request [/]",
                     ));
                 };
-                let credentials = match security_expected_basic_credentials() {
+                let credentials = match security_expected_basic_credentials(self.authentication_users_path.as_deref()) {
                     Ok(credentials) => credentials,
                     Err(error) => return Some(unauthorized_security_response(error)),
                 };
@@ -6088,7 +6146,7 @@ impl SteelNode {
                 "unsupported broad selector",
             )),
             (RestMethod::Get, "/_cluster/health") => {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "cluster read",
@@ -6098,7 +6156,7 @@ impl SteelNode {
                 Some(self.handle_cluster_health_route(request))
             }
             (RestMethod::Get, "/_cluster/state") => {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "cluster read",
@@ -6109,7 +6167,7 @@ impl SteelNode {
             }
             (RestMethod::Get, "/_cluster/allocation/explain")
             | (RestMethod::Post, "/_cluster/allocation/explain") => {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "cluster read",
@@ -6119,7 +6177,7 @@ impl SteelNode {
                 Some(self.handle_cluster_allocation_explain_route(request))
             }
             (RestMethod::Get, "/_cluster/settings") => {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "cluster read",
@@ -6129,7 +6187,7 @@ impl SteelNode {
                 Some(self.handle_cluster_settings_get_route(request))
             }
             (RestMethod::Put, "/_cluster/settings") => {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::ClusterAdmin,
                     "cluster settings",
@@ -6139,7 +6197,7 @@ impl SteelNode {
                 Some(self.handle_cluster_settings_put_route(request))
             }
             (RestMethod::Delete, "/_cluster/decommission/awareness") => {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::ClusterAdmin,
                     "cluster decommission",
@@ -6153,7 +6211,7 @@ impl SteelNode {
                 Some(self.handle_cluster_decommission_delete_route())
             }
             (RestMethod::Post, "/_cluster/reroute") => {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::ClusterAdmin,
                     "cluster reroute",
@@ -6163,7 +6221,7 @@ impl SteelNode {
                 Some(self.handle_cluster_reroute_route(request))
             }
             (RestMethod::Get, "/_cluster/pending_tasks") => {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "cluster read",
@@ -6173,7 +6231,7 @@ impl SteelNode {
                 Some(self.handle_cluster_pending_tasks_route(request))
             }
             (RestMethod::Get, "/_tasks") => {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "cluster read",
@@ -6183,7 +6241,7 @@ impl SteelNode {
                 Some(self.handle_tasks_list_route(request))
             }
             (RestMethod::Post, "/_tasks/_cancel") => {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::ClusterAdmin,
                     "task cancellation",
@@ -6193,7 +6251,7 @@ impl SteelNode {
                 Some(self.handle_tasks_cancel_route(request))
             }
             (RestMethod::Get, "/_nodes/stats") => {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "cluster read",
@@ -6211,7 +6269,7 @@ impl SteelNode {
                 ))
             }
             (RestMethod::Get, "/_cluster/stats") => {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "cluster read",
@@ -6253,7 +6311,7 @@ impl SteelNode {
                 Some(self.handle_forcemerge_route(None, request))
             }
             (RestMethod::Get, "/_stats") => {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "index metadata",
@@ -6269,7 +6327,7 @@ impl SteelNode {
                 Some(self.handle_analyze_route(None, request))
             }
             (RestMethod::Get, "/_shard_stores") => {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "index metadata",
@@ -6282,7 +6340,7 @@ impl SteelNode {
                 Some(self.handle_shard_stores_route(None))
             }
             (RestMethod::Get, "/_upgrade") | (RestMethod::Post, "/_upgrade") => {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "index metadata",
@@ -6303,7 +6361,7 @@ impl SteelNode {
         request: &RestRequest,
     ) -> Option<RestResponse> {
         if request.path == "/_mapping" && request.method == RestMethod::Get {
-            if let Err(response) = require_security_permission(
+            if let Err(response) = self.require_security_permission(
                 request,
                 SecurityPermission::IndexRead,
                 "index metadata",
@@ -6313,7 +6371,7 @@ impl SteelNode {
             return Some(self.handle_mapping_get_route(None));
         }
         if request.path == "/_mappings" && request.method == RestMethod::Get {
-            if let Err(response) = require_security_permission(
+            if let Err(response) = self.require_security_permission(
                 request,
                 SecurityPermission::IndexRead,
                 "index metadata",
@@ -6325,7 +6383,7 @@ impl SteelNode {
         if request.method == RestMethod::Get && request.path.starts_with("/_resolve/index/") {
             let name = request.path.trim_start_matches("/_resolve/index/");
             if !name.is_empty() {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "index metadata",
@@ -6336,7 +6394,7 @@ impl SteelNode {
             }
         }
         if request.method == RestMethod::Get && request.path.starts_with("/_mapping/field/") {
-            if let Err(response) = require_security_permission(
+            if let Err(response) = self.require_security_permission(
                 request,
                 SecurityPermission::IndexRead,
                 "index metadata",
@@ -6349,7 +6407,7 @@ impl SteelNode {
             ));
         }
         if request.path == "/_settings" && request.method == RestMethod::Get {
-            if let Err(response) = require_security_permission(
+            if let Err(response) = self.require_security_permission(
                 request,
                 SecurityPermission::IndexRead,
                 "index metadata",
@@ -6370,7 +6428,7 @@ impl SteelNode {
             ));
         }
         if request.path == "/_settings" && request.method == RestMethod::Put {
-            if let Err(response) = require_security_permission(
+            if let Err(response) = self.require_security_permission(
                 request,
                 SecurityPermission::ClusterAdmin,
                 "index metadata",
@@ -6382,7 +6440,7 @@ impl SteelNode {
         if request.method == RestMethod::Get && request.path.starts_with("/_settings/") {
             let setting_name = request.path.trim_start_matches("/_settings/");
             if !setting_name.is_empty() {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "index metadata",
@@ -6404,7 +6462,7 @@ impl SteelNode {
             }
         }
         if request.path == "/_filecache/prune" && request.method == RestMethod::Post {
-            if let Err(response) = require_security_permission(
+            if let Err(response) = self.require_security_permission(
                 request,
                 SecurityPermission::ClusterAdmin,
                 "index maintenance",
@@ -6414,7 +6472,7 @@ impl SteelNode {
             return Some(self.handle_filecache_prune_route(request));
         }
         if request.path == "/_cache/clear" && request.method == RestMethod::Post {
-            if let Err(response) = require_security_permission(
+            if let Err(response) = self.require_security_permission(
                 request,
                 SecurityPermission::ClusterAdmin,
                 "index maintenance",
@@ -6427,7 +6485,7 @@ impl SteelNode {
             return Some(self.handle_cache_clear_route(None, request));
         }
         if request.path == "/_close" && request.method == RestMethod::Post {
-            if let Err(response) = require_security_permission(
+            if let Err(response) = self.require_security_permission(
                 request,
                 SecurityPermission::ClusterAdmin,
                 "index maintenance",
@@ -6440,7 +6498,7 @@ impl SteelNode {
             return Some(missing_index_validation_response());
         }
         if request.path == "/_open" && request.method == RestMethod::Post {
-            if let Err(response) = require_security_permission(
+            if let Err(response) = self.require_security_permission(
                 request,
                 SecurityPermission::ClusterAdmin,
                 "index maintenance",
@@ -6455,7 +6513,7 @@ impl SteelNode {
         if let Some(index_uuid) = request.path.strip_prefix("/_dangling/") {
             return match request.method {
                 RestMethod::Post => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "recovery",
@@ -6465,7 +6523,7 @@ impl SteelNode {
                     Some(self.handle_dangling_index_import_route(index_uuid, request))
                 }
                 RestMethod::Delete => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "recovery",
@@ -6509,7 +6567,7 @@ impl SteelNode {
         if request.method == RestMethod::Get
             && self.index_stats_variant_path_supported(&request.path)
         {
-            if let Err(response) = require_security_permission(
+            if let Err(response) = self.require_security_permission(
                 request,
                 SecurityPermission::IndexRead,
                 "index metadata",
@@ -6528,7 +6586,7 @@ impl SteelNode {
         }
         if request.path == "/_reindex" && request.method == RestMethod::Post {
             if let Err(response) =
-                require_security_permission(request, SecurityPermission::IndexWrite, "reindex")
+                self.require_security_permission(request, SecurityPermission::IndexWrite, "reindex")
             {
                 return Some(response);
             }
@@ -6542,7 +6600,7 @@ impl SteelNode {
             && request.path.ends_with("/_cancel")
             && request.path != "/_tasks/_cancel"
         {
-            if let Err(response) = require_security_permission(
+            if let Err(response) = self.require_security_permission(
                 request,
                 SecurityPermission::ClusterAdmin,
                 "task cancellation",
@@ -6554,7 +6612,7 @@ impl SteelNode {
         if request.method == RestMethod::Post
             && self.rethrottle_task_id_from_request(request).is_some()
         {
-            if let Err(response) = require_security_permission(
+            if let Err(response) = self.require_security_permission(
                 request,
                 SecurityPermission::ClusterAdmin,
                 "task rethrottle",
@@ -6615,7 +6673,7 @@ impl SteelNode {
         }
         if request.method == RestMethod::Post && request.path == "/_remotestore/_restore" {
             if let Err(response) =
-                require_security_permission(request, SecurityPermission::ClusterAdmin, "recovery")
+                self.require_security_permission(request, SecurityPermission::ClusterAdmin, "recovery")
             {
                 return Some(response);
             }
@@ -6739,7 +6797,7 @@ impl SteelNode {
             return Some(self.handle_nodes_info_route(request));
         }
         if request.method == RestMethod::Post && request.path == "/_nodes/reload_secure_settings" {
-            if let Err(response) = require_security_permission(
+            if let Err(response) = self.require_security_permission(
                 request,
                 SecurityPermission::ClusterAdmin,
                 "reload secure settings",
@@ -6752,7 +6810,7 @@ impl SteelNode {
             && request.path.starts_with("/_nodes/")
             && request.path.ends_with("/reload_secure_settings")
         {
-            if let Err(response) = require_security_permission(
+            if let Err(response) = self.require_security_permission(
                 request,
                 SecurityPermission::ClusterAdmin,
                 "reload secure settings",
@@ -6800,7 +6858,7 @@ impl SteelNode {
                     && !context.is_empty()
                     && matches!(request.method, RestMethod::Put | RestMethod::Post)
                 {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "stored script",
@@ -6822,7 +6880,7 @@ impl SteelNode {
                         Some(self.handle_stored_script_get_route(script_id, request))
                     }
                     RestMethod::Put | RestMethod::Post => {
-                        if let Err(response) = require_security_permission(
+                        if let Err(response) = self.require_security_permission(
                             request,
                             SecurityPermission::ClusterAdmin,
                             "stored script",
@@ -6832,7 +6890,7 @@ impl SteelNode {
                         Some(self.handle_stored_script_put_route(script_id, request))
                     }
                     RestMethod::Delete => {
-                        if let Err(response) = require_security_permission(
+                        if let Err(response) = self.require_security_permission(
                             request,
                             SecurityPermission::ClusterAdmin,
                             "stored script",
@@ -6853,7 +6911,7 @@ impl SteelNode {
         }
         if request.method == RestMethod::Put && request.path == "/_alias" {
             if let Err(response) =
-                require_security_permission(request, SecurityPermission::ClusterAdmin, "alias")
+                self.require_security_permission(request, SecurityPermission::ClusterAdmin, "alias")
             {
                 return Some(response);
             }
@@ -6875,7 +6933,7 @@ impl SteelNode {
             && request.path.starts_with("/_alias/")
         {
             if let Err(response) =
-                require_security_permission(request, SecurityPermission::ClusterAdmin, "alias")
+                self.require_security_permission(request, SecurityPermission::ClusterAdmin, "alias")
             {
                 return Some(response);
             }
@@ -6886,7 +6944,7 @@ impl SteelNode {
         }
         if request.method == RestMethod::Post && request.path == "/_aliases" {
             if let Err(response) =
-                require_security_permission(request, SecurityPermission::ClusterAdmin, "alias")
+                self.require_security_permission(request, SecurityPermission::ClusterAdmin, "alias")
             {
                 return Some(response);
             }
@@ -6896,7 +6954,7 @@ impl SteelNode {
             && request.path.starts_with("/_aliases/")
         {
             if let Err(response) =
-                require_security_permission(request, SecurityPermission::ClusterAdmin, "alias")
+                self.require_security_permission(request, SecurityPermission::ClusterAdmin, "alias")
             {
                 return Some(response);
             }
@@ -7002,7 +7060,7 @@ impl SteelNode {
                 RestMethod::Get => Some(self.handle_component_template_get_route(Some(name))),
                 RestMethod::Head => Some(self.handle_component_template_head_route(name)),
                 RestMethod::Put | RestMethod::Post => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "template",
@@ -7012,7 +7070,7 @@ impl SteelNode {
                     Some(self.handle_component_template_put_route(name, request))
                 }
                 RestMethod::Delete => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "template",
@@ -7055,7 +7113,7 @@ impl SteelNode {
                 RestMethod::Get => Some(self.handle_index_template_get_route(Some(name))),
                 RestMethod::Head => Some(self.handle_index_template_head_route(name)),
                 RestMethod::Put | RestMethod::Post => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "template",
@@ -7065,7 +7123,7 @@ impl SteelNode {
                     Some(self.handle_index_template_put_route(name, request))
                 }
                 RestMethod::Delete => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "template",
@@ -7086,7 +7144,7 @@ impl SteelNode {
                 RestMethod::Get => Some(self.handle_legacy_template_get_route(Some(name))),
                 RestMethod::Head => Some(self.handle_legacy_template_head_route(name)),
                 RestMethod::Put | RestMethod::Post => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "template",
@@ -7096,7 +7154,7 @@ impl SteelNode {
                     Some(self.handle_legacy_template_put_route(name, request))
                 }
                 RestMethod::Delete => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "template",
@@ -7132,7 +7190,7 @@ impl SteelNode {
             return match request.method {
                 RestMethod::Get => Some(self.handle_data_stream_get_route(Some(name))),
                 RestMethod::Put => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "data stream",
@@ -7142,7 +7200,7 @@ impl SteelNode {
                     Some(self.handle_data_stream_put_route(name))
                 }
                 RestMethod::Delete => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "data stream",
@@ -7164,7 +7222,7 @@ impl SteelNode {
                 (path, None)
             };
             if let Err(response) =
-                require_security_permission(request, SecurityPermission::ClusterAdmin, "rollover")
+                self.require_security_permission(request, SecurityPermission::ClusterAdmin, "rollover")
             {
                 return Some(response);
             }
@@ -7367,7 +7425,7 @@ impl SteelNode {
                 .path
                 .starts_with("/_cluster/decommission/awareness/")
         {
-            if let Err(response) = require_security_permission(
+            if let Err(response) = self.require_security_permission(
                 request,
                 SecurityPermission::ClusterAdmin,
                 "cluster decommission",
@@ -7384,7 +7442,7 @@ impl SteelNode {
         if request.method == RestMethod::Delete
             && request.path == "/_cluster/routing/awareness/weights"
         {
-            if let Err(response) = require_security_permission(
+            if let Err(response) = self.require_security_permission(
                 request,
                 SecurityPermission::ClusterAdmin,
                 "weighted routing",
@@ -7395,7 +7453,7 @@ impl SteelNode {
         }
         if request.path == "/_cluster/voting_config_exclusions" {
             if matches!(request.method, RestMethod::Post | RestMethod::Delete) {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::ClusterAdmin,
                     "voting config exclusions",
@@ -7420,7 +7478,7 @@ impl SteelNode {
             return match request.method {
                 RestMethod::Get => Some(self.handle_weighted_routing_get_route(attribute)),
                 RestMethod::Put => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "weighted routing",
@@ -7430,7 +7488,7 @@ impl SteelNode {
                     Some(self.handle_weighted_routing_put_route(attribute, request))
                 }
                 RestMethod::Delete => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "weighted routing",
@@ -7474,7 +7532,7 @@ impl SteelNode {
         }
         if request.path == "/_snapshot" && request.method == RestMethod::Get {
             if let Err(response) =
-                require_security_permission(request, SecurityPermission::ClusterAdmin, "snapshot")
+                self.require_security_permission(request, SecurityPermission::ClusterAdmin, "snapshot")
             {
                 return Some(response);
             }
@@ -7485,7 +7543,7 @@ impl SteelNode {
                 return Some(response);
             }
             if let Err(response) =
-                require_security_permission(request, SecurityPermission::ClusterAdmin, "snapshot")
+                self.require_security_permission(request, SecurityPermission::ClusterAdmin, "snapshot")
             {
                 return Some(response);
             }
@@ -7500,7 +7558,7 @@ impl SteelNode {
             return match snapshot_segments.as_slice() {
                 ["_snapshot", repository] => match request.method {
                     RestMethod::Get => {
-                        if let Err(response) = require_security_permission(
+                        if let Err(response) = self.require_security_permission(
                             request,
                             SecurityPermission::ClusterAdmin,
                             "snapshot",
@@ -7510,7 +7568,7 @@ impl SteelNode {
                         Some(self.handle_snapshot_repository_read_route(Some(repository)))
                     }
                     RestMethod::Put | RestMethod::Post => {
-                        if let Err(response) = require_security_permission(
+                        if let Err(response) = self.require_security_permission(
                             request,
                             SecurityPermission::ClusterAdmin,
                             "snapshot",
@@ -7520,7 +7578,7 @@ impl SteelNode {
                         Some(self.handle_snapshot_repository_mutation_route(repository, request))
                     }
                     RestMethod::Delete => {
-                        if let Err(response) = require_security_permission(
+                        if let Err(response) = self.require_security_permission(
                             request,
                             SecurityPermission::ClusterAdmin,
                             "snapshot",
@@ -7532,7 +7590,7 @@ impl SteelNode {
                     _ => None,
                 },
                 ["_snapshot", repository, "_verify"] if request.method == RestMethod::Post => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "snapshot",
@@ -7542,7 +7600,7 @@ impl SteelNode {
                     Some(self.handle_snapshot_repository_verify_route(repository, request))
                 }
                 ["_snapshot", repository, "_cleanup"] if request.method == RestMethod::Post => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "snapshot",
@@ -7555,7 +7613,7 @@ impl SteelNode {
                     if let Some(response) = validate_snapshot_status_query_params(request) {
                         return Some(response);
                     }
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "snapshot",
@@ -7566,7 +7624,7 @@ impl SteelNode {
                 }
                 ["_snapshot", repository, snapshot] => match request.method {
                     RestMethod::Put | RestMethod::Post => {
-                        if let Err(response) = require_security_permission(
+                        if let Err(response) = self.require_security_permission(
                             request,
                             SecurityPermission::ClusterAdmin,
                             "snapshot",
@@ -7576,7 +7634,7 @@ impl SteelNode {
                         Some(self.handle_snapshot_create_route(repository, snapshot, request))
                     }
                     RestMethod::Get => {
-                        if let Err(response) = require_security_permission(
+                        if let Err(response) = self.require_security_permission(
                             request,
                             SecurityPermission::ClusterAdmin,
                             "snapshot",
@@ -7586,7 +7644,7 @@ impl SteelNode {
                         Some(self.handle_snapshot_readback_route(repository, snapshot, request))
                     }
                     RestMethod::Delete => {
-                        if let Err(response) = require_security_permission(
+                        if let Err(response) = self.require_security_permission(
                             request,
                             SecurityPermission::ClusterAdmin,
                             "snapshot",
@@ -7615,7 +7673,7 @@ impl SteelNode {
                 ["_snapshot", repository, snapshot, "_clone", target_snapshot]
                     if request.method == RestMethod::Put =>
                 {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "snapshot",
@@ -7638,7 +7696,7 @@ impl SteelNode {
                     if !self.snapshot_repository_exists(repository) {
                         return Some(build_missing_snapshot_repository_response(repository));
                     }
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "snapshot",
@@ -7650,7 +7708,7 @@ impl SteelNode {
                 ["_snapshot", repository, snapshot, "_mount"]
                     if request.method == RestMethod::Post =>
                 {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "snapshot",
@@ -7727,7 +7785,7 @@ impl SteelNode {
         if let Some(index) = request.path.strip_prefix("/_plugins/_knn/clear_cache/") {
             if request.method == RestMethod::Post {
                 if let Err(response) =
-                    require_security_permission(request, SecurityPermission::ClusterAdmin, "k-NN")
+                    self.require_security_permission(request, SecurityPermission::ClusterAdmin, "k-NN")
                 {
                     return Some(response);
                 }
@@ -7736,7 +7794,7 @@ impl SteelNode {
         }
         if request.path == "/_plugins/_knn/models/_train" && request.method == RestMethod::Post {
             if let Err(response) =
-                require_security_permission(request, SecurityPermission::ClusterAdmin, "k-NN")
+                self.require_security_permission(request, SecurityPermission::ClusterAdmin, "k-NN")
             {
                 return Some(response);
             }
@@ -7750,7 +7808,7 @@ impl SteelNode {
         if let Some(model_id) = request.path.strip_prefix("/_plugins/_knn/models/") {
             if let Some(model_id) = model_id.strip_suffix("/_train") {
                 if request.method == RestMethod::Post && !model_id.is_empty() {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "k-NN",
@@ -7763,7 +7821,7 @@ impl SteelNode {
             return match request.method {
                 RestMethod::Get => Some(self.handle_knn_model_get_route(model_id, request)),
                 RestMethod::Delete => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "k-NN",
@@ -7776,7 +7834,7 @@ impl SteelNode {
             };
         }
         if request.path == "/_plugins/_ml/models/_register" && request.method == RestMethod::Post {
-            if let Err(response) = require_admin_ml_role(request) {
+            if let Err(response) = self.require_admin_ml_role(request) {
                 return Some(response);
             }
             return Some(self.handle_ml_model_register_route(request));
@@ -7784,33 +7842,33 @@ impl SteelNode {
         if request.path == "/_plugins/_ml/model_groups/_register"
             && request.method == RestMethod::Post
         {
-            if let Err(response) = require_admin_ml_role(request) {
+            if let Err(response) = self.require_admin_ml_role(request) {
                 return Some(response);
             }
             return Some(self.handle_ml_model_group_register_route(request));
         }
         if request.path == "/_plugins/_ml/connectors/_create" && request.method == RestMethod::Post
         {
-            if let Err(response) = require_admin_ml_role(request) {
+            if let Err(response) = self.require_admin_ml_role(request) {
                 return Some(response);
             }
             return Some(self.handle_ml_connector_create_route(request));
         }
         if request.path == "/_plugins/_ml/models/_search" && request.method == RestMethod::Post {
-            if let Err(response) = require_admin_ml_role(request) {
+            if let Err(response) = self.require_admin_ml_role(request) {
                 return Some(response);
             }
             return Some(self.handle_ml_model_search_route(request));
         }
         if request.path == "/_plugins/_ml/_rerank" && request.method == RestMethod::Post {
-            if let Err(response) = require_admin_ml_role(request) {
+            if let Err(response) = self.require_admin_ml_role(request) {
                 return Some(response);
             }
             return Some(self.handle_ml_rerank_route(request));
         }
         if let Some(task_id) = request.path.strip_prefix("/_plugins/_ml/tasks/") {
             if request.method == RestMethod::Get {
-                if let Err(response) = require_admin_ml_role(request) {
+                if let Err(response) = self.require_admin_ml_role(request) {
                     return Some(response);
                 }
                 return Some(self.handle_ml_task_get_route(task_id));
@@ -7818,7 +7876,7 @@ impl SteelNode {
         }
         if let Some(connector_id) = request.path.strip_prefix("/_plugins/_ml/connectors/") {
             if request.method == RestMethod::Get {
-                if let Err(response) = require_admin_ml_role(request) {
+                if let Err(response) = self.require_admin_ml_role(request) {
                     return Some(response);
                 }
                 return Some(self.handle_ml_connector_get_route(connector_id));
@@ -7826,7 +7884,7 @@ impl SteelNode {
         }
         if let Some(group_id) = request.path.strip_prefix("/_plugins/_ml/model_groups/") {
             if request.method == RestMethod::Get {
-                if let Err(response) = require_admin_ml_role(request) {
+                if let Err(response) = self.require_admin_ml_role(request) {
                     return Some(response);
                 }
                 return Some(self.handle_ml_model_group_get_route(group_id));
@@ -7834,13 +7892,13 @@ impl SteelNode {
         }
         if let Some(model_id) = request.path.strip_prefix("/_plugins/_ml/models/") {
             if request.method == RestMethod::Get {
-                if let Err(response) = require_admin_ml_role(request) {
+                if let Err(response) = self.require_admin_ml_role(request) {
                     return Some(response);
                 }
                 return Some(self.handle_ml_model_get_route(model_id));
             }
             if request.method == RestMethod::Post && model_id.ends_with("/_deploy") {
-                if let Err(response) = require_admin_ml_role(request) {
+                if let Err(response) = self.require_admin_ml_role(request) {
                     return Some(response);
                 }
                 return Some(
@@ -7848,7 +7906,7 @@ impl SteelNode {
                 );
             }
             if request.method == RestMethod::Post && model_id.ends_with("/_undeploy") {
-                if let Err(response) = require_admin_ml_role(request) {
+                if let Err(response) = self.require_admin_ml_role(request) {
                     return Some(response);
                 }
                 return Some(
@@ -7859,7 +7917,7 @@ impl SteelNode {
                 );
             }
             if request.method == RestMethod::Post && model_id.ends_with("/_predict") {
-                if let Err(response) = require_admin_ml_role(request) {
+                if let Err(response) = self.require_admin_ml_role(request) {
                     return Some(response);
                 }
                 return Some(self.handle_ml_model_predict_route(
@@ -7870,7 +7928,7 @@ impl SteelNode {
         }
         if request.method == RestMethod::Get && request.path.starts_with("/_cluster/state/") {
             if let Err(response) =
-                require_security_permission(request, SecurityPermission::IndexRead, "cluster read")
+                self.require_security_permission(request, SecurityPermission::IndexRead, "cluster read")
             {
                 return Some(response);
             }
@@ -7880,7 +7938,7 @@ impl SteelNode {
             let target = index.trim_matches('/');
             return match request.method {
                 RestMethod::Get => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::IndexRead,
                         "index metadata",
@@ -7893,7 +7951,7 @@ impl SteelNode {
                     Some(self.handle_mapping_get_route(Some(target)))
                 }
                 RestMethod::Put | RestMethod::Post => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "index metadata",
@@ -7909,7 +7967,7 @@ impl SteelNode {
             let target = index.trim_matches('/');
             return match request.method {
                 RestMethod::Get => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::IndexRead,
                         "index metadata",
@@ -7922,7 +7980,7 @@ impl SteelNode {
                     Some(self.handle_mapping_get_route(Some(target)))
                 }
                 RestMethod::Put | RestMethod::Post => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "index metadata",
@@ -7939,7 +7997,7 @@ impl SteelNode {
             let target = parts.next().unwrap_or_default().trim_matches('/');
             let fields = parts.next().unwrap_or_default();
             if !target.is_empty() && !fields.is_empty() {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "index metadata",
@@ -7956,7 +8014,7 @@ impl SteelNode {
             let target = index.trim_matches('/');
             return match request.method {
                 RestMethod::Get => {
-                    let role = match require_security_permission(
+                    let role = match self.require_security_permission(
                         request,
                         SecurityPermission::IndexRead,
                         "index metadata",
@@ -7989,7 +8047,7 @@ impl SteelNode {
                     )
                 }
                 RestMethod::Put => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "index metadata",
@@ -8006,7 +8064,7 @@ impl SteelNode {
             let target = parts.next().unwrap_or_default().trim_matches('/');
             let setting_name = parts.next().unwrap_or_default();
             if !target.is_empty() && !setting_name.is_empty() {
-                let role = match require_security_permission(
+                let role = match self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "index metadata",
@@ -8044,7 +8102,7 @@ impl SteelNode {
             let target = parts.next().unwrap_or_default().trim_matches('/');
             let setting_name = parts.next().unwrap_or_default();
             if !target.is_empty() && !setting_name.is_empty() {
-                let role = match require_security_permission(
+                let role = match self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "index metadata",
@@ -8079,7 +8137,7 @@ impl SteelNode {
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_stats") {
             if request.method == RestMethod::Get && !index.is_empty() {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "index metadata",
@@ -8097,7 +8155,7 @@ impl SteelNode {
             let target = parts.next().unwrap_or_default().trim_matches('/');
             let metric = parts.next().unwrap_or_default();
             if !target.is_empty() && !metric.is_empty() {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "index metadata",
@@ -8136,7 +8194,7 @@ impl SteelNode {
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_cache/clear") {
             if request.method == RestMethod::Post && !index.is_empty() {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::ClusterAdmin,
                     "index maintenance",
@@ -8151,7 +8209,7 @@ impl SteelNode {
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_close") {
             if request.method == RestMethod::Post && !index.is_empty() {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::ClusterAdmin,
                     "index maintenance",
@@ -8166,7 +8224,7 @@ impl SteelNode {
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_open") {
             if request.method == RestMethod::Post && !index.is_empty() {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::ClusterAdmin,
                     "index maintenance",
@@ -8193,7 +8251,7 @@ impl SteelNode {
             .strip_suffix("/_shard_stores")
         {
             if request.method == RestMethod::Get && !index.is_empty() {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "index metadata",
@@ -8210,7 +8268,7 @@ impl SteelNode {
             if (request.method == RestMethod::Get || request.method == RestMethod::Post)
                 && !index.is_empty()
             {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "index metadata",
@@ -8229,7 +8287,7 @@ impl SteelNode {
             .strip_suffix("/ingestion/_state")
         {
             if request.method == RestMethod::Get && !index.is_empty() {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "ingestion state",
@@ -8248,7 +8306,7 @@ impl SteelNode {
             .strip_suffix("/ingestion/_pause")
         {
             if request.method == RestMethod::Post && !index.is_empty() {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::ClusterAdmin,
                     "ingestion control",
@@ -8269,7 +8327,7 @@ impl SteelNode {
             .strip_suffix("/ingestion/_resume")
         {
             if request.method == RestMethod::Post && !index.is_empty() {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::ClusterAdmin,
                     "ingestion control",
@@ -8304,7 +8362,7 @@ impl SteelNode {
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_mget") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "multi document read",
@@ -8320,7 +8378,7 @@ impl SteelNode {
             .strip_suffix("/_mtermvectors")
         {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "multi document read",
@@ -8332,7 +8390,7 @@ impl SteelNode {
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_msearch") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "multi search",
@@ -8348,7 +8406,7 @@ impl SteelNode {
             .strip_suffix("/_msearch/template")
         {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "search template",
@@ -8364,7 +8422,7 @@ impl SteelNode {
             .strip_suffix("/_search/template")
         {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "search template",
@@ -8380,7 +8438,7 @@ impl SteelNode {
             .strip_suffix("/_validate/query")
         {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "index read",
@@ -8392,7 +8450,7 @@ impl SteelNode {
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_count") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "index read",
@@ -8404,7 +8462,7 @@ impl SteelNode {
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_field_caps") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "index read",
@@ -8422,7 +8480,7 @@ impl SteelNode {
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_rank_eval") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "index read",
@@ -8434,7 +8492,7 @@ impl SteelNode {
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_search") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
-                let role = match require_security_permission(
+                let role = match self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "index read",
@@ -8477,7 +8535,7 @@ impl SteelNode {
         if request.path == "/_search" {
             return match request.method {
                 RestMethod::Get | RestMethod::Post => {
-                    let role = match require_security_permission(
+                    let role = match self.require_security_permission(
                         request,
                         SecurityPermission::IndexRead,
                         "index read",
@@ -8502,7 +8560,7 @@ impl SteelNode {
         if request.path == "/_mget"
             && (request.method == RestMethod::Get || request.method == RestMethod::Post)
         {
-            if let Err(response) = require_security_permission(
+            if let Err(response) = self.require_security_permission(
                 request,
                 SecurityPermission::IndexRead,
                 "multi document read",
@@ -8514,7 +8572,7 @@ impl SteelNode {
         if request.path == "/_mtermvectors"
             && (request.method == RestMethod::Get || request.method == RestMethod::Post)
         {
-            if let Err(response) = require_security_permission(
+            if let Err(response) = self.require_security_permission(
                 request,
                 SecurityPermission::IndexRead,
                 "multi document read",
@@ -8527,7 +8585,7 @@ impl SteelNode {
             && (request.method == RestMethod::Get || request.method == RestMethod::Post)
         {
             if let Err(response) =
-                require_security_permission(request, SecurityPermission::IndexRead, "multi search")
+                self.require_security_permission(request, SecurityPermission::IndexRead, "multi search")
             {
                 return Some(response);
             }
@@ -8536,7 +8594,7 @@ impl SteelNode {
         if request.path == "/_msearch/template"
             && (request.method == RestMethod::Get || request.method == RestMethod::Post)
         {
-            if let Err(response) = require_security_permission(
+            if let Err(response) = self.require_security_permission(
                 request,
                 SecurityPermission::IndexRead,
                 "search template",
@@ -8548,7 +8606,7 @@ impl SteelNode {
         if request.path == "/_search/template"
             && (request.method == RestMethod::Get || request.method == RestMethod::Post)
         {
-            if let Err(response) = require_security_permission(
+            if let Err(response) = self.require_security_permission(
                 request,
                 SecurityPermission::IndexRead,
                 "search template",
@@ -8579,7 +8637,7 @@ impl SteelNode {
                     Some(self.handle_search_pipeline_get_route(pipeline_id, request))
                 }
                 RestMethod::Put => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "pipeline",
@@ -8589,7 +8647,7 @@ impl SteelNode {
                     Some(self.handle_search_pipeline_put_route(pipeline_id, request))
                 }
                 RestMethod::Delete => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "pipeline",
@@ -8617,7 +8675,7 @@ impl SteelNode {
                         Some(self.handle_ingest_pipeline_get_route(pipeline_id, request))
                     }
                     RestMethod::Put => {
-                        if let Err(response) = require_security_permission(
+                        if let Err(response) = self.require_security_permission(
                             request,
                             SecurityPermission::ClusterAdmin,
                             "pipeline",
@@ -8627,7 +8685,7 @@ impl SteelNode {
                         Some(self.handle_ingest_pipeline_put_route(pipeline_id, request))
                     }
                     RestMethod::Delete => {
-                        if let Err(response) = require_security_permission(
+                        if let Err(response) = self.require_security_permission(
                             request,
                             SecurityPermission::ClusterAdmin,
                             "pipeline",
@@ -8644,7 +8702,7 @@ impl SteelNode {
             && (request.method == RestMethod::Get || request.method == RestMethod::Post)
         {
             if let Err(response) =
-                require_security_permission(request, SecurityPermission::IndexRead, "index read")
+                self.require_security_permission(request, SecurityPermission::IndexRead, "index read")
             {
                 return Some(response);
             }
@@ -8654,7 +8712,7 @@ impl SteelNode {
             && (request.method == RestMethod::Get || request.method == RestMethod::Post)
         {
             if let Err(response) =
-                require_security_permission(request, SecurityPermission::IndexRead, "index read")
+                self.require_security_permission(request, SecurityPermission::IndexRead, "index read")
             {
                 return Some(response);
             }
@@ -8664,7 +8722,7 @@ impl SteelNode {
             && (request.method == RestMethod::Get || request.method == RestMethod::Post)
         {
             if let Err(response) =
-                require_security_permission(request, SecurityPermission::IndexRead, "index read")
+                self.require_security_permission(request, SecurityPermission::IndexRead, "index read")
             {
                 return Some(response);
             }
@@ -8674,7 +8732,7 @@ impl SteelNode {
             && (request.method == RestMethod::Get || request.method == RestMethod::Post)
         {
             if let Err(response) =
-                require_security_permission(request, SecurityPermission::IndexRead, "index read")
+                self.require_security_permission(request, SecurityPermission::IndexRead, "index read")
             {
                 return Some(response);
             }
@@ -8734,7 +8792,7 @@ impl SteelNode {
                     Some(self.handle_index_alias_named_head_route(index, alias, request))
                 }
                 RestMethod::Put | RestMethod::Post => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "alias",
@@ -8744,7 +8802,7 @@ impl SteelNode {
                     Some(self.handle_alias_single_mutation_route(index, alias, request))
                 }
                 RestMethod::Delete => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "alias",
@@ -8763,7 +8821,7 @@ impl SteelNode {
                     Some(self.handle_index_alias_collection_head_route(index, request))
                 }
                 RestMethod::Put => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "alias",
@@ -8778,7 +8836,7 @@ impl SteelNode {
         if let Some((index, alias)) = request.path.trim_matches('/').split_once("/_aliases/") {
             return match request.method {
                 RestMethod::Put | RestMethod::Post => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "alias",
@@ -8788,7 +8846,7 @@ impl SteelNode {
                     Some(self.handle_alias_single_mutation_route(index, alias, request))
                 }
                 RestMethod::Delete => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::ClusterAdmin,
                         "alias",
@@ -8803,7 +8861,7 @@ impl SteelNode {
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_aliases") {
             if request.method == RestMethod::Put {
                 if let Err(response) =
-                    require_security_permission(request, SecurityPermission::ClusterAdmin, "alias")
+                    self.require_security_permission(request, SecurityPermission::ClusterAdmin, "alias")
                 {
                     return Some(response);
                 }
@@ -8813,7 +8871,7 @@ impl SteelNode {
         if let Some((index, doc_path)) = request.path.trim_matches('/').split_once("/_doc/") {
             return match request.method {
                 RestMethod::Put | RestMethod::Post => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::IndexWrite,
                         "single document write",
@@ -8823,7 +8881,7 @@ impl SteelNode {
                     Some(self.handle_put_doc_route(index, doc_path, request))
                 }
                 RestMethod::Get => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::IndexRead,
                         "single document read",
@@ -8833,7 +8891,7 @@ impl SteelNode {
                     Some(self.handle_get_doc_route(index, doc_path, request))
                 }
                 RestMethod::Head => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::IndexRead,
                         "single document read",
@@ -8843,7 +8901,7 @@ impl SteelNode {
                     Some(self.handle_head_doc_route(index, doc_path, request))
                 }
                 RestMethod::Delete => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::IndexWrite,
                         "single document write",
@@ -8858,7 +8916,7 @@ impl SteelNode {
         if let Some((index, doc_path)) = request.path.trim_matches('/').split_once("/_create/") {
             return match request.method {
                 RestMethod::Put | RestMethod::Post => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::IndexWrite,
                         "single document write",
@@ -8873,7 +8931,7 @@ impl SteelNode {
         if let Some((index, doc_path)) = request.path.trim_matches('/').split_once("/_source/") {
             return match request.method {
                 RestMethod::Get => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::IndexRead,
                         "single document read",
@@ -8883,7 +8941,7 @@ impl SteelNode {
                     Some(self.handle_get_source_route(index, doc_path, request))
                 }
                 RestMethod::Head => {
-                    if let Err(response) = require_security_permission(
+                    if let Err(response) = self.require_security_permission(
                         request,
                         SecurityPermission::IndexRead,
                         "single document read",
@@ -8897,7 +8955,7 @@ impl SteelNode {
         }
         if let Some((index, id)) = request.path.trim_matches('/').split_once("/_explain/") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "index read",
@@ -8909,7 +8967,7 @@ impl SteelNode {
         }
         if let Some((index, id)) = request.path.trim_matches('/').split_once("/_termvectors/") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "multi document read",
@@ -8921,7 +8979,7 @@ impl SteelNode {
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_termvectors") {
             if request.method == RestMethod::Get || request.method == RestMethod::Post {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexRead,
                     "multi document read",
@@ -8937,7 +8995,7 @@ impl SteelNode {
             .strip_suffix("/_delete_by_query")
         {
             if request.method == RestMethod::Post {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexWrite,
                     "delete by query",
@@ -8949,7 +9007,7 @@ impl SteelNode {
         }
         if let Some((index, block)) = request.path.trim_matches('/').split_once("/_block/") {
             if request.method == RestMethod::Put {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::ClusterAdmin,
                     "index structure",
@@ -8961,7 +9019,7 @@ impl SteelNode {
         }
         if let Some((source, target)) = request.path.trim_matches('/').split_once("/_clone/") {
             if request.method == RestMethod::Put || request.method == RestMethod::Post {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::ClusterAdmin,
                     "index structure",
@@ -8973,7 +9031,7 @@ impl SteelNode {
         }
         if let Some((source, target)) = request.path.trim_matches('/').split_once("/_shrink/") {
             if request.method == RestMethod::Put || request.method == RestMethod::Post {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::ClusterAdmin,
                     "index structure",
@@ -8985,7 +9043,7 @@ impl SteelNode {
         }
         if let Some((source, target)) = request.path.trim_matches('/').split_once("/_split/") {
             if request.method == RestMethod::Put || request.method == RestMethod::Post {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::ClusterAdmin,
                     "index structure",
@@ -8997,7 +9055,7 @@ impl SteelNode {
         }
         if let Some(source) = request.path.trim_matches('/').strip_suffix("/_scale") {
             if request.method == RestMethod::Post {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::ClusterAdmin,
                     "index structure",
@@ -9009,7 +9067,7 @@ impl SteelNode {
         }
         if let Some(index) = request.path.trim_matches('/').strip_suffix("/_doc") {
             if request.method == RestMethod::Post {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexWrite,
                     "single document write",
@@ -9021,7 +9079,7 @@ impl SteelNode {
         }
         if let Some((index, id)) = request.path.trim_matches('/').split_once("/_update/") {
             if request.method == RestMethod::Post {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexWrite,
                     "single document write",
@@ -9037,7 +9095,7 @@ impl SteelNode {
             .strip_suffix("/_update_by_query")
         {
             if request.method == RestMethod::Post {
-                if let Err(response) = require_security_permission(
+                if let Err(response) = self.require_security_permission(
                     request,
                     SecurityPermission::IndexWrite,
                     "update by query",
@@ -9051,7 +9109,7 @@ impl SteelNode {
             && !request.path.starts_with("/_")
             && request.path.trim_matches('/').split('/').count() == 1
         {
-            if let Err(response) = require_security_permission(
+            if let Err(response) = self.require_security_permission(
                 request,
                 SecurityPermission::ClusterAdmin,
                 "index structure",
@@ -9064,7 +9122,7 @@ impl SteelNode {
             && !request.path.starts_with("/_")
             && request.path.trim_matches('/').split('/').count() == 1
         {
-            let role = match require_security_permission(
+            let role = match self.require_security_permission(
                 request,
                 SecurityPermission::IndexRead,
                 "index metadata",
@@ -9084,7 +9142,7 @@ impl SteelNode {
             && !request.path.starts_with("/_")
             && request.path.trim_matches('/').split('/').count() == 1
         {
-            let role = match require_security_permission(
+            let role = match self.require_security_permission(
                 request,
                 SecurityPermission::IndexRead,
                 "index metadata",
@@ -9104,7 +9162,7 @@ impl SteelNode {
             && !request.path.starts_with("/_")
             && request.path.trim_matches('/').split('/').count() == 1
         {
-            if let Err(response) = require_security_permission(
+            if let Err(response) = self.require_security_permission(
                 request,
                 SecurityPermission::ClusterAdmin,
                 "index structure",
@@ -9339,7 +9397,7 @@ impl SteelNode {
         let mut bounded_subset =
             create_index_route_registration::build_create_index_body_subset(&request_body);
         if let Some(settings) = bounded_subset.get("settings").cloned() {
-            bounded_subset["settings"] = stringify_leaf_scalars(&settings);
+            bounded_subset["settings"] = normalize_index_settings(&settings);
         }
         let mut manifest = self
             .metadata_manifest_state
@@ -9347,17 +9405,8 @@ impl SteelNode {
             .expect("metadata manifest state lock poisoned");
         let mut index_entry = Self::build_composable_template_index_entry(&manifest, index);
         merge_object_with_null_reset(&mut index_entry, &bounded_subset);
-        if let Err(error) = self.native_engine.create_index(CreateIndexRequest {
-            index: index.to_string(),
-            settings: index_entry
-                .get("settings")
-                .cloned()
-                .unwrap_or_else(|| serde_json::json!({})),
-            mappings: index_entry
-                .get("mappings")
-                .cloned()
-                .unwrap_or_else(|| serde_json::json!({})),
-        }) {
+        let mut index_entry = Self::normalize_index_manifest_entry(index, index_entry);
+        if let Err(error) = self.create_native_index_from_entry(index, &mut index_entry) {
             return RestResponse::opensearch_error(
                 error.status_code(),
                 error.opensearch_error_type(),
@@ -9382,7 +9431,7 @@ impl SteelNode {
             .expect("metadata manifest object expected")
             .entry("indices".to_string())
             .or_insert_with(|| serde_json::json!({}));
-        indices[index] = Self::normalize_index_manifest_entry(index, index_entry);
+        indices[index] = index_entry;
         drop(manifest);
         self.persist_shared_runtime_state_to_disk();
         RestResponse::json(
@@ -9496,9 +9545,13 @@ impl SteelNode {
                 .lock()
                 .expect("metadata manifest state lock poisoned");
             for index in matched {
-                let _ = self.native_engine.delete_index(&index);
+                match self.native_engine.delete_index(&index) {
+                    Ok(()) | Err(os_engine::EngineError::IndexNotFound { .. }) => {},
+                    Err(error) => return engine_error_to_rest_response(error),
+                }
                 created.remove(&index);
                 docs.retain(|key, _| !key.starts_with(&format!("{index}:")));
+                self.clear_index_document_auxiliary_state(&index);
                 manifest["indices"]
                     .as_object_mut()
                     .map(|m| m.remove(&index));
@@ -10510,6 +10563,51 @@ impl SteelNode {
         format!(".ds-{name}-{generation:06}")
     }
 
+    fn create_native_index_from_entry(
+        &self,
+        index: &str,
+        entry: &mut Value,
+    ) -> Result<(), os_engine::EngineError> {
+        let schema = os_engine_tantivy::map_opensearch_index_to_tantivy_schema(&CreateIndexRequest {
+            index: index.to_string(),
+            settings: entry.get("settings").cloned().unwrap_or_else(|| serde_json::json!({})),
+            mappings: entry.get("mappings").cloned().unwrap_or_else(|| serde_json::json!({})),
+        })?;
+        let routing = serde_json::to_value(schema.index_routing()?)
+            .map_err(|error| os_engine::EngineError::BackendFailure {
+                reason: format!("failed to serialize routing metadata: {error}"),
+            })?;
+        self.native_engine.create_index_from_schema(index.to_string(), schema)?;
+        self.bind_new_native_index_identity(index, entry)?;
+        entry["_steelsearch_routing"] = routing;
+        Ok(())
+    }
+
+    fn bind_new_native_index_identity(
+        &self,
+        index: &str,
+        entry: &mut Value,
+    ) -> Result<(), os_engine::EngineError> {
+        let uuid = self.native_engine.shard_manifest(index)?.index_uuid;
+        entry["_steelsearch_index_uuid"] = Value::String(uuid.clone());
+        entry["settings"] = normalize_index_settings(&entry["settings"]);
+        entry["settings"]["index"]["uuid"] = Value::String(uuid);
+        self.clear_index_document_auxiliary_state(index);
+        self.next_seq_no_by_index.lock().expect("per-index seq_no lock poisoned")
+            .insert(index.to_string(), 0);
+        Ok(())
+    }
+
+    fn clear_index_document_auxiliary_state(&self, index: &str) {
+        self.document_deletion_sequences.lock().expect("document deletion lock poisoned").remove(index);
+        self.pending_native_deletes.lock().expect("pending native delete lock poisoned").remove(index);
+        self.unrefreshed_document_keys.lock().expect("unrefreshed document key lock poisoned").remove(index);
+        self.index_top_level_array_fields.lock().expect("index top-level array field lock poisoned").remove(index);
+        self.dirty_development_shards.lock().expect("dirty development shards lock poisoned")
+            .retain(|(name, _)| name != index);
+        self.next_seq_no_by_index.lock().expect("per-index seq_no lock poisoned").remove(index);
+    }
+
     fn create_minimal_index_manifest_entry(index: &str) -> Value {
         Self::normalize_index_manifest_entry(
             index,
@@ -10531,7 +10629,7 @@ impl SteelNode {
         if entry.get("settings").is_none() {
             entry["settings"] = serde_json::json!({});
         }
-        entry["settings"] = expand_dotted_cluster_settings_section(&entry["settings"]);
+        entry["settings"] = normalize_index_settings(&entry["settings"]);
 
         let mut settings = serde_json::json!({
             "index": {
@@ -10601,12 +10699,20 @@ impl SteelNode {
                 let component_template = &manifest["templates"]["component_templates"]
                     [component_name]["component_template"];
                 if component_template.is_object() {
-                    merge_object_with_null_reset(&mut entry, &component_template["template"]);
+                    Self::merge_index_template_fragment(&mut entry, &component_template["template"]);
                 }
             }
         }
-        merge_object_with_null_reset(&mut entry, &index_template["template"]);
+        Self::merge_index_template_fragment(&mut entry, &index_template["template"]);
         entry
+    }
+
+    fn merge_index_template_fragment(entry: &mut Value, fragment: &Value) {
+        let mut fragment = fragment.clone();
+        if let Some(settings) = fragment.get_mut("settings") {
+            *settings = normalize_index_settings(settings);
+        }
+        merge_object_with_null_reset(entry, &fragment);
     }
 
     fn matching_data_stream_template_entry(manifest: &Value, name: &str) -> Option<Value> {
@@ -10647,32 +10753,27 @@ impl SteelNode {
                 let component_template = &manifest["templates"]["component_templates"]
                     [component_name]["component_template"];
                 if component_template.is_object() {
-                    merge_object_with_null_reset(&mut entry, &component_template["template"]);
+                    Self::merge_index_template_fragment(&mut entry, &component_template["template"]);
                 }
             }
         }
-        merge_object_with_null_reset(&mut entry, &index_template["template"]);
+        Self::merge_index_template_fragment(&mut entry, &index_template["template"]);
         Self::normalize_index_manifest_entry(backing_index, entry)
     }
 
-    fn ensure_minimal_index_exists(&self, index: &str) {
-        let already_created = {
-            let mut created = self
-                .created_indices_state
-                .lock()
-                .expect("created indices state lock poisoned");
-            !created.insert(index.to_string())
-        };
-        if already_created {
-            return;
-        }
+    fn ensure_minimal_index_exists(&self, index: &str) -> Result<(), os_engine::EngineError> {
         let mut manifest = self
             .metadata_manifest_state
             .lock()
             .expect("metadata manifest state lock poisoned");
         if manifest["indices"].get(index).is_none() {
-            manifest["indices"][index] = Self::create_minimal_index_manifest_entry(index);
+            let mut entry = Self::create_minimal_index_manifest_entry(index);
+            self.create_native_index_from_entry(index, &mut entry)?;
+            manifest["indices"][index] = entry;
         }
+        self.created_indices_state.lock().expect("created indices state lock poisoned")
+            .insert(index.to_string());
+        Ok(())
     }
 
     fn resolve_write_target(
@@ -10730,7 +10831,7 @@ impl SteelNode {
         }
 
         if auto_create_missing_index {
-            self.ensure_minimal_index_exists(target);
+            self.ensure_minimal_index_exists(target).map_err(|error| error.opensearch_reason())?;
             return Ok(target.to_string());
         }
 
@@ -11015,16 +11116,17 @@ impl SteelNode {
             }
         };
         let backing_index = Self::data_stream_backing_index_name(name, 1);
-        self.created_indices_state
-            .lock()
-            .expect("created indices state lock poisoned")
-            .insert(backing_index.clone());
         let mut manifest = self
             .metadata_manifest_state
             .lock()
             .expect("metadata manifest state lock poisoned");
-        let backing_entry =
+        let mut backing_entry =
             Self::build_data_stream_backing_index_entry(&manifest, name, &backing_index);
+        if let Err(error) = self.create_native_index_from_entry(&backing_index, &mut backing_entry) {
+            return RestResponse::opensearch_error(error.status_code(), error.opensearch_error_type(), error.opensearch_reason());
+        }
+        self.created_indices_state.lock().expect("created indices state lock poisoned")
+            .insert(backing_index.clone());
         manifest["indices"][&backing_index] = backing_entry;
         manifest["data_streams"][name] = serde_json::json!({
             "generation": 1,
@@ -11083,6 +11185,10 @@ impl SteelNode {
             .lock()
             .expect("metadata manifest state lock poisoned");
         for backing in backing_names {
+            match self.native_engine.delete_index(&backing) {
+                Ok(()) | Err(os_engine::EngineError::IndexNotFound { .. }) => {},
+                Err(error) => return RestResponse::opensearch_error(error.status_code(), error.opensearch_error_type(), error.opensearch_reason()),
+            }
             manifest["indices"]
                 .as_object_mut()
                 .map(|indices| indices.remove(&backing));
@@ -11122,9 +11228,9 @@ impl SteelNode {
             .lock()
             .expect("metadata manifest state lock poisoned");
         if manifest["data_streams"].get(target).is_some() {
-            let (_old_index, next_index, response) = {
+            let (next_generation, next_index, response) = {
                 let stream = manifest["data_streams"]
-                    .get_mut(target)
+                    .get(target)
                     .expect("data stream should exist");
                 let old_index = stream["indices"]
                     .as_array()
@@ -11173,11 +11279,6 @@ impl SteelNode {
                         }),
                     );
                 }
-                stream["generation"] = serde_json::json!(next_generation);
-                stream["indices"]
-                    .as_array_mut()
-                    .expect("data stream indices array expected")
-                    .push(serde_json::json!({ "index_name": next_index.clone() }));
                 let response = serde_json::json!({
                     "acknowledged": true,
                     "shards_acknowledged": true,
@@ -11187,14 +11288,21 @@ impl SteelNode {
                     "dry_run": false,
                     "conditions": condition_results
                 });
-                (old_index, next_index, response)
+                (next_generation, next_index, response)
             };
+            let mut backing_entry = Self::build_data_stream_backing_index_entry(&manifest, target, &next_index);
+            if let Err(error) = self.create_native_index_from_entry(&next_index, &mut backing_entry) {
+                return RestResponse::opensearch_error(error.status_code(), error.opensearch_error_type(), error.opensearch_reason());
+            }
+            let stream = &mut manifest["data_streams"][target];
+            stream["generation"] = serde_json::json!(next_generation);
+            stream["indices"].as_array_mut().expect("data stream indices array expected")
+                .push(serde_json::json!({ "index_name": next_index.clone() }));
             self.created_indices_state
                 .lock()
                 .expect("created indices state lock poisoned")
                 .insert(next_index.clone());
-            manifest["indices"][&next_index] =
-                Self::build_data_stream_backing_index_entry(&manifest, target, &next_index);
+            manifest["indices"][&next_index] = backing_entry;
             drop(manifest);
             self.persist_shared_runtime_state_to_disk();
             return RestResponse::json(200, response);
@@ -12191,16 +12299,20 @@ impl SteelNode {
         };
         let open_indices = self.open_created_indices();
         let node_visibility_pending = self.refresh_visibility_state_pending(&open_indices);
+        let refresh_documents = self.capture_runtime_refresh_documents(&open_indices);
         self.mark_refresh_visibility_development_shards_dirty(&open_indices);
-        self.replay_deferred_native_writes_before_refresh(&open_indices);
-        let refreshed = self
+        if let Err(error) = self.replay_deferred_native_writes_before_refresh(&open_indices) {
+            return engine_error_to_rest_response(error);
+        }
+        let refreshed = match self
             .native_engine
             .refresh(RefreshRequest {
                 indices: open_indices.clone(),
-            })
-            .map(|response| response.refreshed)
-            .unwrap_or(false);
-        self.mark_runtime_documents_refreshed(&open_indices);
+            }) {
+            Ok(response) => response.refreshed,
+            Err(error) => return engine_error_to_rest_response(error),
+        };
+        self.mark_runtime_documents_refreshed(refresh_documents);
         if refreshed || node_visibility_pending {
             self.persist_shared_runtime_state_after_refresh();
             self.persist_development_shard_state_after_refresh();
@@ -12238,16 +12350,20 @@ impl SteelNode {
             return maintenance_closed_index_response();
         }
         let node_visibility_pending = self.refresh_visibility_state_pending(&matched);
+        let refresh_documents = self.capture_runtime_refresh_documents(&matched);
         self.mark_refresh_visibility_development_shards_dirty(&matched);
-        self.replay_deferred_native_writes_before_refresh(&matched);
-        let refreshed = self
+        if let Err(error) = self.replay_deferred_native_writes_before_refresh(&matched) {
+            return engine_error_to_rest_response(error);
+        }
+        let refreshed = match self
             .native_engine
             .refresh(RefreshRequest {
                 indices: matched.clone(),
-            })
-            .map(|response| response.refreshed)
-            .unwrap_or(false);
-        self.mark_runtime_documents_refreshed(&matched);
+            }) {
+            Ok(response) => response.refreshed,
+            Err(error) => return engine_error_to_rest_response(error),
+        };
+        self.mark_runtime_documents_refreshed(refresh_documents);
         if refreshed || node_visibility_pending {
             self.persist_shared_runtime_state_after_refresh();
             self.persist_development_shard_state_after_refresh();
@@ -12270,8 +12386,21 @@ impl SteelNode {
         )
     }
 
-    fn mark_runtime_documents_refreshed(&self, indices: &[String]) {
-        if indices.is_empty() {
+    fn capture_runtime_refresh_documents(&self, indices: &[String]) -> BTreeMap<String, DocumentMap> {
+        let docs = self.documents_state.lock().expect("documents state lock poisoned");
+        let unrefreshed = self.unrefreshed_document_keys.lock()
+            .expect("unrefreshed document key lock poisoned");
+        indices.iter().filter_map(|index| {
+            let keys = unrefreshed.get(index)?;
+            let documents = keys.iter().filter_map(|key| {
+                docs.get(key).map(|document| (key.clone(), Arc::clone(document)))
+            }).collect();
+            Some((index.clone(), documents))
+        }).collect()
+    }
+
+    fn mark_runtime_documents_refreshed(&self, captured: BTreeMap<String, DocumentMap>) {
+        if captured.is_empty() {
             return;
         }
         let mut docs = self
@@ -12282,20 +12411,27 @@ impl SteelNode {
             .unrefreshed_document_keys
             .lock()
             .expect("unrefreshed document key lock poisoned");
-        for index in indices {
-            let Some(matching_keys) = unrefreshed.remove(index) else {
+        for (index, documents) in captured {
+            let Some(matching_keys) = unrefreshed.get_mut(&index) else {
                 continue;
             };
-            for key in matching_keys {
+            for (key, captured_record) in documents {
                 let Some(record) = docs.get_mut(&key) else {
                     continue;
                 };
-                if record.refreshed {
+                // Never clear a newer write, including delete/recreate with reused metadata.
+                if !Arc::ptr_eq(record, &captured_record) {
                     continue;
                 }
-                let mut refreshed_record = record.as_ref().clone();
-                refreshed_record.refreshed = true;
-                *record = Arc::new(refreshed_record);
+                // Release our snapshot owner before copy-on-write; other readers stay immutable.
+                drop(captured_record);
+                if !record.refreshed {
+                    Arc::make_mut(record).refreshed = true;
+                }
+                matching_keys.remove(&key);
+            }
+            if matching_keys.is_empty() {
+                unrefreshed.remove(&index);
             }
         }
     }
@@ -12322,6 +12458,21 @@ impl SteelNode {
 
     fn track_document_removed(&self, index: &str, key: &str) {
         self.track_document_refresh_visibility(index, key, true);
+    }
+
+    // Called with documents_state locked, before a missing-document read can observe the deletion.
+    fn record_document_deletion(&self, index: &str, id: &str, routing: Option<&str>, seq_no: i64) {
+        let shard = self.index_document_shard(index, id, routing);
+        let mut deleted = self.document_deletion_sequences.lock().expect("document deletion lock poisoned");
+        let sequence = deleted.entry(index.to_string()).or_default()
+            .entry(shard).or_default().entry(id.to_string()).or_insert(seq_no);
+        *sequence = (*sequence).max(seq_no);
+    }
+
+    fn document_operation_was_deleted(&self, index: &str, shard: u32, id: &str, seq_no: i64) -> bool {
+        self.document_deletion_sequences.lock().expect("document deletion lock poisoned")
+            .get(index).and_then(|shards| shards.get(&shard)).and_then(|ids| ids.get(id))
+            .is_some_and(|deleted_at| *deleted_at >= seq_no)
     }
 
     fn clear_pending_native_delete(&self, index: &str, key: &str) {
@@ -12359,6 +12510,7 @@ impl SteelNode {
             .insert(
                 key.to_string(),
                 PendingNativeDelete {
+                    identity: Arc::new(()),
                     id: id.to_string(),
                     routing: routing.map(ToOwned::to_owned),
                     seq_no,
@@ -12546,6 +12698,12 @@ impl SteelNode {
         target: Option<&str>,
         request: &RestRequest,
     ) -> RestResponse {
+        if let Some(response) = validate_opensearch_named_boolean_query_param(
+            "realtime", request.query_params.get("realtime"),
+        ) {
+            return response;
+        }
+        let realtime = request.query_params.get("realtime").map_or(true, |value| value != "false");
         let payload = if request.body.is_empty() {
             Value::Object(serde_json::Map::new())
         } else {
@@ -12598,6 +12756,7 @@ impl SteelNode {
                     id,
                     &routing,
                     None,
+                    realtime,
                 ));
             }
         } else if let Some(ids) = payload.get("ids").and_then(Value::as_array) {
@@ -12610,6 +12769,7 @@ impl SteelNode {
                     id,
                     "",
                     None,
+                    realtime,
                 ));
             }
         }
@@ -12624,7 +12784,12 @@ impl SteelNode {
         id: &str,
         routing: &str,
         selected_fields: Option<&BTreeSet<String>>,
+        realtime: bool,
     ) -> Value {
+        if !realtime {
+            return self.published_termvectors_doc_response(requested_index, id, routing, selected_fields)
+                .unwrap_or_else(|response| response.body);
+        }
         let resolved_index = self.resolve_index_or_alias(requested_index);
         let key = format!("{resolved_index}:{id}:{routing}");
         let record = docs.get(&key).or_else(|| {
@@ -12654,6 +12819,36 @@ impl SteelNode {
                 "found": false
             })
         }
+    }
+
+    fn published_termvectors_doc_response(
+        &self,
+        requested_index: &str,
+        id: &str,
+        routing: &str,
+        selected_fields: Option<&BTreeSet<String>>,
+    ) -> Result<Value, RestResponse> {
+        let started = std::time::Instant::now();
+        let index = self.resolve_index_or_alias(requested_index);
+        let document = self.native_engine.get_refreshed_document_with_routing(
+            os_engine::GetDocumentRequest { index: index.clone(), id: id.to_string() },
+            (!routing.is_empty()).then_some(routing),
+        ).map_err(|error| native_search_error_response(error).unwrap_or_else(||
+            RestResponse::opensearch_error(500, "illegal_state_exception", "failed to read published document")
+        ))?;
+        let mut response = serde_json::json!({
+            "_index": self.write_response_index(requested_index, &index),
+            "_id": id, "_version": 0, "found": false,
+        });
+        if let Some(document) = document {
+            response["found"] = Value::Bool(true);
+            response["_version"] = serde_json::json!(document.metadata.version);
+            response["term_vectors"] = Value::Object(
+                termvectors_fields_from_source(&document.source, selected_fields),
+            );
+        }
+        response["took"] = serde_json::json!(started.elapsed().as_millis() as u64);
+        Ok(response)
     }
 
     fn artificial_termvectors_doc_response(
@@ -13318,18 +13513,19 @@ impl SteelNode {
         let mut fields = serde_json::Map::new();
         let mut field_indices = BTreeMap::<String, BTreeSet<String>>::new();
         let mut field_type_indices = BTreeMap::<String, BTreeMap<String, BTreeSet<String>>>::new();
-        let filtered_indices = resolved_indices
-            .iter()
-            .filter(|index| {
-                index_filter.map_or(true, |filter| {
-                    let mappings = manifest["indices"][index.as_str()]
-                        .get("mappings")
-                        .unwrap_or(&Value::Null);
-                    field_caps_index_matches_filter(index, filter, &docs, mappings)
-                })
-            })
-            .cloned()
-            .collect::<Vec<_>>();
+        let mut filtered_indices = Vec::new();
+        for index in &resolved_indices {
+            if let Some(filter) = index_filter {
+                let mappings = manifest["indices"][index.as_str()]
+                    .get("mappings").unwrap_or(&Value::Null);
+                match field_caps_index_matches_filter(index, filter, &docs, mappings) {
+                    Ok(true) => {}
+                    Ok(false) => continue,
+                    Err(error) => return engine_error_to_rest_response(error),
+                }
+            }
+            filtered_indices.push(index.clone());
+        }
 
         if let Some(index_map) = manifest["indices"].as_object() {
             for (index, metadata) in index_map {
@@ -13656,6 +13852,10 @@ impl SteelNode {
     }
 
     fn handle_count_route(&self, target: Option<&str>, request: &RestRequest) -> RestResponse {
+        let _thread_pool = match self.enter_runtime_thread_pool("search", 1000) {
+            Ok(execution) => execution,
+            Err(response) => return response,
+        };
         let has_body = !request.body.is_empty();
         if has_body {
             let unsupported_query_params = request
@@ -13695,20 +13895,12 @@ impl SteelNode {
         }
         let default_query = serde_json::json!({ "match_all": {} });
         let query = payload.get("query").unwrap_or(&default_query);
-        let (valid, explanation) = validate_query_payload_for_validate_route(payload.get("query"));
-        if !valid {
-            return build_unsupported_search_response(&format!(
-                "unsupported count query: {explanation}"
-            ));
-        }
         let requested_target = target.unwrap_or("_all");
-        let resolved_indices = if requested_target == "_all" {
-            Some(
-                match self.resolve_search_targets("*", false, true, "open") {
-                    Ok(indices) => indices,
-                    Err(response) => return response,
-                },
-            )
+        let resolved_targets = if requested_target == "_all" {
+            match self.resolve_search_targets_with_alias_filters("*", false, true, "open") {
+                Ok(targets) => targets,
+                Err(response) => return response,
+            }
         } else {
             for field in ["ignore_unavailable", "allow_no_indices"] {
                 if let Some(response) = validate_opensearch_named_boolean_query_param(
@@ -13722,27 +13914,20 @@ impl SteelNode {
                 query_param_is_true(request.query_params.get("ignore_unavailable"));
             let allow_no_indices =
                 query_param_is_true(request.query_params.get("allow_no_indices"));
-            let mut indices = Vec::new();
-            for selector in requested_target
+            let normalized_target = requested_target
                 .split(',')
                 .map(str::trim)
                 .filter(|selector| !selector.is_empty())
-            {
-                let selector_uses_wildcard = selector.contains('*') || selector.contains('?');
-                match self.resolve_search_targets(
-                    selector,
-                    ignore_unavailable,
-                    allow_no_indices || selector_uses_wildcard,
-                    "open",
-                ) {
-                    Ok(mut matched) => indices.append(&mut matched),
-                    Err(response) => return response,
-                }
+                .collect::<Vec<_>>().join(",");
+            match self.resolve_search_targets_with_alias_filters_mode::<true>(
+                &normalized_target, ignore_unavailable, allow_no_indices, "open",
+            ) {
+                Ok(targets) => targets,
+                Err(response) => return response,
             }
-            indices.sort();
-            indices.dedup();
-            Some(indices)
         };
+        let alias_filters = resolved_targets.alias_filters;
+        let resolved_indices = Some(resolved_targets.indices);
         let shard_total = resolved_indices
             .as_ref()
             .map(|indices| {
@@ -13759,42 +13944,39 @@ impl SteelNode {
             .or_else(|| self.resolve_alias_search_routing(requested_target))
             .map(|routing| parse_routing_values(&routing))
             .filter(|routing| !routing.is_empty());
-        let docs = self
-            .documents_state
-            .lock()
-            .expect("documents state lock poisoned");
-        let count = docs
-            .iter()
-            .filter(|(key, record)| {
-                if !record.refreshed {
-                    return false;
-                }
-                let mut parts = key.splitn(3, ':');
-                let Some(index) = parts.next() else {
-                    return false;
-                };
-                let Some(id) = parts.next() else {
-                    return false;
-                };
-                if let Some(indices) = &resolved_indices {
-                    if !indices.iter().any(|resolved| resolved == index) {
-                        return false;
-                    }
-                }
-                if let Some(routings) = requested_routing_values.as_ref() {
-                    if !document_matches_requested_routing_shards(
-                        index,
-                        id,
-                        record,
-                        routings,
-                        |index_name| self.index_primary_shard_count(index_name),
-                    ) {
-                        return false;
-                    }
-                }
-                matches_query_body(&record.source, Some(query))
+        let indices = resolved_indices.as_deref().unwrap_or_default();
+        let shard_scope = requested_routing_values
+            .as_ref()
+            .map(|routings| {
+                search_shard_scope_for_routing_values(indices, routings, |index| {
+                    self.index_routing(index)
+                })
             })
-            .count();
+            .unwrap_or_default();
+        let shard_total = if shard_scope.is_empty() {
+            shard_total
+        } else {
+            shard_scope.values().map(BTreeSet::len).sum()
+        };
+        // Count uses the engine's refreshed view and query semantics, without fetching hits.
+        let search_body = serde_json::json!({"query": query, "size": 0});
+        let native_request = match standalone_native_search_request_with_alias_filters(
+            indices,
+            Some(&shard_scope),
+            &alias_filters,
+            &search_body,
+        ) {
+            Ok(request) => request,
+            Err(reason) => return build_unsupported_search_response(&reason),
+        };
+        let count = if indices.is_empty() {
+            0
+        } else {
+            match self.native_engine.search(native_request) {
+                Ok(response) => response.total_hits,
+                Err(error) => return engine_error_to_rest_response(error),
+            }
+        };
         RestResponse::json(
             200,
             serde_json::json!({
@@ -14455,6 +14637,15 @@ impl SteelNode {
             .map(ToOwned::to_owned)
             .or_else(|| self.resolve_alias_read_routing(index))
             .unwrap_or_default();
+        if request.query_params.get("realtime").is_some_and(|value| value == "false") {
+            return match self.published_termvectors_doc_response(
+                index, id, &routing,
+                (!selected_fields.is_empty()).then_some(&selected_fields),
+            ) {
+                Ok(body) => RestResponse::json(200, body),
+                Err(response) => response,
+            };
+        }
         let docs = self
             .documents_state
             .lock()
@@ -14471,12 +14662,13 @@ impl SteelNode {
                 } else {
                     Some(&selected_fields)
                 },
+                true,
             ),
         )
     }
 
     fn handle_index_search_route(&self, index: &str, request: &RestRequest) -> RestResponse {
-        match require_security_permission(request, SecurityPermission::IndexRead, "search") {
+        match self.require_security_permission(request, SecurityPermission::IndexRead, "search") {
             Ok(_) => {}
             Err(response) => return response,
         }
@@ -14755,8 +14947,12 @@ impl SteelNode {
         } else {
             None
         };
-        let resolved_indices = if let Some(context) = pit_context.as_ref() {
-            context.indices.clone()
+        let resolved_targets = if let Some(context) = pit_context.as_ref() {
+            let alias_filters = match rest_pit_alias_filters(point_in_time_response_id.as_deref()) {
+                Ok(filters) => filters,
+                Err(response) => return response,
+            };
+            ResolvedSearchTargets { indices: context.indices.clone(), alias_filters }
         } else {
             let ignore_unavailable = request
                 .query_params
@@ -14765,28 +14961,29 @@ impl SteelNode {
             let allow_no_indices = request
                 .query_params
                 .get("allow_no_indices")
-                .is_some_and(|value| value == "true");
+                .map_or(true, |value| value == "true");
             let expand_wildcards = request
                 .query_params
                 .get("expand_wildcards")
                 .map(String::as_str)
                 .unwrap_or("open");
-            if expand_wildcards == "none"
-                && (index.contains('*') || index.contains('?') || index == "_all")
-            {
-                Vec::new()
-            } else {
-                match self.resolve_search_targets(
-                    index,
-                    ignore_unavailable,
-                    allow_no_indices,
-                    expand_wildcards,
-                ) {
-                    Ok(indices) => indices,
-                    Err(response) => return response,
-                }
+            match self.resolve_rest_search_targets_with_alias_filters(
+                index,
+                ignore_unavailable,
+                allow_no_indices,
+                expand_wildcards,
+            ) {
+                Ok(targets) => targets,
+                Err(response) => return response,
             }
         };
+        let resolved_indices = resolved_targets.indices;
+        let alias_filters = resolved_targets.alias_filters;
+        for filter in alias_filters.values() {
+            if let Some(response) = validate_search_query_body(filter) {
+                return response;
+            }
+        }
         if let Some(closed_index) = resolved_indices
             .iter()
             .find(|index_name| self.index_is_closed(index_name))
@@ -14853,6 +15050,15 @@ impl SteelNode {
             }
             analyzers
         };
+        for (index_name, mappings) in &index_mappings {
+            for query in [body.get("query"), body.get("post_filter"), alias_filters.get(index_name)]
+                .into_iter().flatten()
+            {
+                if let Err(error) = validate_multi_field_query_options(query, mappings) {
+                    return engine_error_to_rest_response(error);
+                }
+            }
+        }
         if let Some(response) =
             validate_search_after_sort_values_against_mappings(&body, &index_mappings)
         {
@@ -14921,7 +15127,7 @@ impl SteelNode {
                 search_shard_scope_for_routing_values(
                     &resolved_indices,
                     routing_values,
-                    |index_name| self.index_primary_shard_count(index_name),
+                    |index_name| self.index_routing(index_name),
                 )
             })
             .unwrap_or_default();
@@ -14939,6 +15145,7 @@ impl SteelNode {
             if let Some(response) = self.try_native_engine_search_response(
                 &resolved_indices,
                 &native_shard_scope,
+                &alias_filters,
                 &body,
                 rest_total_hits_as_int,
                 query_param_is_true(request.query_params.get("typed_keys")),
@@ -14961,6 +15168,7 @@ impl SteelNode {
         {
             if let Some(response) = self.try_native_engine_scroll_search_response(
                 &resolved_indices,
+                &alias_filters,
                 &body,
                 request.query_params.get("scroll").map(String::as_str),
                 rest_total_hits_as_int,
@@ -15034,7 +15242,7 @@ impl SteelNode {
                             doc_id,
                             record,
                             routings,
-                            |index_name| self.index_primary_shard_count(index_name),
+                            |index_name| self.index_routing(index_name),
                         ) {
                             return None;
                         }
@@ -15070,7 +15278,7 @@ impl SteelNode {
                                 &delete.id,
                                 &delete.document,
                                 routings,
-                                |index_name| self.index_primary_shard_count(index_name),
+                                |index_name| self.index_routing(index_name),
                             ) {
                                 continue;
                             }
@@ -15089,6 +15297,25 @@ impl SteelNode {
             }
             (candidate_documents, suggest_response)
         };
+        let source_scoring_indices = {
+            let manifest = self.metadata_manifest_state.lock()
+                .expect("metadata manifest state lock poisoned");
+            index_mappings.iter().filter(|(index, _)| {
+                let settings = &manifest["indices"][index.as_str()]["settings"];
+                body.get("derived").is_none()
+                    && request.query_params.get("search_type").map(String::as_str) != Some("dfs_query_then_fetch")
+                    && settings.get("analysis").is_none()
+                    && settings.get("index").and_then(|index| index.get("analysis")).is_none()
+                    && !settings.as_object().is_some_and(|settings| settings.keys()
+                        .any(|key| key.starts_with("analysis.") || key.starts_with("index.analysis.")))
+            }).map(|(index, mappings)| (index.clone(), mappings.clone())).collect()
+        };
+        let source_scoring = source_bm25::SourceScoring::prepare(
+            &body["query"], &source_scoring_indices,
+            candidate_documents.iter().map(|(index, id, source, _, _, _, routing)| {
+                (index.as_str(), self.index_document_shard(index, id, routing.as_deref()), source)
+            }),
+        );
         let candidate_sources = candidate_documents
             .iter()
             .map(|(_, _, source, _, _, _, _)| source)
@@ -15107,6 +15334,17 @@ impl SteelNode {
         for (doc_index, doc_id, source, version, seq_no, primary_term, routing) in
             candidate_documents
         {
+            if let Some(filter) = alias_filters.get(&doc_index) {
+                match evaluate_search_query_source_checked(
+                    &source, &doc_id, filter,
+                    index_mappings.get(&doc_index).unwrap_or(&Value::Null),
+                ) {
+                    Ok(Some((true, _))) => {}
+                    Ok(Some((false, _))) => continue,
+                    Ok(None) => return build_unsupported_search_response("unsupported alias filter"),
+                    Err(error) => return engine_error_to_rest_response(error),
+                }
+            }
             if let Some(slice) = parsed_slice.as_ref() {
                 if !document_matches_search_slice(&doc_id, &source, slice) {
                     continue;
@@ -15122,12 +15360,17 @@ impl SteelNode {
                 }));
             }
             let effective_source = apply_request_scoped_fields_to_source(&source, &body);
-            if let Some((matched, score)) = evaluate_search_query_source_with_mappings(
+            let evaluation = match evaluate_search_query_source_with_scoring_checked(
                 &effective_source,
                 &doc_id,
                 &body["query"],
                 index_mappings.get(&doc_index).unwrap_or(&Value::Null),
+                source_scoring.fields(&doc_index, self.index_document_shard(&doc_index, &doc_id, routing.as_deref())),
             ) {
+                Ok(result) => result,
+                Err(error) => return engine_error_to_rest_response(error),
+            };
+            if let Some((matched, score)) = evaluation {
                 if matched {
                     let score = score * search_index_boost_for(&doc_index, &index_boosts);
                     if body
@@ -15138,8 +15381,7 @@ impl SteelNode {
                         continue;
                     }
                     let shard_doc = opensearch_shard_doc_sort_key(
-                        self.index_primary_shard_count(&doc_index),
-                        routing.as_deref().unwrap_or(&doc_id),
+                        self.index_document_shard(&doc_index, &doc_id, routing.as_deref()),
                         seq_no,
                     );
                     let mut hit = serde_json::json!({
@@ -15187,6 +15429,7 @@ impl SteelNode {
             );
         }
         if let Some(post_filter) = body.get("post_filter") {
+            let mut evaluation_error = None;
             hits.retain(|hit| {
                 let Some(source) = hit.get("_source") else {
                     return false;
@@ -15198,18 +15441,37 @@ impl SteelNode {
                     return false;
                 };
                 let effective_source = apply_request_scoped_fields_to_source(source, &body);
-                evaluate_search_query_source_with_mappings(
+                match evaluate_search_query_source_checked(
                     &effective_source,
                     doc_id,
                     post_filter,
                     index_mappings.get(index_name).unwrap_or(&Value::Null),
-                )
-                .is_some_and(|(matched, _)| matched)
+                ) {
+                    Ok(result) => result.is_some_and(|(matched, _)| matched),
+                    Err(error) => {
+                        if evaluation_error.is_none() { evaluation_error = Some(error); }
+                        false
+                    }
+                }
             });
+            if let Some(error) = evaluation_error {
+                return engine_error_to_rest_response(error);
+            }
         }
         let execution_sort =
             search_sort_with_integer_missing_values(&body["sort"], &index_mappings);
-        apply_search_sort(&mut hits, &execution_sort);
+        let mapped_sort = match MappedSearchSort::new(&body["sort"], &index_mappings) {
+            Ok(sort) => sort,
+            Err(error) => return engine_error_to_rest_response(error),
+        };
+        if let Some(sort) = &mapped_sort {
+            hits = match sort.order_hits(hits) {
+                Ok(hits) => hits,
+                Err(error) => return engine_error_to_rest_response(error),
+            };
+        } else {
+            apply_search_sort(&mut hits, &execution_sort);
+        }
         if body.get("sort").is_none() {
             hits.sort_by(|left, right| {
                 let left_score = left["_score"].as_f64().unwrap_or(0.0);
@@ -15297,7 +15559,14 @@ impl SteelNode {
             }
         }
         if let Some(search_after_values) = body.get("search_after").and_then(Value::as_array) {
-            hits = apply_search_after(hits, &execution_sort, search_after_values);
+            hits = if let Some(sort) = &mapped_sort {
+                match sort.after(hits, search_after_values) {
+                    Ok(hits) => hits,
+                    Err(error) => return engine_error_to_rest_response(error),
+                }
+            } else {
+                apply_search_after(hits, &execution_sort, search_after_values)
+            };
         }
         let from = body.get("from").and_then(Value::as_u64).unwrap_or(0) as usize;
         let size = body.get("size").and_then(Value::as_u64).unwrap_or(10) as usize;
@@ -15307,11 +15576,17 @@ impl SteelNode {
             Vec::new()
         };
         let mut paged_hits: Vec<Value> = hits.iter().skip(from).take(size).cloned().collect();
-        append_search_hit_sort_values_with_mappings(
-            &mut paged_hits,
-            Some(&execution_sort),
-            Some(&index_mappings),
-        );
+        if let Some(sort) = &mapped_sort {
+            if let Err(error) = sort.append_values(&mut paged_hits, &index_mappings) {
+                return engine_error_to_rest_response(error);
+            }
+        } else {
+            append_search_hit_sort_values_with_mappings(
+                &mut paged_hits,
+                Some(&execution_sort),
+                Some(&index_mappings),
+            );
+        }
         let render_scores = search_response_should_render_scores(&body);
         let scroll_id = request.query_params.get("scroll").map(|keep_alive| {
             self.store_scroll_context(remaining_hits.clone(), size, total_value, keep_alive)
@@ -15529,12 +15804,13 @@ impl SteelNode {
         &self,
         resolved_indices: &[String],
         shard_scope: &BTreeMap<String, BTreeSet<u32>>,
+        alias_filters: &BTreeMap<String, Value>,
         body: &Value,
         rest_total_hits_as_int: bool,
         typed_keys: bool,
     ) -> Option<RestResponse> {
         let request =
-            standalone_native_search_request(resolved_indices, Some(shard_scope), body).ok()?;
+            standalone_native_search_request_with_alias_filters(resolved_indices, Some(shard_scope), alias_filters, body).ok()?;
         match self.native_engine.search(request) {
             Ok(response) => {
                 let total_shards = resolved_indices
@@ -15559,10 +15835,7 @@ impl SteelNode {
                 self.record_native_response_body_build_elapsed(response_build_started);
                 Some(rest_response)
             }
-            Err(EngineError::InvalidRequest { .. }) | Err(EngineError::IndexNotFound { .. }) => {
-                None
-            }
-            Err(error) => Some(engine_error_to_rest_response(error)),
+            Err(error) => native_search_error_response(error),
         }
     }
 
@@ -15576,7 +15849,13 @@ impl SteelNode {
         typed_keys: bool,
     ) -> Option<RestResponse> {
         let snapshot_engine = self.native_pit_snapshot_engine(resolved_indices, context, pit_id)?;
-        let request = standalone_native_search_request(resolved_indices, None, body).ok()?;
+        let alias_filters = match rest_pit_alias_filters(pit_id) {
+            Ok(filters) => filters,
+            Err(response) => return Some(response),
+        };
+        let request = standalone_native_search_request_with_alias_filters(
+            resolved_indices, None, &alias_filters, body,
+        ).ok()?;
         match snapshot_engine.search(request) {
             Ok(response) => {
                 let total_shards = resolved_indices
@@ -15606,10 +15885,7 @@ impl SteelNode {
                 self.record_native_response_body_build_elapsed(response_build_started);
                 Some(rest_response)
             }
-            Err(EngineError::InvalidRequest { .. }) | Err(EngineError::IndexNotFound { .. }) => {
-                None
-            }
-            Err(error) => Some(engine_error_to_rest_response(error)),
+            Err(error) => native_search_error_response(error),
         }
     }
 
@@ -15722,6 +15998,7 @@ impl SteelNode {
     fn try_native_engine_scroll_search_response(
         &self,
         resolved_indices: &[String],
+        alias_filters: &BTreeMap<String, Value>,
         body: &Value,
         keep_alive: Option<&str>,
         rest_total_hits_as_int: bool,
@@ -15749,7 +16026,7 @@ impl SteelNode {
             );
         }
         let request =
-            standalone_native_search_request(resolved_indices, None, &engine_body).ok()?;
+            standalone_native_search_request_with_alias_filters(resolved_indices, None, alias_filters, &engine_body).ok()?;
         match self.native_engine.search(request) {
             Ok(response) => {
                 let total_hits = response.total_hits;
@@ -15821,10 +16098,7 @@ impl SteelNode {
                 }
                 Some(rest_response)
             }
-            Err(EngineError::InvalidRequest { .. }) | Err(EngineError::IndexNotFound { .. }) => {
-                None
-            }
-            Err(error) => Some(engine_error_to_rest_response(error)),
+            Err(error) => native_search_error_response(error),
         }
     }
 
@@ -15875,7 +16149,7 @@ impl SteelNode {
         if let Some(response) = validate_doc_write_refresh_query_param(request) {
             return response;
         }
-        let security_subject = match authenticated_security_subject(request) {
+        let security_subject = match self.authenticated_security_subject(request) {
             Ok(subject) => subject,
             Err(response) => return response,
         };
@@ -16032,11 +16306,7 @@ impl SteelNode {
                 .get("require_alias")
                 .and_then(Value::as_bool)
                 .unwrap_or(default_require_alias);
-            let effective_routing = if routing.is_empty() {
-                self.resolve_alias_write_routing(&index)
-            } else {
-                Some(routing.clone())
-            };
+            let effective_routing = (!routing.is_empty()).then_some(routing.clone());
             if !matches!(action.as_str(), "index" | "create" | "update" | "delete") {
                 return RestResponse::opensearch_error(
                     400,
@@ -16220,7 +16490,7 @@ impl SteelNode {
         request: &RestRequest,
         initial_scroll_id: Option<&str>,
     ) -> RestResponse {
-        match require_security_permission(request, SecurityPermission::IndexRead, "search scroll") {
+        match self.require_security_permission(request, SecurityPermission::IndexRead, "search scroll") {
             Ok(_) => {}
             Err(response) => return response,
         }
@@ -16252,7 +16522,7 @@ impl SteelNode {
         scroll_id: &str,
         request: &RestRequest,
     ) -> RestResponse {
-        match require_security_permission(request, SecurityPermission::IndexRead, "search scroll") {
+        match self.require_security_permission(request, SecurityPermission::IndexRead, "search scroll") {
             Ok(_) => {}
             Err(response) => return response,
         }
@@ -16341,7 +16611,7 @@ impl SteelNode {
         scroll_ids: Vec<String>,
         request: &RestRequest,
     ) -> RestResponse {
-        match require_security_permission(request, SecurityPermission::IndexRead, "search scroll") {
+        match self.require_security_permission(request, SecurityPermission::IndexRead, "search scroll") {
             Ok(_) => {}
             Err(response) => return response,
         }
@@ -16365,7 +16635,7 @@ impl SteelNode {
     }
 
     fn handle_list_all_point_in_time_route(&self, request: &RestRequest) -> RestResponse {
-        match require_security_permission(request, SecurityPermission::IndexRead, "point in time") {
+        match self.require_security_permission(request, SecurityPermission::IndexRead, "point in time") {
             Ok(_) => {}
             Err(response) => return response,
         }
@@ -16398,7 +16668,7 @@ impl SteelNode {
     }
 
     fn handle_clear_all_point_in_time_route(&self, request: &RestRequest) -> RestResponse {
-        match require_security_permission(request, SecurityPermission::IndexRead, "point in time") {
+        match self.require_security_permission(request, SecurityPermission::IndexRead, "point in time") {
             Ok(_) => {}
             Err(response) => return response,
         }
@@ -16448,7 +16718,7 @@ impl SteelNode {
     }
 
     fn handle_open_point_in_time_route(&self, index: &str, request: &RestRequest) -> RestResponse {
-        match require_security_permission(request, SecurityPermission::IndexRead, "point in time") {
+        match self.require_security_permission(request, SecurityPermission::IndexRead, "point in time") {
             Ok(_) => {}
             Err(response) => return response,
         }
@@ -16507,7 +16777,7 @@ impl SteelNode {
         let ignore_unavailable =
             query_param_is_true(request.query_params.get("ignore_unavailable"));
         let allow_no_indices_param = request.query_params.get("allow_no_indices");
-        let allow_no_indices = query_param_is_true(allow_no_indices_param);
+        let allow_no_indices = allow_no_indices_param.map(|value| value == "true");
         let expand_wildcards = request
             .query_params
             .get("expand_wildcards")
@@ -16518,29 +16788,18 @@ impl SteelNode {
             .get("routing")
             .map(|routing| parse_routing_values(routing))
             .filter(|routing| !routing.is_empty());
-        let mut resolved_indices = Vec::new();
-        for selector in index.split(',').filter(|selector| !selector.is_empty()) {
-            let selector_uses_wildcard =
-                selector == "_all" || selector.contains('*') || selector.contains('?');
-            let effective_allow_no_indices = if ignore_unavailable {
-                true
-            } else if allow_no_indices_param.is_some() {
-                allow_no_indices
-            } else {
-                selector_uses_wildcard
-            };
-            match self.resolve_search_targets(
-                selector,
-                ignore_unavailable,
-                effective_allow_no_indices,
-                expand_wildcards,
-            ) {
-                Ok(mut indices) => resolved_indices.append(&mut indices),
-                Err(response) => return response,
+        let resolved_targets = match self.resolve_pit_targets_with_alias_filters(
+            index, ignore_unavailable, allow_no_indices, expand_wildcards,
+        ) {
+            Ok(targets) => targets,
+            Err(response) => return response,
+        };
+        for filter in resolved_targets.alias_filters.values() {
+            if let Some(response) = validate_search_query_body(filter) {
+                return response;
             }
         }
-        resolved_indices.sort();
-        resolved_indices.dedup();
+        let resolved_indices = resolved_targets.indices;
         if let Some(closed_index) = resolved_indices
             .iter()
             .find(|index_name| self.index_is_closed(index_name))
@@ -16584,7 +16843,7 @@ impl SteelNode {
                             doc_id,
                             record,
                             routings,
-                            |index_name| self.index_primary_shard_count(index_name),
+                            |index_name| self.index_routing(index_name),
                         ) {
                             return None;
                         }
@@ -16612,7 +16871,7 @@ impl SteelNode {
                             &delete.id,
                             &delete.document,
                             routings,
-                            |index_name| self.index_primary_shard_count(index_name),
+                            |index_name| self.index_routing(index_name),
                         ) {
                             continue;
                         }
@@ -16647,9 +16906,13 @@ impl SteelNode {
         }
         let mut next_id = self.next_pit_id.lock().expect("next pit id lock poisoned");
         *next_id += 1;
-        let pit_id = self
-            .build_rest_search_context_pit_id(&resolved_indices, *next_id)
-            .unwrap_or_else(|| build_local_pit_id(*next_id));
+        let pit_id = match self.build_rest_search_context_pit_id(
+            &resolved_indices, &resolved_targets.alias_filters, *next_id,
+        ) {
+            Some(id) => id,
+            None if resolved_targets.alias_filters.is_empty() => build_local_pit_id(*next_id),
+            None => return build_unsupported_search_response("cannot encode PIT alias filters"),
+        };
         pit_contexts.insert(
             pit_id.clone(),
             PitContext {
@@ -16711,17 +16974,33 @@ impl SteelNode {
     fn build_rest_search_context_pit_id(
         &self,
         resolved_indices: &[String],
+        alias_filters: &BTreeMap<String, Value>,
         sequence: u64,
     ) -> Option<String> {
         let mut shards = BTreeMap::new();
+        let mut wire_filters = BTreeMap::new();
+        let session_id = format!("steelsearch-rest-pit-session-{sequence}-{}", uuid::Uuid::new_v4().simple());
         let mut ordinal = 0_i64;
         for index in resolved_indices {
+            let index_uuid = self.index_uuid(index);
+            if let Some(filter) = alias_filters.get(index) {
+                wire_filters.insert(index_uuid.clone(), os_transport::action::OpenSearchAliasFilterWire::new(
+                    Vec::new(),
+                    Some(os_transport::action::OpenSearchQueryBuilderWire::Wrapper(
+                        os_transport::action::OpenSearchWrapperQueryBuilderWire {
+                            boost: 1.0,
+                            query_name: None,
+                            source: serde_json::to_vec(filter).ok()?.into(),
+                        },
+                    )),
+                ));
+            }
             for shard_id in 0..self.index_primary_shard_count(index) {
                 ordinal += 1;
                 shards.insert(
                     os_transport::action::OpenSearchShardIdWire {
                         index_name: index.clone(),
-                        index_uuid: self.index_uuid(index),
+                        index_uuid: index_uuid.clone(),
                         shard_id: shard_id as i32,
                     },
                     os_transport::action::OpenSearchSearchContextIdForNodeWire {
@@ -16729,7 +17008,7 @@ impl SteelNode {
                         cluster_alias: None,
                         search_context_id:
                             os_transport::action::OpenSearchShardSearchContextIdWire::new(
-                                format!("steelsearch-rest-pit-session-{sequence}"),
+                                session_id.clone(),
                                 (sequence as i64)
                                     .saturating_mul(1_000_000)
                                     .saturating_add(ordinal),
@@ -16738,7 +17017,7 @@ impl SteelNode {
                 );
             }
         }
-        os_transport::action::OpenSearchSearchContextIdWire::new(shards)
+        os_transport::action::OpenSearchSearchContextIdWire::with_alias_filters(shards, wire_filters)
             .encode(self.info.version)
             .ok()
     }
@@ -16902,7 +17181,7 @@ impl SteelNode {
     }
 
     fn handle_close_point_in_time_route(&self, request: &RestRequest) -> RestResponse {
-        match require_security_permission(request, SecurityPermission::IndexRead, "point in time") {
+        match self.require_security_permission(request, SecurityPermission::IndexRead, "point in time") {
             Ok(_) => {}
             Err(response) => return response,
         }
@@ -16987,21 +17266,24 @@ impl SteelNode {
         &self,
         index: &str,
         id: &str,
-        source: Value,
-        routing: Option<&str>,
+        record: &StoredDocument,
         forced_refresh: bool,
     ) {
-        self.apply_dynamic_mappings_for_source(index, &source);
+        self.apply_dynamic_mappings_for_source(index, &record.source);
         if self.should_defer_native_write_until_refresh(forced_refresh) {
             return;
         }
-        let _ = self.native_engine.index_document_with_routing(
-            IndexDocumentRequest {
+        let _ = self.native_engine.replay_document_with_routing(
+            ReplayDocumentRequest {
                 index: index.to_string(),
-                id: id.to_string(),
-                source,
+                metadata: os_engine::DocumentMetadata {
+                    id: id.to_string(), version: record.version as u64,
+                    seq_no: record.seq_no, primary_term: record.primary_term as u64,
+                },
+                coordination: WriteCoordinationMetadata::default(),
+                source: record.source.clone(),
             },
-            routing,
+            record.routing.as_deref(),
         );
         if forced_refresh {
             let _ = self.native_engine.refresh(RefreshRequest {
@@ -17045,15 +17327,49 @@ impl SteelNode {
                 == Some("1")
     }
 
-    fn replay_deferred_native_writes_before_refresh(&self, indices: &[String]) {
+    fn replay_pending_native_delete(
+        &self,
+        index: &str,
+        key: &str,
+        captured: &PendingNativeDelete,
+    ) -> os_engine::EngineResult<()> {
+        // Keep runtime writes and index deletion outside this identity check and native apply.
+        let docs = self.documents_state.lock().expect("documents state lock poisoned");
+        let mut deletes = self.pending_native_deletes.lock()
+            .expect("pending native delete lock poisoned");
+        let Some(pending) = deletes.get_mut(index) else {
+            return Ok(());
+        };
+        let Some(current) = pending.get(key) else {
+            return Ok(());
+        };
+        if !Arc::ptr_eq(&current.identity, &captured.identity) || docs.contains_key(key) {
+            return Ok(());
+        }
+        match self.native_engine.delete_document_with_routing(
+            DeleteDocumentRequest { index: index.to_string(), id: captured.id.clone() },
+            captured.routing.as_deref(),
+        ) {
+            Ok(_) | Err(os_engine::EngineError::DocumentNotFound { .. }) => {},
+            Err(error) => return Err(error),
+        }
+        pending.remove(key);
+        if pending.is_empty() {
+            deletes.remove(index);
+        }
+        Ok(())
+    }
+
+    fn replay_deferred_native_writes_before_refresh(&self, indices: &[String]) -> os_engine::EngineResult<()> {
         enum PendingNativeMutation {
             Index {
                 index: String,
                 id: String,
-                document: StoredDocument,
+                document: SharedStoredDocument,
             },
             Delete {
                 index: String,
+                key: String,
                 delete: PendingNativeDelete,
             },
         }
@@ -17100,7 +17416,7 @@ impl SteelNode {
                         pending.push(PendingNativeMutation::Index {
                             index: index.clone(),
                             id: id.to_string(),
-                            document: document.as_ref().clone(),
+                            document: Arc::clone(document),
                         });
                     }
                 }
@@ -17109,9 +17425,10 @@ impl SteelNode {
                 let Some(index_deletes) = deletes.get(index) else {
                     continue;
                 };
-                for delete in index_deletes.values() {
+                for (key, delete) in index_deletes {
                     pending.push(PendingNativeMutation::Delete {
                         index: index.clone(),
+                        key: key.clone(),
                         delete: delete.clone(),
                     });
                 }
@@ -17147,29 +17464,16 @@ impl SteelNode {
                         document.routing.as_deref(),
                     );
                 }
-                PendingNativeMutation::Delete { index, delete } => {
-                    let _ = self.native_engine.delete_document_with_routing(
-                        DeleteDocumentRequest {
-                            index,
-                            id: delete.id,
-                        },
-                        delete.routing.as_deref(),
-                    );
+                PendingNativeMutation::Delete { index, key, delete } => {
+                    self.replay_pending_native_delete(&index, &key, &delete)?;
                 }
             }
         }
-        let mut deletes = self
-            .pending_native_deletes
-            .lock()
-            .expect("pending native delete lock poisoned");
-        for index in indices {
-            deletes.remove(index);
-        }
+        Ok(())
     }
 
     fn mark_development_shard_dirty(&self, index: &str, id: &str, routing: Option<&str>) {
-        let shard_count = self.index_primary_shard_count(index).max(1);
-        let shard_id = opensearch_routing_shard(routing.unwrap_or(id), shard_count) as u32;
+        let shard_id = self.index_document_shard(index, id, routing);
         self.dirty_development_shards
             .lock()
             .expect("dirty development shards lock poisoned")
@@ -17211,10 +17515,7 @@ impl SteelNode {
                         } else {
                             routing_key
                         });
-                    let shard_id = opensearch_routing_shard(
-                        routing,
-                        self.index_primary_shard_count(index).max(1),
-                    ) as u32;
+                    let shard_id = self.index_document_shard(index, id, Some(routing));
                     dirty.insert((index.clone(), shard_id));
                 }
             }
@@ -17230,10 +17531,7 @@ impl SteelNode {
                 };
                 for delete in deletes.values() {
                     let routing = delete.routing.as_deref().unwrap_or(&delete.id);
-                    let shard_id = opensearch_routing_shard(
-                        routing,
-                        self.index_primary_shard_count(index).max(1),
-                    ) as u32;
+                    let shard_id = self.index_document_shard(index, &delete.id, Some(routing));
                     dirty.insert((index.clone(), shard_id));
                 }
             }
@@ -17312,7 +17610,7 @@ impl SteelNode {
                     });
                 }
             },
-            "update" => match self.resolve_write_target(index, false) {
+            "update" | "delete" => match self.resolve_write_target(index, false) {
                 Ok(resolved_index) => resolved_index,
                 Err(reason) => {
                     return serde_json::json!({
@@ -17330,6 +17628,16 @@ impl SteelNode {
             },
             _ => self.resolve_index_or_alias(index),
         };
+        let routing = match self.resolve_document_routing(index, &resolved_index, routing, false) {
+            Ok(routing) => routing,
+            Err(reason) => return serde_json::json!({
+                action: {
+                    "_index": resolved_index, "_id": id, "status": 400,
+                    "error": {"type": "illegal_argument_exception", "reason": reason}
+                }
+            }),
+        };
+        let routing = routing.as_deref();
         let key = format!("{resolved_index}:{id}:{}", routing.unwrap_or_default());
         let version = meta.get("version").and_then(Value::as_i64);
         let version_type = meta.get("version_type").and_then(Value::as_str);
@@ -17359,6 +17667,14 @@ impl SteelNode {
             }
         }
         let external_version = version.filter(|_| version_type == Some("external"));
+        if let Some(version) = external_version.filter(|version| *version < 0) {
+            return serde_json::json!({action: {
+                "_index": resolved_index, "_id": id, "status": 400,
+                "error": {"type": "illegal_argument_exception", "reason": format!(
+                    "illegal version value [{version}] for version type [EXTERNAL]"
+                )}
+            }});
+        }
         let expected_seq_no = meta.get("if_seq_no").and_then(Value::as_i64);
         let expected_primary_term = meta.get("if_primary_term").and_then(Value::as_i64);
         if self.index_is_closed(&resolved_index) {
@@ -17376,7 +17692,6 @@ impl SteelNode {
         }
         match action {
             "index" => {
-                let native_source = payload.clone();
                 let mut docs = self
                     .documents_state
                     .lock()
@@ -17451,8 +17766,7 @@ impl SteelNode {
                 self.sync_native_bulk_index_document(
                     &resolved_index,
                     id,
-                    native_source,
-                    routing,
+                    &record,
                     forced_refresh,
                 );
                 self.mark_development_shard_dirty(&resolved_index, id, routing);
@@ -17473,7 +17787,6 @@ impl SteelNode {
                 response
             }
             "create" => {
-                let native_source = payload.clone();
                 let mut docs = self
                     .documents_state
                     .lock()
@@ -17509,8 +17822,7 @@ impl SteelNode {
                 self.sync_native_bulk_index_document(
                     &resolved_index,
                     id,
-                    native_source,
-                    routing,
+                    &record,
                     forced_refresh,
                 );
                 self.mark_development_shard_dirty(&resolved_index, id, routing);
@@ -17567,6 +17879,7 @@ impl SteelNode {
                 let assigned_seq_no = self.allocate_seq_no(&resolved_index);
                 if let Some(record) = docs.remove(&key) {
                     self.track_document_removed(&resolved_index, &key);
+                    self.record_document_deletion(&resolved_index, id, routing, assigned_seq_no as i64);
                     drop(docs);
                     self.track_pending_native_delete(
                         &resolved_index,
@@ -17664,7 +17977,6 @@ impl SteelNode {
                 if let Some(record) = docs.get_mut(&key) {
                     let mut updated_record = record.as_ref().clone();
                     merge_json_object(&mut updated_record.source, &doc_patch);
-                    let native_source = updated_record.source.clone();
                     updated_record.top_level_array_fields =
                         extract_top_level_array_fields(&updated_record.source);
                     updated_record.version += 1;
@@ -17691,8 +18003,7 @@ impl SteelNode {
                     self.sync_native_bulk_index_document(
                         &resolved_index,
                         id,
-                        native_source,
-                        routing,
+                        &updated_record,
                         forced_refresh,
                     );
                     self.mark_development_shard_dirty(&resolved_index, id, routing);
@@ -17700,7 +18011,6 @@ impl SteelNode {
                 }
                 if doc_as_upsert || !upsert.is_null() {
                     let source = if doc_as_upsert { doc_patch } else { upsert };
-                    let native_source = source.clone();
                     let record = StoredDocument {
                         top_level_array_fields: extract_top_level_array_fields(&source),
                         source,
@@ -17732,8 +18042,7 @@ impl SteelNode {
                     self.sync_native_bulk_index_document(
                         &resolved_index,
                         id,
-                        native_source,
-                        routing,
+                        &record,
                         forced_refresh,
                     );
                     self.mark_development_shard_dirty(&resolved_index, id, routing);
@@ -18369,6 +18678,9 @@ impl SteelNode {
         if let Some(response) = validate_cluster_settings_timeout_params(request) {
             return response;
         }
+        if let Some(response) = validate_search_bucket_limit_settings(&persistent, &transient) {
+            return response;
+        }
         let current_persistent = current_state
             .get("persistent")
             .cloned()
@@ -18379,6 +18691,9 @@ impl SteelNode {
             .unwrap_or_else(|| serde_json::json!({}));
         let next_persistent = merge_cluster_settings_section_flat(&current_persistent, &persistent);
         let next_transient = merge_cluster_settings_section_flat(&current_transient, &transient);
+        if let Some(response) = validate_search_bucket_limit_settings(&next_persistent, &next_transient) {
+            return response;
+        }
         if let Some(response) =
             validate_pit_cluster_keep_alive_settings(&next_persistent, &next_transient)
         {
@@ -19494,7 +19809,7 @@ impl SteelNode {
                             doc_id,
                             doc,
                             routings,
-                            |index_name| self.index_primary_shard_count(index_name),
+                            |index_name| self.index_routing(index_name),
                         ) {
                             return None;
                         }
@@ -19515,6 +19830,8 @@ impl SteelNode {
                     let mut parts = key.splitn(3, ':');
                     let _index = parts.next();
                     if let Some(id) = parts.next() {
+                        let seq_no = self.allocate_seq_no(&resolved_index) as i64;
+                        self.record_document_deletion(&resolved_index, id, removed.routing.as_deref(), seq_no);
                         native_deletes.push((id.to_string(), removed.routing.clone()));
                     }
                 }
@@ -19605,6 +19922,7 @@ impl SteelNode {
         let mut updated = 0_u64;
         let mut noops = 0_u64;
         let mut native_updates = Vec::new();
+        let mut version_error = None;
         {
             let mut docs = self
                 .documents_state
@@ -19626,7 +19944,7 @@ impl SteelNode {
                         doc_id,
                         doc,
                         routings,
-                        |index_name| self.index_primary_shard_count(index_name),
+                        |index_name| self.index_routing(index_name),
                     ) {
                         continue;
                     }
@@ -19641,14 +19959,17 @@ impl SteelNode {
                 let original_source = doc.source.clone();
                 if let Some(script) = body.get("script") {
                     let mut updated_doc = doc.as_ref().clone();
+                    let Some(version) = updated_doc.version.checked_add(1) else {
+                        version_error = Some(RestResponse::opensearch_error(409,
+                            "version_conflict_engine_exception", "document version cannot be incremented"));
+                        break;
+                    };
                     apply_update_by_query_script(&mut updated_doc.source, script);
+                    updated_doc.version = version;
+                    updated_doc.seq_no = self.allocate_seq_no(&resolved_index) as i64;
                     updated += 1;
-                    native_updates.push((
-                        doc_id.to_string(),
-                        updated_doc.routing.clone(),
-                        updated_doc.source.clone(),
-                    ));
                     *doc = Arc::new(updated_doc);
+                    native_updates.push((doc_id.to_string(), Arc::clone(doc)));
                 } else if doc.source == original_source {
                     noops += 1;
                 } else {
@@ -19656,18 +19977,25 @@ impl SteelNode {
                 }
             }
         }
-        for (id, routing, source) in &native_updates {
-            self.apply_dynamic_mappings_for_source(&resolved_index, source);
-            let _ = self.native_engine.index_document_with_routing(
-                IndexDocumentRequest {
+        for (id, record) in &native_updates {
+            self.apply_dynamic_mappings_for_source(&resolved_index, &record.source);
+            let _ = self.native_engine.replay_document_with_routing(
+                ReplayDocumentRequest {
                     index: resolved_index.clone(),
-                    id: id.clone(),
-                    source: source.clone(),
+                    metadata: os_engine::DocumentMetadata {
+                        id: id.clone(), version: record.version as u64,
+                        seq_no: record.seq_no, primary_term: record.primary_term as u64,
+                    },
+                    coordination: WriteCoordinationMetadata::default(),
+                    source: record.source.clone(),
                 },
-                routing.as_deref(),
+                record.routing.as_deref(),
             );
         }
         self.persist_shared_runtime_state_to_disk();
+        if let Some(response) = version_error {
+            return response;
+        }
         let response = serde_json::json!({
             "took": 1,
             "timed_out": false,
@@ -19824,12 +20152,19 @@ impl SteelNode {
 
     fn detect_development_shard_recovery_failure(&self, index: &str) -> Option<String> {
         let data_path = self.development_data_path.as_ref()?;
+        let index_entry = self.metadata_manifest_state.lock().expect("metadata manifest lock poisoned")
+            ["indices"].get(index)?.clone();
         for shard_id in 0..self.index_primary_shard_count(index).max(1) {
-            let operations_path = data_path
+            let shard_path = data_path
                 .join("shards")
                 .join(index)
-                .join(shard_id.to_string())
-                .join("steelsearch-operations.jsonl");
+                .join(shard_id.to_string());
+            if let Some(manifest) = load_development_shard_manifest(&shard_path) {
+                if !shard_manifest_matches_index_identity(&manifest, &index_entry) {
+                    continue;
+                }
+            }
+            let operations_path = shard_path.join("steelsearch-operations.jsonl");
             let Ok(text) = fs::read_to_string(&operations_path) else {
                 continue;
             };
@@ -19919,7 +20254,7 @@ impl SteelNode {
                         "shard_routing_state": "STARTED",
                         "shard": shard_id,
                         "index": index,
-                        "index_uuid": format!("{index}-uuid"),
+                        "index_uuid": snapshot_index_uuid_from_metadata(&index, &index_metadata),
                         "allocation_id": {
                             "id": format!("{index}-p-{shard_id}")
                         },
@@ -21904,14 +22239,11 @@ impl SteelNode {
         for index in selected_indices {
             indices.insert(index.clone(), serde_json::json!({}));
             let requested_shards = requested_routing_values.map(|routing_values| {
+                let layout = self.index_routing(&index);
                 routing_values
                     .iter()
-                    .map(|routing| {
-                        opensearch_routing_shard(
-                            routing,
-                            self.index_primary_shard_count(&index).max(1),
-                        )
-                    })
+                    .flat_map(|routing| layout.search_shards(opensearch_routing_hash(routing) as i32))
+                    .map(|shard| shard as usize)
                     .collect::<BTreeSet<_>>()
             });
             for shard_id in 0..self.index_primary_shard_count(&index).max(1) {
@@ -22523,7 +22855,8 @@ impl SteelNode {
             .query_params
             .contains_key("_steelsearch_pause_before_flush_millis");
         if crash_hook_flush {
-            self.mark_runtime_documents_refreshed(&matched);
+            let refresh_documents = self.capture_runtime_refresh_documents(&matched);
+            self.mark_runtime_documents_refreshed(refresh_documents);
             let _ = self.native_engine.refresh(RefreshRequest {
                 indices: matched.clone(),
             });
@@ -23357,7 +23690,6 @@ impl SteelNode {
         response: &Value,
     ) {
         const TASKS_INDEX: &str = ".tasks";
-        self.ensure_minimal_index_exists(TASKS_INDEX);
         let doc_id = task_id.replace(':', "_");
         let seq_no = self.allocate_seq_no(TASKS_INDEX);
         let source = serde_json::json!({
@@ -23373,12 +23705,25 @@ impl SteelNode {
             },
             "response": response
         });
-        self.documents_state
-            .lock()
-            .expect("documents state lock poisoned")
-            .insert(
-                format!("{TASKS_INDEX}:{doc_id}:"),
-                Arc::new(StoredDocument {
+        // Serialize metadata and native index initialization across task completions.
+        {
+            let mut manifest = self.metadata_manifest_state
+                .lock().expect("metadata manifest state lock poisoned");
+            if manifest["indices"].get(TASKS_INDEX).is_none() {
+                manifest["indices"][TASKS_INDEX] = Self::create_minimal_index_manifest_entry(TASKS_INDEX);
+            }
+            if self.native_engine.index_routing(TASKS_INDEX).is_none() {
+                let entry = &mut manifest["indices"][TASKS_INDEX];
+                if self.create_native_index_from_entry(TASKS_INDEX, entry).is_err() {
+                    self.set_shared_runtime_state_recovery_failed(true);
+                    return;
+                }
+            }
+            self.created_indices_state.lock()
+                .expect("created indices state lock poisoned")
+                .insert(TASKS_INDEX.to_string());
+        }
+        let record = Arc::new(StoredDocument {
                     top_level_array_fields: extract_top_level_array_fields(&source),
                     source,
                     version: 1,
@@ -23386,8 +23731,10 @@ impl SteelNode {
                     primary_term: 1,
                     routing: None,
                     refreshed: true,
-                }),
-            );
+        });
+        self.documents_state.lock().expect("documents state lock poisoned")
+            .insert(format!("{TASKS_INDEX}:{doc_id}:"), Arc::clone(&record));
+        self.sync_native_bulk_index_document(TASKS_INDEX, &doc_id, &record, true);
     }
 
     fn tasks_len(&self) -> u64 {
@@ -24147,11 +24494,14 @@ impl SteelNode {
         {
             return response;
         }
-        let routing = request
-            .query_params
-            .get("routing")
-            .cloned()
-            .or_else(|| self.resolve_alias_write_routing(index));
+        let routing = match self.resolve_document_routing(
+            index, &resolved_index,
+            request.query_params.get("routing").filter(|routing| !routing.is_empty()).map(String::as_str),
+            false,
+        ) {
+            Ok(routing) => routing,
+            Err(reason) => return RestResponse::opensearch_error(400, "illegal_argument_exception", reason),
+        };
         let key = format!(
             "{resolved_index}:{id}:{}",
             routing.clone().unwrap_or_default()
@@ -24176,6 +24526,11 @@ impl SteelNode {
                     .get("version_type")
                     .is_some_and(|value| value == "external")
             });
+        if let Some(version) = external_version.filter(|version| *version < 0) {
+            return action_request_validation_error_owned(vec![format!(
+                "illegal version value [{version}] for version type [EXTERNAL]"
+            )]);
+        }
         if expected_seq_no.is_some() || expected_primary_term.is_some() {
             let conflict = match docs.get(&key) {
                 Some(record) => {
@@ -24255,10 +24610,16 @@ impl SteelNode {
         self.track_document_refresh_visibility(&resolved_index, &key, forced_refresh);
         drop(docs);
         if !self.should_defer_native_write_until_refresh(forced_refresh) {
-            let _ = self.native_engine.index_document_with_routing(
-                IndexDocumentRequest {
+            let _ = self.native_engine.replay_document_with_routing(
+                ReplayDocumentRequest {
                     index: resolved_index.clone(),
-                    id: id.to_string(),
+                    metadata: os_engine::DocumentMetadata {
+                        id: id.to_string(),
+                        version: record.version as u64,
+                        seq_no: record.seq_no,
+                        primary_term: record.primary_term as u64,
+                    },
+                    coordination: WriteCoordinationMetadata::default(),
                     source: record.source.clone(),
                 },
                 routing.as_deref(),
@@ -24340,11 +24701,14 @@ impl SteelNode {
         {
             return response;
         }
-        let routing = request
-            .query_params
-            .get("routing")
-            .cloned()
-            .or_else(|| self.resolve_alias_write_routing(index));
+        let routing = match self.resolve_document_routing(
+            index, &resolved_index,
+            request.query_params.get("routing").filter(|routing| !routing.is_empty()).map(String::as_str),
+            false,
+        ) {
+            Ok(routing) => routing,
+            Err(reason) => return RestResponse::opensearch_error(400, "illegal_argument_exception", reason),
+        };
         let key = format!(
             "{resolved_index}:{id}:{}",
             routing.clone().unwrap_or_default()
@@ -24376,7 +24740,6 @@ impl SteelNode {
         let assigned_seq_no = self.allocate_seq_no(&resolved_index);
         let forced_refresh = request_refreshes_visible_writes(request);
         let reports_forced_refresh = request_reports_forced_refresh(request);
-        let native_source = source.clone();
         self.apply_dynamic_mappings_for_source(&resolved_index, &source);
         let record = StoredDocument {
             top_level_array_fields: extract_top_level_array_fields(&source),
@@ -24404,11 +24767,15 @@ impl SteelNode {
         self.track_document_refresh_visibility(&resolved_index, &key, forced_refresh);
         drop(docs);
         if !self.should_defer_native_write_until_refresh(forced_refresh) {
-            let _ = self.native_engine.index_document_with_routing(
-                IndexDocumentRequest {
+            let _ = self.native_engine.replay_document_with_routing(
+                ReplayDocumentRequest {
                     index: resolved_index.clone(),
-                    id: id.to_string(),
-                    source: native_source,
+                    metadata: os_engine::DocumentMetadata {
+                        id: id.to_string(), version: record.version as u64,
+                        seq_no: record.seq_no, primary_term: record.primary_term as u64,
+                    },
+                    coordination: WriteCoordinationMetadata::default(),
+                    source: record.source.clone(),
                 },
                 routing.as_deref(),
             );
@@ -24470,12 +24837,12 @@ impl SteelNode {
             .map(|fields| split_rest_csv_values(fields))
             .unwrap_or_default();
         let resolved_index = self.resolve_index_or_alias(index);
-        let routing = request
-            .query_params
-            .get("routing")
-            .cloned()
-            .or_else(|| self.resolve_alias_read_routing(index))
-            .unwrap_or_default();
+        let routing = match self.resolve_document_routing(
+            index, &resolved_index, request.query_params.get("routing").map(String::as_str), true,
+        ) {
+            Ok(routing) => routing.unwrap_or_default(),
+            Err(reason) => return RestResponse::opensearch_error(400, "illegal_argument_exception", reason),
+        };
         let docs = self
             .documents_state
             .lock()
@@ -24656,15 +25023,20 @@ impl SteelNode {
         id: &str,
         routing: &str,
     ) -> Option<StoredDocument> {
+        let index_entry = self.metadata_manifest_state.lock().expect("metadata manifest lock poisoned")
+            ["indices"].get(resolved_index)?.clone();
         let data_path = self.development_data_path.as_ref()?;
-        let shard_count = self.index_primary_shard_count(resolved_index).max(1);
-        let shard_id =
-            opensearch_routing_shard(if routing.is_empty() { id } else { routing }, shard_count);
+        let shard_id = self.index_document_shard(resolved_index, id,
+            (!routing.is_empty()).then_some(routing)) as usize;
         let shard_path = data_path
             .join("shards")
             .join(resolved_index)
             .join(shard_id.to_string());
         let manifest = load_development_shard_manifest(&shard_path)?;
+        if manifest.shard_id != shard_id as u32
+            || !shard_manifest_matches_index_identity(&manifest, &index_entry) {
+            return None;
+        }
         let operations_path = shard_path.join("steelsearch-operations.jsonl");
         let text = fs::read_to_string(operations_path).ok()?;
         let mut latest = None;
@@ -24681,6 +25053,9 @@ impl SteelNode {
             if seq_no > manifest.max_sequence_number {
                 continue;
             }
+            if self.document_operation_was_deleted(resolved_index, shard_id as u32, id, seq_no) {
+                continue;
+            }
             if latest
                 .as_ref()
                 .is_some_and(|document: &StoredDocument| document.seq_no >= seq_no)
@@ -24693,10 +25068,8 @@ impl SteelNode {
                 .filter(|value| !value.is_empty())
                 .map(ToOwned::to_owned);
             if routing.is_empty() {
-                let operation_shard = opensearch_routing_shard(
-                    operation_routing.as_deref().unwrap_or(id),
-                    shard_count,
-                );
+                let operation_shard = self.index_document_shard(
+                    resolved_index, id, operation_routing.as_deref()) as usize;
                 if operation_shard != shard_id {
                     continue;
                 }
@@ -24727,6 +25100,9 @@ impl SteelNode {
             .clone();
         let mut recovered = BTreeMap::new();
         for index in indices {
+            let index_entry = self.metadata_manifest_state.lock().expect("metadata manifest lock poisoned")
+                ["indices"].get(&index).cloned();
+            let Some(index_entry) = index_entry else { continue; };
             for shard_id in 0..self.index_primary_shard_count(&index).max(1) {
                 let shard_path = data_path
                     .join("shards")
@@ -24735,6 +25111,10 @@ impl SteelNode {
                 let Some(manifest) = load_development_shard_manifest(&shard_path) else {
                     continue;
                 };
+                if manifest.shard_id != shard_id as u32
+                    || !shard_manifest_matches_index_identity(&manifest, &index_entry) {
+                    continue;
+                }
                 let Ok(text) = fs::read_to_string(shard_path.join("steelsearch-operations.jsonl"))
                 else {
                     continue;
@@ -24760,6 +25140,9 @@ impl SteelNode {
                     {
                         continue;
                     }
+                    if self.document_operation_was_deleted(&index, shard_id as u32, id, seq_no) {
+                        continue;
+                    }
                     let Some(version) = metadata.get("_version").and_then(Value::as_i64) else {
                         continue;
                     };
@@ -24775,10 +25158,8 @@ impl SteelNode {
                         .and_then(Value::as_str)
                         .filter(|value| !value.is_empty())
                         .map(ToOwned::to_owned);
-                    let expected_shard = opensearch_routing_shard(
-                        routing.as_deref().unwrap_or(id),
-                        self.index_primary_shard_count(&index).max(1),
-                    );
+                    let expected_shard = self.index_document_shard(
+                        &index, id, routing.as_deref()) as usize;
                     if expected_shard != shard_id {
                         continue;
                     }
@@ -24812,6 +25193,12 @@ impl SteelNode {
             .lock()
             .expect("documents state lock poisoned");
         for (key, document) in recovered {
+            if let Some((index, id, _)) = split_document_key(&key) {
+                let shard = self.index_document_shard(index, id, document.routing.as_deref());
+                if self.document_operation_was_deleted(index, shard, id, document.seq_no) {
+                    continue;
+                }
+            }
             if documents
                 .get(&key)
                 .is_some_and(|current| current.seq_no >= document.seq_no)
@@ -24841,16 +25228,14 @@ impl SteelNode {
         if docs.contains_key(&key) {
             return Some(key);
         }
-        let shard_count = self.index_primary_shard_count(resolved_index).max(1);
-        let requested_shard =
-            opensearch_routing_shard(if routing.is_empty() { id } else { routing }, shard_count);
+        let requested_shard = self.index_document_shard(resolved_index, id,
+            (!routing.is_empty()).then_some(routing));
         docs.iter()
             .find(|(candidate, record)| {
                 if !candidate.starts_with(&format!("{resolved_index}:{id}:")) {
                     return false;
                 }
-                let doc_routing = record.routing.as_deref().unwrap_or(id);
-                opensearch_routing_shard(doc_routing, shard_count) == requested_shard
+                self.index_document_shard(resolved_index, id, record.routing.as_deref()) == requested_shard
             })
             .map(|(key, _)| key.clone())
     }
@@ -24927,12 +25312,12 @@ impl SteelNode {
             return action_request_validation_error(vec!["fetching source can not be disabled"]);
         }
         let resolved_index = self.resolve_index_or_alias(index);
-        let routing = request
-            .query_params
-            .get("routing")
-            .cloned()
-            .or_else(|| self.resolve_alias_read_routing(index))
-            .unwrap_or_default();
+        let routing = match self.resolve_document_routing(
+            index, &resolved_index, request.query_params.get("routing").map(String::as_str), true,
+        ) {
+            Ok(routing) => routing.unwrap_or_default(),
+            Err(reason) => return RestResponse::opensearch_error(400, "illegal_argument_exception", reason),
+        };
         let key = format!("{resolved_index}:{id}:{routing}");
         let docs = self
             .documents_state
@@ -24985,13 +25370,18 @@ impl SteelNode {
         if let Some(response) = validate_doc_write_refresh_query_param(request) {
             return response;
         }
-        let resolved_index = self.resolve_index_or_alias(index);
-        let routing = request
-            .query_params
-            .get("routing")
-            .cloned()
-            .or_else(|| self.resolve_alias_read_routing(index))
-            .unwrap_or_default();
+        let resolved_index = match self.resolve_write_target(index, false) {
+            Ok(index) => index,
+            Err(reason) => return RestResponse::opensearch_error(400, "illegal_argument_exception", reason),
+        };
+        let routing = match self.resolve_document_routing(
+            index, &resolved_index,
+            request.query_params.get("routing").filter(|routing| !routing.is_empty()).map(String::as_str),
+            false,
+        ) {
+            Ok(routing) => routing.unwrap_or_default(),
+            Err(reason) => return RestResponse::opensearch_error(400, "illegal_argument_exception", reason),
+        };
         let key = format!("{resolved_index}:{id}:{routing}");
         let Some((expected_seq_no, expected_primary_term)) =
             validate_doc_write_occ_query_params(request)
@@ -25033,6 +25423,8 @@ impl SteelNode {
         if let Some(record) = docs.remove(&key) {
             self.track_document_removed(&resolved_index, &key);
             let assigned_seq_no = self.allocate_seq_no(&resolved_index);
+            self.record_document_deletion(&resolved_index, id,
+                (!routing.is_empty()).then_some(routing.as_str()), assigned_seq_no as i64);
             let response_index =
                 if resolved_index != index && self.resolve_alias_read_routing(index).is_some() {
                     resolved_index.clone()
@@ -25124,11 +25516,14 @@ impl SteelNode {
             }
         };
         let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
-        let routing = request
-            .query_params
-            .get("routing")
-            .cloned()
-            .or_else(|| self.resolve_alias_write_routing(index));
+        let routing = match self.resolve_document_routing(
+            index, &resolved_index,
+            request.query_params.get("routing").filter(|routing| !routing.is_empty()).map(String::as_str),
+            false,
+        ) {
+            Ok(routing) => routing,
+            Err(reason) => return RestResponse::opensearch_error(400, "illegal_argument_exception", reason),
+        };
         let requested_key = format!(
             "{resolved_index}:{id}:{}",
             routing.clone().unwrap_or_default()
@@ -25295,13 +25690,11 @@ impl SteelNode {
             if let Some(get) = SteelNode::build_update_get_response(&updated_record, request) {
                 response["get"] = get;
             }
-            let updated_source = updated_record.source.clone();
             drop(docs);
             self.sync_native_bulk_index_document(
                 &resolved_index,
                 id,
-                updated_source,
-                routing.as_deref(),
+                &updated_record,
                 forced_refresh,
             );
             self.mark_development_shard_dirty(&resolved_index, id, routing.as_deref());
@@ -25349,7 +25742,6 @@ impl SteelNode {
             if let Some(get) = SteelNode::build_update_get_response(&record, request) {
                 response["get"] = get;
             }
-            let indexed_source = record.source.clone();
             docs.insert(requested_key.clone(), Arc::new(record.clone()));
             self.track_index_top_level_array_fields(&resolved_index, &record);
             self.clear_pending_native_delete(&resolved_index, &requested_key);
@@ -25358,8 +25750,7 @@ impl SteelNode {
             self.sync_native_bulk_index_document(
                 &resolved_index,
                 id,
-                indexed_source,
-                routing.as_deref(),
+                &record,
                 forced_refresh,
             );
             self.mark_development_shard_dirty(&resolved_index, id, routing.as_deref());
@@ -25397,7 +25788,6 @@ impl SteelNode {
             if let Some(get) = SteelNode::build_update_get_response(&record, request) {
                 response["get"] = get;
             }
-            let indexed_source = record.source.clone();
             docs.insert(requested_key.clone(), Arc::new(record.clone()));
             self.track_index_top_level_array_fields(&resolved_index, &record);
             self.clear_pending_native_delete(&resolved_index, &requested_key);
@@ -25406,8 +25796,7 @@ impl SteelNode {
             self.sync_native_bulk_index_document(
                 &resolved_index,
                 id,
-                indexed_source,
-                routing.as_deref(),
+                &record,
                 forced_refresh,
             );
             self.mark_development_shard_dirty(&resolved_index, id, routing.as_deref());
@@ -29936,6 +30325,26 @@ impl SteelNode {
                     .get(&source_index)
                     .cloned()
                     .unwrap_or_else(|| source_index.clone());
+                let mut schema = os_engine_tantivy::map_opensearch_index_to_tantivy_schema(
+                    &CreateIndexRequest {
+                        index: target_index.clone(),
+                        settings: restored_state["settings"].clone(),
+                        mappings: restored_state["mappings"].clone(),
+                    },
+                )
+                .map_err(engine_error_to_rest_response)?;
+                // Snapshots without a routing marker retain the legacy shard layout.
+                schema.routing = if restored_state.get("_steelsearch_routing").is_some() {
+                    Some(index_routing_from_metadata(&restored_state)
+                        .map_err(engine_error_to_rest_response)?)
+                } else {
+                    None
+                };
+                self.native_engine
+                    .create_index_from_schema(target_index.clone(), schema)
+                    .map_err(engine_error_to_rest_response)?;
+                self.bind_new_native_index_identity(&target_index, &mut restored_state)
+                    .map_err(engine_error_to_rest_response)?;
                 indices_map.insert(target_index.clone(), restored_state);
                 self.created_indices_state
                     .lock()
@@ -29945,7 +30354,10 @@ impl SteelNode {
                     &captured_documents,
                     &source_index,
                     &target_index,
-                );
+                ).map_err(|error| {
+                    self.set_shared_runtime_state_recovery_failed(true);
+                    engine_error_to_rest_response(error)
+                })?;
             }
         }
         let data_streams = manifest
@@ -30003,7 +30415,7 @@ impl SteelNode {
         captured_documents: &serde_json::Map<String, Value>,
         source_index: &str,
         target_index: &str,
-    ) {
+    ) -> Result<(), EngineError> {
         let source_prefix = format!("{source_index}:");
         let mut restored = Vec::new();
         for (key, value) in captured_documents {
@@ -30016,14 +30428,18 @@ impl SteelNode {
                 continue;
             };
             let id = id.to_string();
-            let Ok(mut document) = serde_json::from_value::<StoredDocument>(value.clone()) else {
+            let Ok(document) = serde_json::from_value::<StoredDocument>(value.clone()) else {
                 continue;
             };
-            document.seq_no = self.allocate_seq_no(target_index) as i64;
             restored.push((restored_key, id, Arc::new(document)));
         }
         if restored.is_empty() {
-            return;
+            return Ok(());
+        }
+        // Pending sequence numbers must remain above the restored refresh boundary.
+        restored.sort_by_key(|(_, _, document)| !document.refreshed);
+        for (_, _, document) in &mut restored {
+            Arc::make_mut(document).seq_no = self.allocate_seq_no(target_index) as i64;
         }
         {
             let mut documents = self
@@ -30038,43 +30454,36 @@ impl SteelNode {
             self.track_document_refresh_visibility(target_index, key, document.refreshed);
         }
 
-        let mut refreshed_native = false;
-        for (_key, id, document) in &restored {
-            if !document.refreshed {
-                continue;
-            }
-            let Ok(version) = u64::try_from(document.version) else {
-                continue;
-            };
-            let Ok(primary_term) = u64::try_from(document.primary_term) else {
-                continue;
-            };
-            if self
-                .native_engine
-                .replay_document_with_routing(
-                    ReplayDocumentRequest {
-                        index: target_index.to_string(),
-                        metadata: os_engine::DocumentMetadata {
-                            id: id.clone(),
-                            version,
-                            seq_no: document.seq_no,
-                            primary_term,
-                        },
-                        coordination: WriteCoordinationMetadata::default(),
-                        source: document.source.clone(),
+        let replay = |id: &str, document: &StoredDocument| -> Result<(), EngineError> {
+            let version = u64::try_from(document.version).map_err(|_| EngineError::InvalidRequest {
+                reason: format!("invalid restored version for [{target_index}/{id}]"),
+            })?;
+            let primary_term = u64::try_from(document.primary_term).map_err(|_| EngineError::InvalidRequest {
+                reason: format!("invalid restored primary term for [{target_index}/{id}]"),
+            })?;
+            self.native_engine.replay_document_with_routing(
+                ReplayDocumentRequest {
+                    index: target_index.to_string(),
+                    metadata: os_engine::DocumentMetadata {
+                        id: id.to_string(), version, seq_no: document.seq_no, primary_term,
                     },
-                    document.routing.as_deref(),
-                )
-                .is_ok()
-            {
-                refreshed_native = true;
-            }
+                    coordination: WriteCoordinationMetadata::default(),
+                    source: document.source.clone(),
+                },
+                document.routing.as_deref(),
+            )?;
+            Ok(())
+        };
+        for (_, id, document) in restored.iter().filter(|(_, _, doc)| doc.refreshed) {
+            replay(id, document)?;
         }
-        if refreshed_native {
-            let _ = self.native_engine.refresh(RefreshRequest {
-                indices: vec![target_index.to_string()],
-            });
+        self.native_engine.refresh(RefreshRequest {
+            indices: vec![target_index.to_string()],
+        })?;
+        for (_, id, document) in restored.iter().filter(|(_, _, doc)| !doc.refreshed) {
+            replay(id, document)?;
         }
+        Ok(())
     }
 
     fn maybe_pause_before_snapshot_operation(&self, request: &RestRequest) {
@@ -30478,6 +30887,10 @@ impl SteelNode {
     }
 
     fn sync_shared_runtime_state_from_disk(&self) {
+        // Recovery failure is latched until restart; retries must not reinterpret missing data as healthy.
+        if self.shared_runtime_state_recovery_failed() {
+            return;
+        }
         let Some(path) = self.shared_runtime_state_path.as_ref() else {
             self.set_shared_runtime_state_recovery_failed(false);
             self.refresh_development_shard_recovery_failures();
@@ -30504,15 +30917,44 @@ impl SteelNode {
                 return;
             }
         };
-        let runtime_documents = runtime_documents_from_persisted(state.documents);
+        if state.metadata_manifest.get("indices").and_then(Value::as_object)
+            .is_some_and(|indices| indices.values().any(|entry| index_routing_from_metadata(entry).is_err()
+                || entry.get("_steelsearch_index_uuid").is_some_and(|uuid|
+                    uuid.as_str().map_or(true, str::is_empty))))
+        {
+            self.set_shared_runtime_state_recovery_failed(true);
+            self.refresh_development_shard_recovery_failures();
+            return;
+        }
+        let mut runtime_documents = runtime_documents_from_persisted(state.documents);
+        let Some(next_seq_no_by_index) = recovered_next_seq_no_by_index(
+            &runtime_documents, &state.document_deletion_sequences, &state.next_seq_no_by_index,
+        ) else {
+            self.set_shared_runtime_state_recovery_failed(true);
+            self.refresh_development_shard_recovery_failures();
+            return;
+        };
+        if state.next_seq_no >= i64::MAX as u64 {
+            self.set_shared_runtime_state_recovery_failed(true);
+            self.refresh_development_shard_recovery_failures();
+            return;
+        }
+        let next_seq_no = next_seq_no_by_index.values().copied()
+            .fold(state.next_seq_no, u64::max);
+        runtime_documents.retain(|key, document| {
+            let Some((index, id, _)) = split_document_key(key) else { return true; };
+            let layout = index_routing_from_metadata(&state.metadata_manifest["indices"][index])
+                .expect("validated index routing metadata");
+            let id_hash = if layout.partition_size() == 1 { 0 } else { opensearch_routing_hash(id) as i32 };
+            let shard = layout.document_shard(
+                opensearch_routing_hash(document.routing.as_deref().unwrap_or(id)) as i32, id_hash);
+            !state.document_deletion_sequences.get(index)
+                .and_then(|shards| shards.get(&shard)).and_then(|ids| ids.get(id))
+                .is_some_and(|deleted_at| *deleted_at >= document.seq_no)
+        });
         let index_top_level_array_fields =
             index_top_level_array_fields_from_documents(&runtime_documents);
         let unrefreshed_document_keys = unrefreshed_document_keys_from_runtime(&runtime_documents);
-        let next_seq_no_by_index = if state.next_seq_no_by_index.is_empty() {
-            next_seq_no_by_index_from_documents(&runtime_documents)
-        } else {
-            state.next_seq_no_by_index.clone()
-        };
         self.set_shared_runtime_state_recovery_failed(false);
         *self
             .created_indices_state
@@ -30527,6 +30969,8 @@ impl SteelNode {
             .documents_state
             .lock()
             .expect("documents state lock poisoned") = runtime_documents;
+        *self.document_deletion_sequences.lock().expect("document deletion lock poisoned") =
+            state.document_deletion_sequences;
         *self
             .index_top_level_array_fields
             .lock()
@@ -30539,7 +30983,7 @@ impl SteelNode {
             .lock()
             .expect("pit contexts lock poisoned")
             .clear();
-        *self.next_seq_no.lock().expect("seq_no lock poisoned") = state.next_seq_no;
+        *self.next_seq_no.lock().expect("seq_no lock poisoned") = next_seq_no;
         *self
             .next_seq_no_by_index
             .lock()
@@ -30605,21 +31049,23 @@ impl SteelNode {
             .filter_map(|(task_id, rate)| rate.parse::<f64>().ok().map(|rate| (task_id, rate)))
             .collect();
         self.merge_development_operation_log_documents_into_runtime();
-        self.rebuild_native_engine_from_recovered_runtime_state();
+        if self.rebuild_native_engine_from_recovered_runtime_state().is_err() {
+            self.set_shared_runtime_state_recovery_failed(true);
+        }
     }
 
-    fn rebuild_native_engine_from_recovered_runtime_state(&self) {
+    fn rebuild_native_engine_from_recovered_runtime_state(&self) -> Result<(), os_engine::EngineError> {
         let manifest = self
             .metadata_manifest_state
             .lock()
             .expect("metadata manifest state lock poisoned")
             .clone();
         let Some(indices) = manifest.get("indices").and_then(Value::as_object) else {
-            return;
+            return Ok(());
         };
+        let mut schemas = Vec::with_capacity(indices.len());
         for (index, index_body) in indices {
-            let _ = self.native_engine.delete_index(index);
-            let _ = self.native_engine.create_index(CreateIndexRequest {
+            let mut schema = os_engine_tantivy::map_opensearch_index_to_tantivy_schema(&CreateIndexRequest {
                 index: index.clone(),
                 settings: index_body
                     .get("settings")
@@ -30629,7 +31075,26 @@ impl SteelNode {
                     .get("mappings")
                     .cloned()
                     .unwrap_or_else(|| serde_json::json!({})),
-            });
+            })?;
+            schema.routing = if index_body.get("_steelsearch_routing").is_some() {
+                Some(index_routing_from_metadata(index_body)?)
+            } else {
+                None
+            };
+            schema.index_routing()?;
+            schemas.push((index.clone(), schema,
+                index_body.get("_steelsearch_index_uuid").and_then(Value::as_str).map(str::to_string)));
+        }
+        for (index, schema, uuid) in schemas {
+            match self.native_engine.delete_index(&index) {
+                Ok(()) | Err(os_engine::EngineError::IndexNotFound { .. }) => {},
+                Err(error) => return Err(error),
+            }
+            if let Some(uuid) = uuid {
+                self.native_engine.create_index_from_schema_with_uuid(index, schema, uuid)?;
+            } else {
+                self.native_engine.create_index_from_schema(index, schema)?;
+            }
         }
         let documents = self
             .documents_state
@@ -30650,8 +31115,7 @@ impl SteelNode {
             let Ok(primary_term) = u64::try_from(document.primary_term) else {
                 continue;
             };
-            if self
-                .native_engine
+            self.native_engine
                 .replay_document_with_routing(
                     ReplayDocumentRequest {
                         index: index.to_string(),
@@ -30665,17 +31129,26 @@ impl SteelNode {
                         source: document.source.clone(),
                     },
                     document.routing.as_deref(),
-                )
-                .is_ok()
-            {
-                refreshed_indices.insert(index.to_string());
+                )?;
+            refreshed_indices.insert(index.to_string());
+        }
+        for (index, next_sequence) in self.next_seq_no_by_index.lock()
+            .expect("per-index seq_no lock poisoned").iter()
+        {
+            if indices.contains_key(index) {
+                let next_sequence = i64::try_from(*next_sequence).map_err(|_| os_engine::EngineError::InvalidRequest {
+                    reason: "recovered sequence number exceeds i64".to_string(),
+                })?;
+                self.native_engine.restore_next_sequence_number(index, next_sequence)?;
+                refreshed_indices.insert(index.clone());
             }
         }
         if !refreshed_indices.is_empty() {
-            let _ = self.native_engine.refresh(RefreshRequest {
+            self.native_engine.refresh(RefreshRequest {
                 indices: refreshed_indices.into_iter().collect(),
-            });
+            })?;
         }
+        Ok(())
     }
 
     fn sync_shared_runtime_state_from_disk_if_enabled(&self) {
@@ -30806,6 +31279,9 @@ impl SteelNode {
     }
 
     fn persist_shared_runtime_state_to_disk(&self) {
+        if self.shared_runtime_state_recovery_failed() {
+            return;
+        }
         if env::var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE")
             .ok()
             .as_deref()
@@ -30859,6 +31335,8 @@ impl SteelNode {
             ),
             pit_contexts: BTreeMap::new(),
             next_seq_no: *self.next_seq_no.lock().expect("seq_no lock poisoned"),
+            document_deletion_sequences: self.document_deletion_sequences.lock()
+                .expect("document deletion lock poisoned").clone(),
             next_seq_no_by_index: self
                 .next_seq_no_by_index
                 .lock()
@@ -30920,18 +31398,24 @@ impl SteelNode {
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        if std::fs::write(
-            path,
-            serde_json::to_vec(&state).unwrap_or_else(|_| b"{}".to_vec()),
-        )
-        .is_ok()
-        {
-            self.set_shared_runtime_state_recovery_failed(false);
+        let bytes = match serde_json::to_vec(&state) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                self.set_shared_runtime_state_recovery_failed(true);
+                return;
+            }
+        };
+        if std::fs::write(path, bytes).is_err() {
+            self.set_shared_runtime_state_recovery_failed(true);
+            return;
         }
         self.persist_development_shard_state_to_disk();
     }
 
     fn persist_development_shard_state_to_disk(&self) {
+        if self.shared_runtime_state_recovery_failed() {
+            return;
+        }
         let Some(data_path) = self.development_data_path.as_ref() else {
             return;
         };
@@ -31032,6 +31516,42 @@ impl SteelNode {
         target.to_string()
     }
 
+    fn resolve_document_routing(
+        &self,
+        target: &str,
+        resolved_index: &str,
+        requested: Option<&str>,
+        single_index_read: bool,
+    ) -> Result<Option<String>, String> {
+        if target == resolved_index {
+            return Ok(requested.map(str::to_owned));
+        }
+        let manifest = self.metadata_manifest_state.lock()
+            .expect("metadata manifest state lock poisoned");
+        if single_index_read {
+            if let Some(indices) = manifest["indices"].as_object() {
+                let matches: Vec<_> = indices.iter()
+                    .filter(|(_, body)| body["aliases"].get(target).is_some())
+                    .map(|(name, _)| name.as_str()).collect();
+                if matches.len() > 1 {
+                    return Err(format!("alias [{target}] has more than one index associated with it [{}], can't execute a single index op", matches.join(", ")));
+                }
+            }
+        }
+        let alias = &manifest["indices"][resolved_index]["aliases"][target];
+        let fixed = alias.get("index_routing").and_then(Value::as_str)
+            .or_else(|| alias.get("routing").and_then(Value::as_str));
+        if let Some(fixed) = fixed {
+            if fixed.contains(',') {
+                return Err(format!("index/alias [{target}] provided with routing value [{fixed}] that resolved to several routing values, rejecting operation"));
+            }
+            if let Some(requested) = requested.filter(|requested| *requested != fixed) {
+                return Err(format!("Alias [{target}] has index routing associated with it [{fixed}], and was provided with routing value [{requested}], rejecting operation"));
+            }
+        }
+        Ok(fixed.or(requested).map(str::to_owned))
+    }
+
     fn resolve_alias_write_routing(&self, target: &str) -> Option<String> {
         let manifest = self
             .metadata_manifest_state
@@ -31045,7 +31565,7 @@ impl SteelNode {
             if let Some(routing) = alias_state.get("index_routing").and_then(Value::as_str) {
                 return Some(routing.to_string());
             }
-            if let Some(routing) = alias_state.get("search_routing").and_then(Value::as_str) {
+            if let Some(routing) = alias_state.get("routing").and_then(Value::as_str) {
                 return Some(routing.to_string());
             }
         }
@@ -31069,7 +31589,7 @@ impl SteelNode {
             if let Some(routing) = alias_state.get("search_routing").and_then(Value::as_str) {
                 return Some(routing.to_string());
             }
-            if let Some(routing) = alias_state.get("index_routing").and_then(Value::as_str) {
+            if let Some(routing) = alias_state.get("routing").and_then(Value::as_str) {
                 return Some(routing.to_string());
             }
         }
@@ -31083,23 +31603,178 @@ impl SteelNode {
         allow_no_indices: bool,
         expand_wildcards: &str,
     ) -> Result<Vec<String>, RestResponse> {
-        let (include_open, include_hidden, include_closed) =
-            parse_index_expand_wildcards(expand_wildcards)?;
+        self.resolve_search_targets_recording::<false, false>(
+            target, ignore_unavailable, allow_no_indices, expand_wildcards, |_, _| {},
+        )
+    }
+
+    fn resolve_search_targets_with_alias_filters(
+        &self,
+        target: &str,
+        ignore_unavailable: bool,
+        allow_no_indices: bool,
+        expand_wildcards: &str,
+    ) -> Result<ResolvedSearchTargets, RestResponse> {
+        self.resolve_search_targets_with_alias_filters_mode::<false>(
+            target, ignore_unavailable, allow_no_indices, expand_wildcards,
+        )
+    }
+
+    fn resolve_search_targets_with_alias_filters_mode<const COUNT: bool>(
+        &self,
+        target: &str,
+        ignore_unavailable: bool,
+        allow_no_indices: bool,
+        expand_wildcards: &str,
+    ) -> Result<ResolvedSearchTargets, RestResponse> {
         let manifest = self
             .metadata_manifest_state
             .lock()
             .expect("metadata manifest state lock poisoned");
+        Self::resolve_search_targets_with_alias_filters_from_manifest::<COUNT, false>(
+            &manifest, target, ignore_unavailable, allow_no_indices, expand_wildcards,
+        )
+    }
+
+    fn resolve_rest_search_targets_with_alias_filters(
+        &self,
+        target: &str,
+        ignore_unavailable: bool,
+        allow_no_indices: bool,
+        expand_wildcards: &str,
+    ) -> Result<ResolvedSearchTargets, RestResponse> {
+        let manifest = self.metadata_manifest_state.lock().expect("metadata manifest state lock poisoned");
+        Self::resolve_search_targets_with_alias_filters_from_manifest::<false, true>(
+            &manifest, target, ignore_unavailable, allow_no_indices, expand_wildcards,
+        )
+    }
+
+    fn resolve_search_targets_with_alias_filters_from_manifest<const COUNT: bool, const REST_SEARCH: bool>(
+        manifest: &Value,
+        target: &str,
+        ignore_unavailable: bool,
+        allow_no_indices: bool,
+        expand_wildcards: &str,
+    ) -> Result<ResolvedSearchTargets, RestResponse> {
+        let mut selections: BTreeMap<String, Option<BTreeMap<String, Value>>> = BTreeMap::new();
+        let indices = Self::resolve_search_targets_recording_from_manifest::<true, COUNT, REST_SEARCH>(
+            manifest, target, ignore_unavailable, allow_no_indices, expand_wildcards,
+            |index, alias| {
+                let filter = alias.and_then(|(name, state)| {
+                    state.get("filter").filter(|filter| !filter.is_null())
+                        .map(|filter| (name, filter))
+                });
+                let selected = selections.entry(index.to_string())
+                    .or_insert_with(|| Some(BTreeMap::new()));
+                match (selected, filter) {
+                    (selected, None) => *selected = None,
+                    (Some(filters), Some((name, filter))) => {
+                        filters.insert(name.to_string(), filter.clone());
+                    }
+                    (None, Some(_)) => {}
+                }
+            },
+        )?;
+        let alias_filters = selections.into_iter().filter_map(|(index, filters)| {
+            let filters = filters?;
+            let filter = if filters.len() == 1 {
+                filters.into_values().next().expect("single alias filter")
+            } else {
+                serde_json::json!({"bool": {
+                    "should": filters.into_values().collect::<Vec<_>>(),
+                    "minimum_should_match": 1
+                }})
+            };
+            Some((index, filter))
+        }).collect();
+        Ok(ResolvedSearchTargets { indices, alias_filters })
+    }
+
+    fn resolve_pit_targets_with_alias_filters(
+        &self,
+        target: &str,
+        ignore_unavailable: bool,
+        allow_no_indices: Option<bool>,
+        expand_wildcards: &str,
+    ) -> Result<ResolvedSearchTargets, RestResponse> {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        let mut selections: BTreeMap<String, Option<Vec<Value>>> = BTreeMap::new();
+        // All selectors share one metadata snapshot; an unrestricted selection wins.
+        for selector in target.split(',').filter(|selector| !selector.is_empty()) {
+            let wildcard = selector == "_all" || selector.contains('*') || selector.contains('?');
+            let allow_empty = ignore_unavailable || allow_no_indices.unwrap_or(wildcard);
+            let mut selected = Self::resolve_search_targets_with_alias_filters_from_manifest::<false, false>(
+                &manifest, selector, ignore_unavailable, allow_empty, expand_wildcards,
+            )?;
+            for index in selected.indices {
+                let filters = selections.entry(index.clone()).or_insert_with(|| Some(Vec::new()));
+                match (filters, selected.alias_filters.remove(&index)) {
+                    (filters, None) => *filters = None,
+                    (Some(filters), Some(filter)) => {
+                        if !filters.contains(&filter) {
+                            filters.push(filter);
+                        }
+                    }
+                    (None, Some(_)) => {}
+                }
+            }
+        }
+        let indices = selections.keys().cloned().collect();
+        let alias_filters = selections.into_iter().filter_map(|(index, filters)| {
+            let mut filters = filters?;
+            let filter = if filters.len() == 1 {
+                filters.pop().expect("single PIT alias filter")
+            } else {
+                serde_json::json!({"bool": {"should": filters, "minimum_should_match": 1}})
+            };
+            Some((index, filter))
+        }).collect();
+        Ok(ResolvedSearchTargets { indices, alias_filters })
+    }
+
+    fn resolve_search_targets_recording<const RECORD_ALIASES: bool, const COUNT: bool>(
+        &self,
+        target: &str,
+        ignore_unavailable: bool,
+        allow_no_indices: bool,
+        expand_wildcards: &str,
+        record: impl FnMut(&str, Option<(&str, &Value)>),
+    ) -> Result<Vec<String>, RestResponse> {
+        let manifest = self
+            .metadata_manifest_state
+            .lock()
+            .expect("metadata manifest state lock poisoned");
+        Self::resolve_search_targets_recording_from_manifest::<RECORD_ALIASES, COUNT, false>(
+            &manifest, target, ignore_unavailable, allow_no_indices, expand_wildcards, record,
+        )
+    }
+
+    fn resolve_search_targets_recording_from_manifest<const RECORD_ALIASES: bool, const COUNT: bool, const REST_SEARCH: bool>(
+        manifest: &Value,
+        target: &str,
+        ignore_unavailable: bool,
+        allow_no_indices: bool,
+        expand_wildcards: &str,
+        mut record: impl FnMut(&str, Option<(&str, &Value)>),
+    ) -> Result<Vec<String>, RestResponse> {
+        let (include_open, include_hidden, include_closed) =
+            parse_index_expand_wildcards(expand_wildcards)?;
+        let expansion_disabled = REST_SEARCH && !include_open && !include_closed;
+        let single_expression = expansion_disabled && target.split(',').filter(|part| !part.is_empty()).count() == 1;
         let mut resolved = Vec::new();
         for selector in target.split(',').filter(|selector| !selector.is_empty()) {
             let wildcard_selector =
                 selector == "_all" || selector.contains('*') || selector.contains('?');
             let effective_selector = if selector == "_all" { "*" } else { selector };
+            let matches_selector = |name: &str| effective_selector == name
+                || (!expansion_disabled && wildcard_match(effective_selector, name));
             let mut matched = Vec::new();
             if let Some(indices) = manifest["indices"].as_object() {
                 for (index_name, index_body) in indices {
-                    if effective_selector == index_name
-                        || wildcard_match(effective_selector, index_name)
-                    {
+                    if matches_selector(index_name) {
                         if !Self::search_target_state_matches(
                             index_body,
                             wildcard_selector,
@@ -31110,13 +31785,16 @@ impl SteelNode {
                             continue;
                         }
                         matched.push(index_name.clone());
+                        if RECORD_ALIASES {
+                            record(index_name, None);
+                        }
                         continue;
                     }
                     if let Some(aliases) = index_body["aliases"].as_object() {
                         if aliases.contains_key(selector)
                             || aliases
                                 .keys()
-                                .any(|alias| wildcard_match(effective_selector, alias))
+                                .any(|alias| matches_selector(alias))
                         {
                             if !Self::search_target_state_matches(
                                 index_body,
@@ -31128,15 +31806,20 @@ impl SteelNode {
                                 continue;
                             }
                             matched.push(index_name.clone());
+                            if RECORD_ALIASES {
+                                for (alias, state) in aliases {
+                                    if alias == selector || matches_selector(alias) {
+                                        record(index_name, Some((alias, state)));
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
             if let Some(data_streams) = manifest["data_streams"].as_object() {
                 for (data_stream_name, stream) in data_streams {
-                    if effective_selector != data_stream_name
-                        && !wildcard_match(effective_selector, data_stream_name)
-                    {
+                    if !matches_selector(data_stream_name) {
                         continue;
                     }
                     for backing_index in stream["indices"]
@@ -31156,13 +31839,30 @@ impl SteelNode {
                             include_closed,
                         ) {
                             matched.push(backing_index.to_string());
+                            if RECORD_ALIASES {
+                                record(backing_index, None);
+                            }
                         }
                     }
                 }
             }
             matched.sort();
             matched.dedup();
-            if matched.is_empty() && !(ignore_unavailable || allow_no_indices) {
+            let allow_empty = if REST_SEARCH {
+                // With expansion disabled, OpenSearch's concrete resolver handles the original expressions.
+                if expansion_disabled {
+                    if single_expression { allow_no_indices } else { ignore_unavailable }
+                } else if wildcard_selector {
+                    allow_no_indices
+                } else {
+                    ignore_unavailable
+                }
+            } else { allow_no_indices || if COUNT {
+                selector.contains('*') || selector.contains('?')
+            } else {
+                ignore_unavailable
+            }};
+            if matched.is_empty() && !allow_empty {
                 return Err(index_not_found_response(selector));
             }
             resolved.extend(matched);
@@ -31170,7 +31870,7 @@ impl SteelNode {
         resolved.sort();
         resolved.dedup();
         if resolved.is_empty() {
-            if allow_no_indices {
+            if allow_no_indices || COUNT {
                 return Ok(resolved);
             }
             return Err(index_not_found_response(target));
@@ -31233,6 +31933,18 @@ impl SteelNode {
 
     fn index_primary_shard_count(&self, index: &str) -> usize {
         index_primary_shard_count_from_manifest(&self.metadata_manifest_state, index)
+    }
+
+    fn index_routing(&self, index: &str) -> IndexRouting {
+        let manifest = self.metadata_manifest_state.lock().expect("metadata manifest lock poisoned");
+        index_routing_from_metadata(&manifest["indices"][index])
+            .expect("validated index routing metadata")
+    }
+
+    fn index_document_shard(&self, index: &str, id: &str, routing: Option<&str>) -> u32 {
+        let layout = self.index_routing(index);
+        let id_hash = if layout.partition_size() == 1 { 0 } else { opensearch_routing_hash(id) as i32 };
+        layout.document_shard(opensearch_routing_hash(routing.unwrap_or(id)) as i32, id_hash)
     }
 
     fn index_replica_count(&self, index: &str) -> usize {
@@ -31393,8 +32105,15 @@ impl SteelNode {
                 let Some(value) = source.get(field) else {
                     continue;
                 };
-                let docvalue_value = normalize_docvalue_field_value(mapping, value, format);
-                fields.insert(field.to_string(), Value::Array(vec![docvalue_value]));
+                let values = if matches!(mapping.get("type").and_then(Value::as_str),
+                    Some("long" | "integer" | "short" | "byte" | "double" | "float")) {
+                    numeric_docvalue_field_values(value)
+                } else {
+                    vec![normalize_docvalue_field_value(mapping, value, format)]
+                };
+                if !values.is_empty() {
+                    fields.insert(field.to_string(), Value::Array(values));
+                }
             }
         }
 
@@ -32014,12 +32733,22 @@ fn standalone_native_search_request(
     shard_scope: Option<&BTreeMap<String, BTreeSet<u32>>>,
     body: &Value,
 ) -> Result<SearchRequest, String> {
+    standalone_native_search_request_with_alias_filters(resolved_indices, shard_scope, &BTreeMap::new(), body)
+}
+
+fn standalone_native_search_request_with_alias_filters(
+    resolved_indices: &[String],
+    shard_scope: Option<&BTreeMap<String, BTreeSet<u32>>>,
+    alias_filters: &BTreeMap<String, Value>,
+    body: &Value,
+) -> Result<SearchRequest, String> {
     let mut query = body
         .get("query")
         .cloned()
         .unwrap_or_else(|| serde_json::json!({ "match_all": {} }));
     let has_shard_scope = shard_scope.is_some_and(|scope| !scope.is_empty());
     if has_shard_scope
+        || !alias_filters.is_empty()
         || body.get("script_fields").is_some()
         || body.get("derived").is_some()
         || body.get("min_score").is_some()
@@ -32033,6 +32762,11 @@ fn standalone_native_search_request(
     {
         let mut envelope = serde_json::Map::new();
         envelope.insert("query".to_string(), query);
+        if !alias_filters.is_empty() {
+            envelope.insert("_steelsearch_alias_filters".to_string(),
+                serde_json::to_value(alias_filters)
+                    .map_err(|error| format!("failed to encode alias scope: {error}"))?);
+        }
         if let Some(scope) = shard_scope.filter(|scope| !scope.is_empty()) {
             envelope.insert(
                 "_steelsearch_shard_scope".to_string(),
@@ -32251,6 +32985,57 @@ fn rest_pit_search_body_to_transport_request(
     })
 }
 
+pub fn parse_pit_alias_filter_json(source: &[u8]) -> Result<Value, &'static str> {
+    let query = serde_json::from_slice::<Value>(source).map_err(|_| "invalid PIT alias filter JSON")?;
+    if validate_search_query_body(&query).is_some() {
+        return Err("unsupported PIT alias filter query");
+    }
+    Ok(query)
+}
+
+pub fn pit_alias_filter_matches(
+    source: &Value,
+    id: &str,
+    query: &Value,
+    mappings: &Value,
+) -> Result<bool, &'static str> {
+    evaluate_search_query_source_checked(source, id, query, mappings)
+        .map_err(|_| "PIT alias filter value conversion failed")?
+        .map(|(matched, _)| matched).ok_or("unsupported PIT alias filter evaluation")
+}
+
+fn rest_pit_alias_filters(pit_id: Option<&str>) -> Result<BTreeMap<String, Value>, RestResponse> {
+    let Some(id) = pit_id else {
+        return Ok(BTreeMap::new());
+    };
+    let context = match os_transport::action::OpenSearchSearchContextIdWire::decode(id) {
+        Ok(context) => context,
+        // Legacy local IDs have no wire payload. Their migration remains separate.
+        Err(_) if pit_search_id_has_local_shape(id) => return Ok(BTreeMap::new()),
+        Err(_) => return Err(build_unsupported_search_response("invalid PIT alias filter context")),
+    };
+    let mut filters = BTreeMap::new();
+    for index in context.actual_indices() {
+        let Some(filter) = context.alias_filter_for_index_name(&index) else { continue; };
+        let query = match filter.query.as_ref() {
+            None => continue,
+            Some(os_transport::action::OpenSearchQueryBuilderWire::Wrapper(wrapper)) => {
+                parse_pit_alias_filter_json(&wrapper.source).map_err(build_unsupported_search_response)?
+            }
+            Some(os_transport::action::OpenSearchQueryBuilderWire::MatchAll(_)) =>
+                serde_json::json!({"match_all": {}}),
+            Some(os_transport::action::OpenSearchQueryBuilderWire::MatchNone(_)) =>
+                serde_json::json!({"match_none": {}}),
+            _ => return Err(build_unsupported_search_response("unsupported PIT alias filter wire query")),
+        };
+        if let Some(response) = validate_search_query_body(&query) {
+            return Err(response);
+        }
+        filters.insert(index, query);
+    }
+    Ok(filters)
+}
+
 fn rest_search_query_to_transport_query(
     query: Option<&Value>,
 ) -> Option<Option<os_transport::action::OpenSearchQueryBuilderWire>> {
@@ -32266,6 +33051,24 @@ fn rest_search_query_to_transport_query(
         )),
         _ => None,
     }
+}
+
+fn transport_error_rest_reason(error: &os_transport::error::TransportError) -> Value {
+    let error_type = match error.class_name.as_str() {
+        "java.lang.IllegalArgumentException" => "illegal_argument_exception",
+        "org.opensearch.ResourceNotFoundException" => "resource_not_found_exception",
+        "org.opensearch.search.SearchContextMissingException" => "search_context_missing_exception",
+        "org.opensearch.search.aggregations.MultiBucketConsumerService.TooManyBucketsException" => "too_many_buckets_exception",
+        name => name,
+    };
+    let mut value = serde_json::json!({"type": error_type, "reason": error.message});
+    if let Some(limit) = error.max_buckets {
+        value["max_buckets"] = Value::from(limit);
+    }
+    if let Some(cause) = &error.cause {
+        value["caused_by"] = transport_error_rest_reason(cause);
+    }
+    value
 }
 
 fn search_response_wire_to_rest_response(
@@ -32325,6 +33128,24 @@ fn search_response_wire_to_rest_response(
             "hits": hits
         }
     });
+    if !response.shard_failures.is_empty() {
+        body["_shards"]["failures"] = Value::Array(response.shard_failures.iter().map(|failure| {
+            let target = failure.shard_target.as_ref();
+            let mut value = serde_json::json!({
+                "shard": target.map(|target| target.shard_id).unwrap_or(-1),
+                "index": target.map(|target| match target.cluster_alias.as_deref() {
+                    Some(alias) if !alias.is_empty() => format!("{alias}:{}", target.index),
+                    _ => target.index.clone(),
+                }),
+                "reason": failure.cause.as_ref().map(transport_error_rest_reason)
+                    .unwrap_or_else(|| serde_json::json!({})),
+            });
+            if let Some(target) = target {
+                value["node"] = serde_json::json!(target.node_id);
+            }
+            value
+        }).collect());
+    }
     if let Some(pit_id) = response.point_in_time_id {
         body["pit_id"] = Value::String(pit_id);
     }
@@ -32669,7 +33490,7 @@ fn build_shared_runtime_state_recovery_unavailable_response() -> RestResponse {
         serde_json::json!({
             "error": {
                 "type": "unavailable_shards_exception",
-                "reason": "task submission rejected while shared runtime state recovery is incomplete"
+                "reason": "request rejected while shared runtime state recovery is incomplete"
             },
             "status": 503
         }),
@@ -32689,14 +33510,19 @@ fn build_live_shutdown_task_submission_unavailable_response() -> RestResponse {
     )
 }
 
+fn native_search_error_response(error: EngineError) -> Option<RestResponse> {
+    match error {
+        EngineError::InvalidRequest { .. } | EngineError::IndexNotFound { .. } => None,
+        // Resource and backend failures must not re-enter a compatibility fallback.
+        error => Some(engine_error_to_rest_response(error)),
+    }
+}
+
 fn engine_error_to_rest_response(error: EngineError) -> RestResponse {
     RestResponse::json(
         error.status_code(),
         serde_json::json!({
-            "error": {
-                "type": error.opensearch_error_type(),
-                "reason": error.opensearch_reason()
-            },
+            "error": error.opensearch_error_body(),
             "status": error.status_code()
         }),
     )
@@ -38592,44 +39418,44 @@ fn document_matches_requested_routing_shards(
     doc_id: &str,
     record: &StoredDocument,
     requested_routing_values: &[String],
-    shard_count_for_index: impl Fn(&str) -> usize,
+    routing_for_index: impl Fn(&str) -> IndexRouting,
 ) -> bool {
-    let shard_count = shard_count_for_index(index).max(1);
+    let layout = routing_for_index(index);
     let doc_routing = record.routing.as_deref().unwrap_or(doc_id);
-    let doc_shard = opensearch_routing_shard(doc_routing, shard_count);
+    let id_hash = if layout.partition_size() == 1 { 0 } else { opensearch_routing_hash(doc_id) as i32 };
+    let doc_shard = layout.document_shard(opensearch_routing_hash(doc_routing) as i32, id_hash);
     requested_routing_values
         .iter()
-        .any(|routing| opensearch_routing_shard(routing, shard_count) == doc_shard)
+        .any(|routing| layout.search_shards(opensearch_routing_hash(routing) as i32).any(|shard| shard == doc_shard))
 }
 
 fn search_shard_scope_for_routing_values(
     resolved_indices: &[String],
     requested_routing_values: &[String],
-    shard_count_for_index: impl Fn(&str) -> usize,
+    routing_for_index: impl Fn(&str) -> IndexRouting,
 ) -> BTreeMap<String, BTreeSet<u32>> {
     resolved_indices
         .iter()
         .filter_map(|index| {
-            let shard_count = shard_count_for_index(index).max(1);
+            let layout = routing_for_index(index);
             let shard_ids = requested_routing_values
                 .iter()
-                .map(|routing| opensearch_routing_shard(routing, shard_count) as u32)
+                .flat_map(|routing| layout.search_shards(opensearch_routing_hash(routing) as i32))
                 .collect::<BTreeSet<_>>();
             (!shard_ids.is_empty()).then(|| (index.clone(), shard_ids))
         })
         .collect()
 }
 
+#[cfg(test)]
 fn opensearch_routing_shard(routing: &str, shard_count: usize) -> usize {
-    if shard_count <= 1 {
-        return 0;
-    }
-    opensearch_routing_hash(routing).rem_euclid(shard_count as i64) as usize
+    IndexRouting::new(shard_count as u32, None, 1)
+        .expect("valid test layout")
+        .document_shard(opensearch_routing_hash(routing) as i32, 0) as usize
 }
 
-fn opensearch_shard_doc_sort_key(shard_count: usize, routing: &str, seq_no: i64) -> i64 {
-    let shard_id = opensearch_routing_shard(routing, shard_count) as i64;
-    (shard_id << 32) | (seq_no & 0xffff_ffff)
+fn opensearch_shard_doc_sort_key(shard_id: u32, seq_no: i64) -> i64 {
+    (i64::from(shard_id) << 32) | (seq_no & 0xffff_ffff)
 }
 
 fn opensearch_routing_hash(routing: &str) -> i64 {
@@ -43129,7 +43955,7 @@ fn validate_exists_query_shape(query: &Value) -> Option<RestResponse> {
                         opensearch_xcontent_token_name(value)
                     )));
                 }
-                if opensearch_text_value(value).is_none_or(|field| field.is_empty()) {
+                if opensearch_text_value(value).map_or(true, |field| field.is_empty()) {
                     return Some(build_illegal_argument_search_response_with_root_cause(
                         "field name is null or empty",
                     ));
@@ -43316,19 +44142,37 @@ fn split_document_key(key: &str) -> Option<(&str, &str, &str)> {
     Some((index, id, routing))
 }
 
-fn next_seq_no_by_index_from_documents(documents: &DocumentMap) -> BTreeMap<String, u64> {
-    let mut next_by_index: BTreeMap<String, u64> = BTreeMap::new();
-    for (key, document) in documents {
-        let Some((index, _, _)) = split_document_key(key) else {
-            continue;
-        };
-        let next = document.seq_no.saturating_add(1).max(0) as u64;
-        next_by_index
-            .entry(index.to_string())
-            .and_modify(|current| *current = (*current).max(next))
-            .or_insert(next);
+fn recovered_next_seq_no_by_index(
+    documents: &DocumentMap,
+    deletions: &DocumentDeletionSequences,
+    persisted: &BTreeMap<String, u64>,
+) -> Option<BTreeMap<String, u64>> {
+    if persisted.values().any(|next| *next >= i64::MAX as u64) {
+        return None;
     }
-    next_by_index
+    let mut next_by_index = persisted.clone();
+    // Include deleted operations before filtering stale sources out of recovery.
+    let mut observe = |index: &str, sequence: i64| -> Option<()> {
+        let next = u64::try_from(sequence).ok()?.checked_add(1)?;
+        if next >= i64::MAX as u64 {
+            return None;
+        }
+        next_by_index.entry(index.to_string())
+            .and_modify(|current| *current = (*current).max(next)).or_insert(next);
+        Some(())
+    };
+    for (key, document) in documents {
+        let (index, _, _) = split_document_key(key)?;
+        observe(index, document.seq_no)?;
+    }
+    for (index, shards) in deletions {
+        for ids in shards.values() {
+            for sequence in ids.values() {
+                observe(index, *sequence)?;
+            }
+        }
+    }
+    Some(next_by_index)
 }
 
 fn current_epoch_millis() -> u128 {
@@ -43529,6 +44373,22 @@ fn drain_expired_pit_contexts(
         .into_iter()
         .filter_map(|id| contexts.remove(&id))
         .collect()
+}
+
+fn index_routing_from_metadata(entry: &Value) -> Result<IndexRouting, os_engine::EngineError> {
+    let primary = u32::try_from(primary_shard_count_from_index_metadata(entry))
+        .map_err(|_| os_engine::EngineError::InvalidRequest { reason: "primary shard count is too large".to_string() })?;
+    if let Some(value) = entry.get("_steelsearch_routing") {
+        let layout = IndexRouting::deserialize(value)
+            .map_err(|error| os_engine::EngineError::InvalidRequest { reason: format!("invalid persisted routing layout: {error}") })?;
+        if layout.primary_shards() != primary {
+            return Err(os_engine::EngineError::InvalidRequest { reason: "persisted routing layout does not match index shard count".to_string() });
+        }
+        Ok(layout)
+    } else {
+        IndexRouting::new(primary, Some(primary), 1)
+            .map_err(|error| os_engine::EngineError::InvalidRequest { reason: error.to_string() })
+    }
 }
 
 fn index_primary_shard_count_from_manifest(
@@ -44092,7 +44952,7 @@ fn lookup_mapping_property<'a>(mappings: &'a Value, field: &str) -> Option<&'a V
         if segments.peek().is_none() {
             return Some(field_mapping);
         }
-        let Some(next_properties) = field_mapping.get("properties") else {
+        let Some(next_properties) = field_mapping.get("properties").or_else(|| field_mapping.get("fields")) else {
             return find_mapping_property_by_leaf(
                 mappings.get("properties")?,
                 field.rsplit('.').next()?,
@@ -44149,6 +45009,330 @@ fn expand_search_sort_field(sort_field: &Value, expanded_fields: &mut Vec<Value>
         }
         _ => None,
     }
+}
+
+enum MappedSortSource {
+    Keyword(MultiFieldSource),
+    NumericMode(MappedNumericSortMode),
+}
+
+struct MappedNumericSortMode {
+    source_type: String,
+    integer_target: bool,
+    mode: crate::integer_sort_mode::IntegerSortMode,
+    coerce: bool,
+    ignore_malformed: bool,
+    null_value: Option<Value>,
+}
+
+impl MappedNumericSortMode {
+    fn missing_value(&self, field: &Value) -> Result<Value, EngineError> {
+        if let Some(value) = sort_field_custom_missing_value(field) {
+            if self.integer_target {
+                let number = value.as_i64()
+                    .or_else(|| value.as_str().and_then(|s| s.parse::<i64>().ok()))
+                    .or_else(|| value.as_f64().filter(|n| n.is_finite()).map(|n| n as i64));
+                return number.map(Value::from).ok_or_else(|| EngineError::InvalidRequest {
+                    reason: "invalid integer missing sort value".to_string(),
+                });
+            }
+            return Ok(value.clone());
+        }
+        let negative = sort_field_descending(field) ^ (sort_field_missing_marker(field) == Some("_first"));
+        Ok(if self.integer_target {
+            Value::from(if negative { i64::MIN } else { i64::MAX })
+        } else {
+            Value::from(if negative { "-Infinity" } else { "Infinity" })
+        })
+    }
+
+    fn from_mapping(field: &Value, mapping: &Value) -> Option<Self> {
+        let source_type = mapping.get("type")?.as_str()?;
+        let numeric = |kind| matches!(kind, "long" | "integer" | "short" | "byte" | "double" | "float");
+        let target = sort_field_numeric_type(field).unwrap_or(source_type);
+        if !numeric(source_type) || !numeric(target) { return None; }
+        let mode = match sort_field_mode(field)?.to_ascii_lowercase().as_str() {
+            "avg" => crate::integer_sort_mode::IntegerSortMode::Avg,
+            "median" => crate::integer_sort_mode::IntegerSortMode::Median,
+            _ => return None,
+        };
+        Some(Self {
+            source_type: source_type.to_string(),
+            integer_target: matches!(target, "long" | "integer" | "short" | "byte"),
+            mode,
+            coerce: mapping.get("coerce").and_then(Value::as_bool).unwrap_or(true),
+            ignore_malformed: mapping.get("ignore_malformed").and_then(Value::as_bool).unwrap_or(false),
+            null_value: mapping.get("null_value").filter(|v| !v.is_null()).cloned(),
+        })
+    }
+
+    fn normalized_scalar(&self, value: &Value) -> Option<Value> {
+        let integer_source = matches!(self.source_type.as_str(), "long" | "integer" | "short" | "byte");
+        let integer = value.as_i64().or_else(|| {
+            if self.coerce { value.as_str().and_then(|s| s.parse::<i64>().ok()) } else { None }
+        });
+        if integer_source {
+            let number = integer.or_else(|| {
+                let number = value.as_f64().or_else(|| {
+                    if self.coerce { value.as_str().and_then(|s| s.parse::<f64>().ok()) } else { None }
+                })?;
+                if !number.is_finite() || number < i64::MIN as f64 || number >= 9_223_372_036_854_775_808.0
+                    || (!self.coerce && number.fract() != 0.0) { return None; }
+                Some(number as i64)
+            })?;
+            let valid = match self.source_type.as_str() {
+                "byte" => i8::try_from(number).is_ok(),
+                "short" => i16::try_from(number).is_ok(),
+                "integer" => i32::try_from(number).is_ok(),
+                _ => true,
+            };
+            return valid.then(|| Value::from(number));
+        }
+        let number = value.as_f64().or_else(|| {
+            if self.coerce { value.as_str().and_then(|s| s.parse::<f64>().ok()) } else { None }
+        })?;
+        let number = if self.source_type == "float" { (number as f32) as f64 } else { number };
+        number.is_finite().then(|| Value::from(number))
+    }
+
+    fn append_values(&self, value: &Value, values: &mut Vec<Value>) -> Result<(), EngineError> {
+        if let Value::Array(items) = value {
+            for item in items { self.append_values(item, values)?; }
+            return Ok(());
+        }
+        let value = if value.is_null() {
+            let Some(value) = &self.null_value else { return Ok(()); };
+            value
+        } else { value };
+        if let Some(value) = self.normalized_scalar(value) {
+            values.push(value);
+            Ok(())
+        } else if self.ignore_malformed {
+            Ok(())
+        } else {
+            Err(EngineError::InvalidRequest { reason: format!("cannot resolve [{}] sort value from [{value}]", self.source_type) })
+        }
+    }
+
+    fn value(&self, source: Option<&Value>) -> Result<Value, EngineError> {
+        let mut values = Vec::new();
+        if let Some(source) = source { self.append_values(source, &mut values)?; }
+        if self.integer_target {
+            let numbers = values.iter().map(|v| v.as_i64().unwrap_or_else(|| v.as_f64().unwrap() as i64))
+                .collect::<Vec<_>>();
+            Ok(crate::integer_sort_mode::reduce_integer_sort_values(&numbers, self.mode)
+                .map(Value::from).unwrap_or(Value::Null))
+        } else {
+            let mode = match self.mode {
+                crate::integer_sort_mode::IntegerSortMode::Avg => "avg",
+                crate::integer_sort_mode::IntegerSortMode::Median => "median",
+            };
+            Ok(reduce_sort_values_by_mode(&values, mode).unwrap_or(Value::Null))
+        }
+    }
+}
+
+struct MappedSearchSort {
+    fields: Vec<Value>,
+    sources: std::collections::HashMap<String, Vec<Option<MappedSortSource>>>,
+    numeric_columns: Vec<bool>,
+}
+
+impl MappedSearchSort {
+    fn new(
+        sort: &Value,
+        mappings: &std::collections::HashMap<String, Value>,
+    ) -> Result<Option<Self>, EngineError> {
+        let Some(mut fields) = search_sort_fields(sort) else {
+            return Ok(None);
+        };
+        if !fields
+            .iter()
+            .any(|field| sort_field_name(field).is_some_and(|name| name.contains('.'))
+                || sort_field_mode(field).is_some_and(|mode|
+                    mode.eq_ignore_ascii_case("avg") || mode.eq_ignore_ascii_case("median")))
+        {
+            return Ok(None);
+        }
+        let mut found = false;
+        let mut sources = std::collections::HashMap::new();
+        for (index, mappings) in mappings {
+            let mut descriptors = Vec::with_capacity(fields.len());
+            for field in &fields {
+                let descriptor = match sort_field_name(field) {
+                    Some(name) if name.contains('.') => {
+                        MultiFieldSource::for_keyword_field(mappings, name)?
+                    }
+                    _ => None,
+                };
+                if let Some(descriptor) = &descriptor {
+                    let name = sort_field_name(field).expect("resolved multi-field sort name");
+                    if lookup_mapping_property(mappings, name).and_then(|mapping| mapping.get("doc_values")) == Some(&Value::Bool(false)) {
+                        return Err(EngineError::InvalidRequest {
+                            reason: format!("Cannot sort on field [{name}] because doc_values are disabled"),
+                        });
+                    }
+                    descriptor.keyword_values(&Value::Null)?;
+                    if sort_field_mode(field).is_some_and(|mode|
+                        !mode.eq_ignore_ascii_case("min") && !mode.eq_ignore_ascii_case("max")) {
+                        return Err(EngineError::InvalidRequest {
+                            reason: "keyword multi-field sort only supports min and max modes"
+                                .to_string(),
+                        });
+                    }
+                    if sort_field_numeric_type(field).is_some() {
+                        return Err(EngineError::InvalidRequest {
+                            reason: "[numeric_type] option cannot be set on a non-numeric field, got keyword".to_string(),
+                        });
+                    }
+                    found = true;
+                }
+                let descriptor = if let Some(descriptor) = descriptor {
+                    Some(MappedSortSource::Keyword(descriptor))
+                } else {
+                    let mode = sort_field_name(field)
+                        .and_then(|name| lookup_mapping_property(mappings, name))
+                        .and_then(|mapping| MappedNumericSortMode::from_mapping(field, mapping));
+                    found |= mode.is_some();
+                    mode.map(MappedSortSource::NumericMode)
+                };
+                descriptors.push(descriptor);
+            }
+            sources.insert(index.clone(), descriptors);
+        }
+        let numeric_columns = (0..fields.len()).map(|position| {
+            sources.values().any(|descriptors| matches!(descriptors[position], Some(MappedSortSource::NumericMode(_))))
+        }).collect::<Vec<_>>();
+        // Numeric descriptors resolve missing values per index from the original request.
+        // Other columns retain the existing mapping-aware fallback options.
+        if let Some(execution_fields) = search_sort_fields(&search_sort_with_integer_missing_values(sort, mappings)) {
+            for (position, field) in execution_fields.into_iter().enumerate() {
+                if !numeric_columns[position] { fields[position] = field; }
+            }
+        }
+        Ok(found.then_some(Self { fields, sources, numeric_columns }))
+    }
+
+    fn values(&self, hit: &Value) -> Result<Vec<Value>, EngineError> {
+        let descriptors = hit
+            .get("_index")
+            .and_then(Value::as_str)
+            .and_then(|index| self.sources.get(index));
+        self.fields
+            .iter()
+            .enumerate()
+            .map(|(position, field)| {
+                let Some(name) = sort_field_name(field) else {
+                    return Ok(Value::Null);
+                };
+                let descriptor = descriptors.and_then(|sources| sources[position].as_ref());
+                if let Some(MappedSortSource::NumericMode(mode)) = descriptor {
+                    let source = hit.get("_source").unwrap_or(&Value::Null);
+                    let value = extract_source_path_value(source, name);
+                    let value = mode.value(value.as_ref())?;
+                    return if value.is_null() { mode.missing_value(field) } else { Ok(value) };
+                }
+                if let Some(MappedSortSource::Keyword(descriptor)) = descriptor {
+                    let values =
+                        descriptor.keyword_values(hit.get("_source").unwrap_or(&Value::Null))?;
+                    let mode = sort_field_mode(field).unwrap_or(if sort_field_descending(field) {
+                        "max"
+                    } else {
+                        "min"
+                    });
+                    return Ok(reduce_sort_values_by_mode(&values, mode).unwrap_or(Value::Null));
+                }
+                Ok(extract_mode_sort_value(
+                    hit,
+                    field,
+                    name,
+                    sort_field_descending(field),
+                ))
+            })
+            .collect()
+    }
+
+    fn compare(&self, left: &[Value], right: &[Value]) -> std::cmp::Ordering {
+        for (position, ((left, right), field)) in left.iter().zip(right).zip(&self.fields).enumerate() {
+            let ordering = if self.numeric_columns[position] && !left.is_null() && !right.is_null() {
+                let ordering = compare_numeric_mode_sort_values(left, right);
+                if sort_field_descending(field) { ordering.reverse() } else { ordering }
+            } else {
+                compare_resolved_sort_values(left, right, field, sort_field_descending(field))
+            };
+            if !ordering.is_eq() {
+                return ordering;
+            }
+        }
+        std::cmp::Ordering::Equal
+    }
+
+    fn order_hits(&self, hits: Vec<Value>) -> Result<Vec<Value>, EngineError> {
+        let mut resolved = hits
+            .into_iter()
+            .map(|hit| self.values(&hit).map(|values| (hit, values)))
+            .collect::<Result<Vec<_>, _>>()?;
+        resolved.sort_by(|(left, left_values), (right, right_values)| {
+            self.compare(left_values, right_values).then_with(|| {
+                left["_seq_no"]
+                    .as_i64()
+                    .unwrap_or_default()
+                    .cmp(&right["_seq_no"].as_i64().unwrap_or_default())
+            })
+        });
+        Ok(resolved.into_iter().map(|(hit, _)| hit).collect())
+    }
+
+    fn after(&self, hits: Vec<Value>, after: &[Value]) -> Result<Vec<Value>, EngineError> {
+        if self.fields.len() != after.len() {
+            return Ok(hits);
+        }
+        let mut selected = Vec::new();
+        for hit in hits {
+            if self.compare(&self.values(&hit)?, after).is_gt() {
+                selected.push(hit);
+            }
+        }
+        Ok(selected)
+    }
+
+    fn append_values(
+        &self,
+        hits: &mut [Value],
+        mappings: &std::collections::HashMap<String, Value>,
+    ) -> Result<(), EngineError> {
+        for hit in hits {
+            let values = self
+                .values(hit)?
+                .into_iter()
+                .zip(&self.fields)
+                .map(|(value, field)| {
+                    if value.is_null() {
+                        if let Some(missing) = sort_field_custom_missing_value(field) {
+                            return missing.clone();
+                        }
+                    }
+                    render_sort_value_for_field_mapping(
+                        hit,
+                        sort_field_name(field).unwrap_or_default(),
+                        value,
+                        Some(mappings),
+                    )
+                })
+                .collect();
+            hit["sort"] = Value::Array(values);
+        }
+        Ok(())
+    }
+}
+
+fn compare_numeric_mode_sort_values(left: &Value, right: &Value) -> std::cmp::Ordering {
+    let rank = |value: &Value| match value.as_str() {
+        Some("-Infinity") => -1,
+        Some("Infinity") => 1,
+        _ => 0,
+    };
+    rank(left).cmp(&rank(right)).then_with(|| compare_json_scalars(left, right))
 }
 
 fn apply_search_sort(hits: &mut [Value], sort: &Value) {
@@ -44394,6 +45578,15 @@ fn compare_sort_field_values(
 ) -> std::cmp::Ordering {
     let left_value = extract_mode_sort_value(left, sort_field, field_name, descending);
     let right_value = extract_mode_sort_value(right, sort_field, field_name, descending);
+    compare_resolved_sort_values(&left_value, &right_value, sort_field, descending)
+}
+
+fn compare_resolved_sort_values(
+    left_value: &Value,
+    right_value: &Value,
+    sort_field: &Value,
+    descending: bool,
+) -> std::cmp::Ordering {
     let left_missing = left_value.is_null();
     let right_missing = right_value.is_null();
     if left_missing || right_missing {
@@ -44411,14 +45604,14 @@ fn compare_sort_field_values(
         }
     }
     let left_value = if left_missing {
-        sort_field_custom_missing_value(sort_field).unwrap_or(&left_value)
+        sort_field_custom_missing_value(sort_field).unwrap_or(left_value)
     } else {
-        &left_value
+        left_value
     };
     let right_value = if right_missing {
-        sort_field_custom_missing_value(sort_field).unwrap_or(&right_value)
+        sort_field_custom_missing_value(sort_field).unwrap_or(right_value)
     } else {
-        &right_value
+        right_value
     };
     let ordering = compare_json_scalars(left_value, right_value);
     if descending {
@@ -44686,15 +45879,16 @@ fn reduce_sort_values_by_mode(values: &[Value], mode: &str) -> Option<Value> {
     match mode.to_ascii_lowercase().as_str() {
         "min" => values
             .iter()
+            .filter(|value| !value.is_null())
             .min_by(|left, right| compare_json_scalars(left, right))
             .cloned(),
         "max" => values
             .iter()
+            .filter(|value| !value.is_null())
             .max_by(|left, right| compare_json_scalars(left, right))
             .cloned(),
-        "sum" => Some(Value::from(
-            values.iter().filter_map(Value::as_f64).sum::<f64>(),
-        )),
+        "sum" => values.iter().filter_map(Value::as_f64)
+            .reduce(|left, right| left + right).map(Value::from),
         "avg" => {
             let numbers = values.iter().filter_map(Value::as_f64).collect::<Vec<_>>();
             if numbers.is_empty() {
@@ -44720,6 +45914,128 @@ fn reduce_sort_values_by_mode(values: &[Value], mode: &str) -> Option<Value> {
             }
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod sort_null_reduction_tests {
+    use super::*;
+
+    #[test]
+    fn numeric_missing_values_keep_per_index_types_and_after_order() {
+        let mappings = std::collections::HashMap::from([
+            ("longs".to_string(), serde_json::json!({"properties":{"value":{"type":"long"}}})),
+            ("doubles".to_string(), serde_json::json!({"properties":{"value":{"type":"double"}}})),
+        ]);
+        let fields = serde_json::json!([{"value":{"mode":"avg"}},{"tie":"asc"}]);
+        let sort = MappedSearchSort::new(&fields, &mappings).unwrap().unwrap();
+        let hits = vec![
+            serde_json::json!({"_index":"doubles","_id":"double-missing","_source":{"tie":1}}),
+            serde_json::json!({"_index":"longs","_id":"long-missing","_source":{"tie":0}}),
+            serde_json::json!({"_index":"longs","_id":"real-max","_source":{"value":i64::MAX,"tie":2}}),
+        ];
+        let mut ordered = sort.order_hits(hits).unwrap();
+        assert_eq!(ordered.iter().map(|h| h["_id"].as_str().unwrap()).collect::<Vec<_>>(),
+                   vec!["long-missing","real-max","double-missing"]);
+        let after = sort.after(ordered.clone(), &[serde_json::json!(i64::MAX),serde_json::json!(2)]).unwrap();
+        assert_eq!(after.len(), 1);
+        assert_eq!(after[0]["_id"], "double-missing");
+        assert!(sort.after(ordered.clone(), &[serde_json::json!("Infinity"),serde_json::json!(1)]).unwrap().is_empty());
+        sort.append_values(&mut ordered, &mappings).unwrap();
+        assert_eq!(ordered[0]["sort"], serde_json::json!([i64::MAX,0]));
+        assert_eq!(ordered[2]["sort"], serde_json::json!(["Infinity",1]));
+        for (order, missing, expected) in [
+            ("asc","_last","Infinity"), ("desc","_last","-Infinity"),
+            ("asc","_first","-Infinity"), ("desc","_first","Infinity"),
+        ] {
+            let field = serde_json::json!({"value":{"mode":"median","order":order,"missing":missing}});
+            let mode = MappedNumericSortMode::from_mapping(&field, &serde_json::json!({"type":"double"})).unwrap();
+            assert_eq!(mode.missing_value(&field).unwrap(), serde_json::json!(expected));
+        }
+        assert!(compare_json_scalars(&serde_json::json!("Infinity"), &serde_json::json!("Zoo")).is_lt());
+    }
+
+    #[test]
+    fn mapped_integer_modes_share_order_after_and_rendered_values() {
+        let mappings = std::collections::HashMap::from([
+            ("longs".to_string(), serde_json::json!({"properties": {"value": {"type": "long"}}})),
+            ("doubles".to_string(), serde_json::json!({"properties": {"value": {"type": "double"}}})),
+        ]);
+        for mode in ["avg", "median"] {
+            let fields = serde_json::json!([{"value": {"order": "asc", "mode": mode}}, {"tie": "asc"}]);
+            let sort = MappedSearchSort::new(&fields, &mappings).unwrap().unwrap();
+            let hits = vec![
+                serde_json::json!({"_index":"longs","_id":"positive","_source":{"value":[-3,8],"tie":0}}),
+                serde_json::json!({"_index":"longs","_id":"negative","_source":{"value":[-3,0],"tie":1}}),
+                serde_json::json!({"_index":"doubles","_id":"double","_source":{"value":[-3,0],"tie":2}}),
+                serde_json::json!({"_index":"longs","_id":"tie","_source":{"value":[-2,0],"tie":3}}),
+            ];
+            let mut hits = sort.order_hits(hits).unwrap();
+            assert_eq!(hits.iter().map(|h| h["_id"].as_str().unwrap()).collect::<Vec<_>>(),
+                       vec!["double", "negative", "tie", "positive"]);
+            let after = sort.after(hits.clone(), &[serde_json::json!(-1), serde_json::json!(1)]).unwrap();
+            assert_eq!(after.iter().map(|h| h["_id"].as_str().unwrap()).collect::<Vec<_>>(), vec!["tie", "positive"]);
+            sort.append_values(&mut hits, &mappings).unwrap();
+            assert_eq!(hits.iter().map(|h| h["sort"].clone()).collect::<Vec<_>>(), vec![
+                serde_json::json!([-1.5,2]), serde_json::json!([-1,1]),
+                serde_json::json!([-1,3]), serde_json::json!([3,0]),
+            ]);
+            let double_sort = serde_json::json!([{"value":{"mode":mode,"numeric_type":"double"}}]);
+            let double_sort = MappedSearchSort::new(&double_sort, &mappings).unwrap().unwrap();
+            assert_eq!(double_sort.values(&hits[1]).unwrap(), vec![serde_json::json!(-1.5)]);
+        }
+    }
+
+    #[test]
+    fn numeric_modes_apply_mapping_before_requested_type() {
+        let mapping = serde_json::json!({"type":"long", "null_value":7});
+        for mode in ["avg", "median"] {
+            let field = serde_json::json!({"value":{"mode":mode}});
+            let integer = MappedNumericSortMode::from_mapping(&field, &mapping).unwrap();
+            for (source, expected) in [
+                (serde_json::json!(["-3","0"]), -1),
+                (serde_json::json!([-3.9,0.9]), -1),
+                (serde_json::json!([null,2]), 5),
+                (Value::Null, 7),
+            ] {
+                assert_eq!(integer.value(Some(&source)).unwrap(), serde_json::json!(expected));
+            }
+            assert_eq!(integer.value(None).unwrap(), Value::Null);
+            assert_eq!(integer.value(Some(&serde_json::json!([]))).unwrap(), Value::Null);
+            let field = serde_json::json!({"value":{"mode":mode,"numeric_type":"double"}});
+            let double = MappedNumericSortMode::from_mapping(&field, &mapping).unwrap();
+            assert_eq!(double.value(Some(&serde_json::json!([-3.9,0.9]))).unwrap(), serde_json::json!(-1.5));
+        }
+    }
+
+    #[test]
+    fn numeric_modes_do_not_silently_drop_invalid_values() {
+        let field = serde_json::json!({"value":{"mode":"avg"}});
+        let strict = MappedNumericSortMode::from_mapping(&field, &serde_json::json!({"type":"long","coerce":false})).unwrap();
+        assert!(strict.value(Some(&serde_json::json!(["3",1]))).is_err());
+        assert!(strict.value(Some(&serde_json::json!([3.5,1]))).is_err());
+        let ignored = MappedNumericSortMode::from_mapping(&field, &serde_json::json!({"type":"long","ignore_malformed":true})).unwrap();
+        assert_eq!(ignored.value(Some(&serde_json::json!(["bad",3,1]))).unwrap(), serde_json::json!(2));
+        assert_eq!(ignored.value(Some(&serde_json::json!(["bad"]))).unwrap(), Value::Null);
+        let byte = MappedNumericSortMode::from_mapping(&field, &serde_json::json!({"type":"byte"})).unwrap();
+        assert!(byte.value(Some(&serde_json::json!([128]))).is_err());
+        let long = MappedNumericSortMode::from_mapping(&field, &serde_json::json!({"type":"long"})).unwrap();
+        assert_eq!(long.value(Some(&serde_json::json!([i64::MAX]))).unwrap(), serde_json::json!(i64::MAX));
+    }
+
+    #[test]
+    fn null_elements_are_missing_for_every_sort_mode() {
+        for mode in ["min", "max", "sum", "avg", "median"] {
+            assert_eq!(reduce_sort_values_by_mode(&[], mode), None);
+            assert_eq!(reduce_sort_values_by_mode(&[Value::Null], mode), None);
+        }
+        let values = serde_json::json!([null, 9, 2, 5]);
+        let values = values.as_array().unwrap();
+        for (mode, expected) in [("min", 2.0), ("max", 9.0), ("sum", 16.0),
+                                 ("avg", 16.0 / 3.0), ("median", 5.0)] {
+            assert_eq!(reduce_sort_values_by_mode(values, mode).and_then(|v| v.as_f64()), Some(expected));
+        }
+        assert_eq!(reduce_sort_values_by_mode(&[serde_json::json!(-2), serde_json::json!(2)], "sum"), Some(serde_json::json!(0.0)));
     }
 }
 
@@ -44821,6 +46137,24 @@ fn script_field_script_source(definition_object: &serde_json::Map<String, Value>
         }
         _ => None,
     }
+}
+
+fn numeric_docvalue_field_values(value: &Value) -> Vec<Value> {
+    fn append(value: &Value, values: &mut Vec<Value>) {
+        match value {
+            Value::Array(items) => {
+                for item in items {
+                    append(item, values);
+                }
+            }
+            Value::Null => {}
+            value => values.push(value.clone()),
+        }
+    }
+    let mut values = Vec::new();
+    append(value, &mut values);
+    values.sort_by(compare_json_scalars);
+    values
 }
 
 fn normalize_docvalue_field_value(
@@ -46131,7 +47465,7 @@ fn snapshot_restore_index_settings(body: &Value) -> Result<Option<Value>, RestRe
             "malformed index_settings section",
         ));
     }
-    let normalized = normalize_restore_index_settings(settings);
+    let normalized = normalize_index_settings(settings);
     let mut flattened = BTreeMap::<String, Value>::new();
     flatten_json_leaves("", &normalized, &mut flattened);
     for key in flattened.keys() {
@@ -46189,23 +47523,25 @@ fn snapshot_restore_ignore_index_settings(body: &Value) -> Result<Vec<String>, R
     Ok(values)
 }
 
-fn normalize_restore_index_settings(settings: &Value) -> Value {
-    let settings = expand_dotted_cluster_settings_section(&stringify_leaf_scalars(settings));
-    let mut index = serde_json::Map::new();
-    if let Some(settings) = settings.as_object() {
-        for (key, value) in settings {
-            if key == "index" {
-                if let Some(value) = value.as_object() {
-                    for (index_key, index_value) in value {
-                        index.insert(index_key.clone(), index_value.clone());
-                    }
-                }
-            } else {
-                index.insert(key.clone(), value.clone());
-            }
-        }
+fn normalize_index_settings(settings: &Value) -> Value {
+    if !settings.is_object() {
+        return serde_json::json!({"index": {}});
     }
-    serde_json::json!({ "index": index })
+    let mut flattened = BTreeMap::new();
+    flatten_json_leaves("", &stringify_leaf_scalars(settings), &mut flattened);
+    let replacements = flattened
+        .iter()
+        .filter(|(key, _)| {
+            !key.starts_with("index.") && !key.starts_with("archived.") && !key.ends_with('*')
+        })
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect::<Vec<_>>();
+    // OpenSearch's normalizePrefix applies unprefixed replacements last.
+    for (key, value) in replacements {
+        flattened.remove(&key);
+        flattened.insert(format!("index.{key}"), value);
+    }
+    expand_dotted_cluster_settings_section(&Value::Object(flattened.into_iter().collect()))
 }
 
 fn apply_snapshot_restore_index_settings(
@@ -47019,799 +48355,970 @@ fn evaluate_search_query_source_with_mappings(
     query: &Value,
     mappings: &Value,
 ) -> Option<(bool, f64)> {
-    if query.is_null() || query.as_object().is_some_and(|object| object.is_empty()) {
-        return Some((true, 1.0));
+    evaluate_search_query_source_checked(source, doc_id, query, mappings)
+        .ok()
+        .flatten()
+}
+
+fn evaluate_search_query_source_checked(
+    source: &Value,
+    doc_id: &str,
+    query: &Value,
+    mappings: &Value,
+) -> Result<Option<(bool, f64)>, EngineError> {
+    evaluate_search_query_source_with_scoring_checked(source, doc_id, query, mappings, None)
+}
+
+fn evaluate_search_query_source_with_scoring_checked(
+    source: &Value,
+    doc_id: &str,
+    query: &Value,
+    mappings: &Value,
+    scoring: Option<&source_bm25::FieldScores>,
+) -> Result<Option<(bool, f64)>, EngineError> {
+    let mut evaluator = SourceQueryEvaluator {
+        mappings,
+        error: None,
+        scoring,
+    };
+    let result = evaluator.evaluate(source, doc_id, query);
+    match evaluator.error {
+        Some(error) => Err(error),
+        None => Ok(result),
     }
-    if query.get("match_all").is_some() {
-        return Some((true, direct_named_query_boost(query)));
-    }
-    if query.get("match_none").is_some() {
-        return Some((false, 0.0));
-    }
-    if let Some(term) = query.get("term").and_then(Value::as_object) {
-        let (field, expected) = term.iter().next()?;
-        let (expected, case_insensitive) = extract_term_query_value(expected)?;
-        let matched = value_matches_term(
-            lookup_query_field_value(source, field),
-            expected,
-            lookup_query_field_mapping_type(mappings, field),
-            case_insensitive,
-        );
-        return Some((
-            matched,
-            if matched {
-                direct_named_query_boost(query)
-            } else {
-                0.0
-            },
-        ));
-    }
-    if let Some(terms) = query.get("terms").and_then(Value::as_object) {
-        let (field, expected) = extract_terms_query_field_values(terms)?;
-        let matched = value_matches_terms(
-            lookup_query_field_value(source, field),
-            expected,
-            lookup_query_field_mapping_type(mappings, field),
-        );
-        return Some((
-            matched,
-            if matched {
-                direct_named_query_boost(query)
-            } else {
-                0.0
-            },
-        ));
-    }
-    if let Some(match_query) = query.get("match").and_then(Value::as_object) {
-        let (field, expected) = match_query.iter().next()?;
-        let query_text = extract_match_query_value(expected).unwrap_or_default();
-        let boost = direct_named_query_boost(query);
-        if query_text.trim().is_empty() && extract_zero_terms_query_all(expected) {
-            return Some((true, boost));
+}
+
+fn validate_multi_field_query_options(query: &Value, mappings: &Value) -> Result<(), EngineError> {
+    let field = query
+        .get("term")
+        .and_then(Value::as_object)
+        .and_then(|spec| spec.keys().next().map(String::as_str))
+        .or_else(|| {
+            query
+                .get("terms")
+                .and_then(Value::as_object)
+                .and_then(extract_terms_query_field_values)
+                .map(|(field, _)| field)
+        })
+        .or_else(|| {
+            query
+                .get("exists")
+                .and_then(|spec| spec.get("field"))
+                .and_then(Value::as_str)
+        });
+    if let Some(field) = field.filter(|field| field.contains('.')) {
+        if let Some(descriptor) = MultiFieldSource::for_keyword_field(mappings, field)? {
+            descriptor.keyword_values(&Value::Null)?;
         }
-        let haystacks = lookup_query_field_value(source, field)
-            .map(collect_string_leaf_values)
-            .unwrap_or_default();
-        if let Some(fuzzy_options) = extract_match_query_fuzzy_options(expected, &query_text) {
-            let matched = value_matches_match_fuzzy(
-                &haystacks,
-                &query_text,
-                fuzzy_options.fuzziness,
-                fuzzy_options.prefix_length,
-                fuzzy_options.transpositions,
-                extract_match_query_operator(expected),
-                extract_match_minimum_should_match(expected),
-            );
-            return Some((matched, if matched { boost } else { 0.0 }));
-        }
-        let (matched, score) = evaluate_text_query_strings(
-            &haystacks,
-            &query_text,
-            extract_match_query_operator(expected),
-            false,
-            extract_match_minimum_should_match(expected),
-        );
-        return Some((matched, if matched { score * boost } else { 0.0 }));
     }
-    if let Some(multi_match) = query.get("multi_match").and_then(Value::as_object) {
-        let expected = multi_match
-            .get("query")
-            .and_then(opensearch_object_text_value)
-            .unwrap_or_default();
-        if expected.trim().is_empty()
-            && extract_zero_terms_query_all(&Value::Object(multi_match.clone()))
+    if let Ok(inner) = decode_wrapper_query(query) {
+        validate_multi_field_query_options(&inner, mappings)?;
+    }
+    for child in child_named_query_candidates(query) {
+        validate_multi_field_query_options(child, mappings)?;
+    }
+    if let Some(functions) = query
+        .get("function_score")
+        .and_then(|spec| spec.get("functions"))
+        .and_then(Value::as_array)
+    {
+        for filter in functions
+            .iter()
+            .filter_map(|function| function.get("filter"))
         {
+            validate_multi_field_query_options(filter, mappings)?;
+        }
+    }
+    Ok(())
+}
+
+struct SourceQueryEvaluator<'a> {
+    mappings: &'a Value,
+    scoring: Option<&'a source_bm25::FieldScores>,
+    // Keep conversion errors even when a bool/filter branch converts None to false.
+    error: Option<EngineError>,
+}
+
+impl SourceQueryEvaluator<'_> {
+    fn keyword_values(&mut self, source: &Value, field: &str) -> Option<Option<Value>> {
+        if !field.contains('.') {
+            return Some(None);
+        }
+        let values =
+            MultiFieldSource::for_keyword_field(self.mappings, field).and_then(|descriptor| {
+                descriptor
+                    .map(|descriptor| descriptor.keyword_values(source).map(Value::Array))
+                    .transpose()
+            });
+        match values {
+            Ok(values) => Some(values),
+            Err(error) => {
+                if self.error.is_none() {
+                    self.error = Some(error);
+                }
+                None
+            }
+        }
+    }
+
+    fn evaluate(&mut self, source: &Value, doc_id: &str, query: &Value) -> Option<(bool, f64)> {
+        let mappings = self.mappings;
+        if let Some(result) = self.scoring.and_then(|scoring| source_bm25::evaluate(scoring, mappings, source, query)) {
+            return Some(result);
+        }
+        if query.is_null() || query.as_object().is_some_and(|object| object.is_empty()) {
             return Some((true, 1.0));
         }
-        let fields = extract_multi_match_fields(multi_match.get("fields"));
-        let field_refs = fields.iter().map(String::as_str).collect::<Vec<_>>();
-        let haystacks = collect_searchable_field_values(source, Some(field_refs.as_slice()));
-        let slop = extract_match_phrase_slop(&Value::Object(multi_match.clone()));
-        let (matched, score) = match multi_match.get("type").and_then(Value::as_str) {
-            Some("phrase") => {
-                let matched = haystacks.iter().any(|haystack| {
-                    value_matches_phrase_with_analyzer(
-                        Some(&Value::String(haystack.clone())),
-                        &expected,
-                        false,
-                        slop,
-                        multi_match.get("analyzer").and_then(Value::as_str),
-                    )
-                });
-                (matched, if matched { 1.0 } else { 0.0 })
+        if query.get("match_all").is_some() {
+            return Some((true, direct_named_query_boost(query)));
+        }
+        if query.get("match_none").is_some() {
+            return Some((false, 0.0));
+        }
+        if let Some(term) = query.get("term").and_then(Value::as_object) {
+            let (field, expected) = term.iter().next()?;
+            let (expected, case_insensitive) = extract_term_query_value(expected)?;
+            if let Some(values) = self.keyword_values(source, field)? {
+                let expected = Value::String(opensearch_object_text_value(expected)?);
+                let matched =
+                    value_matches_term(Some(&values), &expected, Some("keyword"), case_insensitive);
+                return Some((
+                    matched,
+                    if matched {
+                        direct_named_query_boost(query)
+                    } else {
+                        0.0
+                    },
+                ));
             }
-            Some("phrase_prefix") => {
-                let matched = haystacks.iter().any(|haystack| {
-                    value_matches_phrase_with_analyzer(
-                        Some(&Value::String(haystack.clone())),
-                        &expected,
-                        true,
-                        slop,
-                        multi_match.get("analyzer").and_then(Value::as_str),
-                    )
-                });
-                (matched, if matched { 1.0 } else { 0.0 })
+            let matched = value_matches_term(
+                lookup_query_field_value(source, field),
+                expected,
+                lookup_query_field_mapping_type(mappings, field),
+                case_insensitive,
+            );
+            return Some((
+                matched,
+                if matched {
+                    direct_named_query_boost(query)
+                } else {
+                    0.0
+                },
+            ));
+        }
+        if let Some(terms) = query.get("terms").and_then(Value::as_object) {
+            let (field, expected) = extract_terms_query_field_values(terms)?;
+            if let Some(values) = self.keyword_values(source, field)? {
+                let expected = Value::Array(
+                    expected
+                        .as_array()?
+                        .iter()
+                        .map(|value| opensearch_object_text_value(value).map(Value::String))
+                        .collect::<Option<Vec<_>>>()?,
+                );
+                let matched = value_matches_terms(Some(&values), &expected, Some("keyword"));
+                return Some((
+                    matched,
+                    if matched {
+                        direct_named_query_boost(query)
+                    } else {
+                        0.0
+                    },
+                ));
             }
-            Some("bool_prefix") => {
-                let matched = value_matches_multi_match_bool_prefix(
+            let matched = value_matches_terms(
+                lookup_query_field_value(source, field),
+                expected,
+                lookup_query_field_mapping_type(mappings, field),
+            );
+            return Some((
+                matched,
+                if matched {
+                    direct_named_query_boost(query)
+                } else {
+                    0.0
+                },
+            ));
+        }
+        if let Some(match_query) = query.get("match").and_then(Value::as_object) {
+            let (field, expected) = match_query.iter().next()?;
+            let query_text = extract_match_query_value(expected).unwrap_or_default();
+            let boost = direct_named_query_boost(query);
+            if query_text.trim().is_empty() && extract_zero_terms_query_all(expected) {
+                return Some((true, boost));
+            }
+            let haystacks = lookup_query_field_value(source, field)
+                .map(collect_string_leaf_values)
+                .unwrap_or_default();
+            if let Some(fuzzy_options) = extract_match_query_fuzzy_options(expected, &query_text) {
+                let matched = value_matches_match_fuzzy(
+                    &haystacks,
+                    &query_text,
+                    fuzzy_options.fuzziness,
+                    fuzzy_options.prefix_length,
+                    fuzzy_options.transpositions,
+                    extract_match_query_operator(expected),
+                    extract_match_minimum_should_match(expected),
+                );
+                return Some((matched, if matched { boost } else { 0.0 }));
+            }
+            let (matched, score) = evaluate_text_query_strings(
+                &haystacks,
+                &query_text,
+                extract_match_query_operator(expected),
+                false,
+                extract_match_minimum_should_match(expected),
+            );
+            return Some((matched, if matched { score * boost } else { 0.0 }));
+        }
+        if let Some(multi_match) = query.get("multi_match").and_then(Value::as_object) {
+            let expected = multi_match
+                .get("query")
+                .and_then(opensearch_object_text_value)
+                .unwrap_or_default();
+            if expected.trim().is_empty()
+                && extract_zero_terms_query_all(&Value::Object(multi_match.clone()))
+            {
+                return Some((true, 1.0));
+            }
+            let fields = extract_multi_match_fields(multi_match.get("fields"));
+            let field_refs = fields.iter().map(String::as_str).collect::<Vec<_>>();
+            let haystacks = collect_searchable_field_values(source, Some(field_refs.as_slice()));
+            let slop = extract_match_phrase_slop(&Value::Object(multi_match.clone()));
+            let (matched, score) = match multi_match.get("type").and_then(Value::as_str) {
+                Some("phrase") => {
+                    let matched = haystacks.iter().any(|haystack| {
+                        value_matches_phrase_with_analyzer(
+                            Some(&Value::String(haystack.clone())),
+                            &expected,
+                            false,
+                            slop,
+                            multi_match.get("analyzer").and_then(Value::as_str),
+                        )
+                    });
+                    (matched, if matched { 1.0 } else { 0.0 })
+                }
+                Some("phrase_prefix") => {
+                    let matched = haystacks.iter().any(|haystack| {
+                        value_matches_phrase_with_analyzer(
+                            Some(&Value::String(haystack.clone())),
+                            &expected,
+                            true,
+                            slop,
+                            multi_match.get("analyzer").and_then(Value::as_str),
+                        )
+                    });
+                    (matched, if matched { 1.0 } else { 0.0 })
+                }
+                Some("bool_prefix") => {
+                    let matched = value_matches_multi_match_bool_prefix(
+                        &haystacks,
+                        &expected,
+                        multi_match
+                            .get("operator")
+                            .and_then(Value::as_str)
+                            .unwrap_or("or"),
+                        multi_match.get("minimum_should_match"),
+                    );
+                    (matched, if matched { 1.0 } else { 0.0 })
+                }
+                Some("cross_fields") => evaluate_text_query_strings(
                     &haystacks,
                     &expected,
                     multi_match
                         .get("operator")
                         .and_then(Value::as_str)
                         .unwrap_or("or"),
+                    false,
                     multi_match.get("minimum_should_match"),
-                );
-                (matched, if matched { 1.0 } else { 0.0 })
-            }
-            Some("cross_fields") => evaluate_text_query_strings(
-                &haystacks,
-                &expected,
-                multi_match
-                    .get("operator")
-                    .and_then(Value::as_str)
-                    .unwrap_or("or"),
-                false,
-                multi_match.get("minimum_should_match"),
-            ),
-            _ => {
-                let operator = multi_match
-                    .get("operator")
-                    .and_then(Value::as_str)
-                    .unwrap_or("or");
-                if let Some(fuzzy_options) = extract_match_query_fuzzy_options(
-                    &Value::Object(multi_match.clone()),
-                    &expected,
-                ) {
-                    let matched = value_matches_match_fuzzy(
-                        &haystacks,
+                ),
+                _ => {
+                    let operator = multi_match
+                        .get("operator")
+                        .and_then(Value::as_str)
+                        .unwrap_or("or");
+                    if let Some(fuzzy_options) = extract_match_query_fuzzy_options(
+                        &Value::Object(multi_match.clone()),
                         &expected,
-                        fuzzy_options.fuzziness,
-                        fuzzy_options.prefix_length,
-                        fuzzy_options.transpositions,
-                        operator,
-                        multi_match.get("minimum_should_match"),
-                    );
-                    (matched, if matched { 1.0 } else { 0.0 })
-                } else {
-                    evaluate_text_query_strings(
-                        &haystacks,
-                        &expected,
-                        operator,
-                        false,
-                        multi_match.get("minimum_should_match"),
-                    )
+                    ) {
+                        let matched = value_matches_match_fuzzy(
+                            &haystacks,
+                            &expected,
+                            fuzzy_options.fuzziness,
+                            fuzzy_options.prefix_length,
+                            fuzzy_options.transpositions,
+                            operator,
+                            multi_match.get("minimum_should_match"),
+                        );
+                        (matched, if matched { 1.0 } else { 0.0 })
+                    } else {
+                        evaluate_text_query_strings(
+                            &haystacks,
+                            &expected,
+                            operator,
+                            false,
+                            multi_match.get("minimum_should_match"),
+                        )
+                    }
                 }
+            };
+            return Some((matched, score));
+        }
+        if let Some(match_phrase) = query.get("match_phrase").and_then(Value::as_object) {
+            let (field, expected) = match_phrase.iter().next()?;
+            let query_text = extract_match_query_value(expected).unwrap_or_default();
+            let boost = direct_named_query_boost(query);
+            if query_text.trim().is_empty() && extract_zero_terms_query_all(expected) {
+                return Some((true, boost));
             }
-        };
-        return Some((matched, score));
-    }
-    if let Some(match_phrase) = query.get("match_phrase").and_then(Value::as_object) {
-        let (field, expected) = match_phrase.iter().next()?;
-        let query_text = extract_match_query_value(expected).unwrap_or_default();
-        let boost = direct_named_query_boost(query);
-        if query_text.trim().is_empty() && extract_zero_terms_query_all(expected) {
-            return Some((true, boost));
-        }
-        let matched = value_matches_phrase_with_analyzer(
-            lookup_query_field_value(source, field),
-            &query_text,
-            false,
-            extract_match_phrase_slop(expected),
-            extract_match_query_analyzer(expected),
-        );
-        return Some((matched, if matched { boost } else { 0.0 }));
-    }
-    if let Some(match_phrase_prefix) = query.get("match_phrase_prefix").and_then(Value::as_object) {
-        let (field, expected) = match_phrase_prefix.iter().next()?;
-        let query_text = extract_match_query_value(expected).unwrap_or_default();
-        let boost = direct_named_query_boost(query);
-        if query_text.trim().is_empty() && extract_zero_terms_query_all(expected) {
-            return Some((true, boost));
-        }
-        let matched = value_matches_phrase_with_analyzer(
-            lookup_query_field_value(source, field),
-            &query_text,
-            true,
-            extract_match_phrase_slop(expected),
-            extract_match_query_analyzer(expected),
-        );
-        return Some((matched, if matched { boost } else { 0.0 }));
-    }
-    if let Some(match_bool_prefix) = query.get("match_bool_prefix").and_then(Value::as_object) {
-        let (field, expected) = match_bool_prefix.iter().next()?;
-        let expected_value = extract_match_query_value(expected)?;
-        let haystacks = lookup_query_field_value(source, field)
-            .map(collect_string_leaf_values)
-            .unwrap_or_default();
-        let matched = value_matches_multi_match_bool_prefix(
-            &haystacks,
-            &expected_value,
-            extract_match_query_operator(expected),
-            extract_match_minimum_should_match(expected),
-        );
-        return Some((
-            matched,
-            if matched {
-                direct_named_query_boost(query)
-            } else {
-                0.0
-            },
-        ));
-    }
-    if let Some(combined_fields) = query.get("combined_fields").and_then(Value::as_object) {
-        let query_text = combined_fields.get("query").and_then(Value::as_str)?;
-        if query_text.trim().is_empty() {
-            return Some((false, 0.0));
-        }
-        let fields = extract_multi_match_fields(combined_fields.get("fields"));
-        let field_refs = fields.iter().map(String::as_str).collect::<Vec<_>>();
-        let operator = combined_fields
-            .get("operator")
-            .and_then(Value::as_str)
-            .unwrap_or("or");
-        let haystacks = collect_searchable_field_values(source, Some(field_refs.as_slice()));
-        let (matched, score) = evaluate_text_query_strings(
-            &haystacks,
-            query_text,
-            operator,
-            false,
-            combined_fields.get("minimum_should_match"),
-        );
-        return Some((matched, score));
-    }
-    if let Some(dis_max) = query.get("dis_max").and_then(Value::as_object) {
-        let queries = dis_max.get("queries").and_then(Value::as_array)?;
-        let mut best_score: f64 = 0.0;
-        let mut matched = false;
-        for clause in queries {
-            let (clause_matched, clause_score) =
-                evaluate_search_query_source_with_mappings(source, doc_id, clause, mappings)?;
-            if clause_matched {
-                matched = true;
-                best_score = best_score.max(clause_score);
-            }
-        }
-        return Some((matched, if matched { best_score.max(1.0) } else { 0.0 }));
-    }
-    if let Some(boosting) = query.get("boosting").and_then(Value::as_object) {
-        let positive = boosting.get("positive")?;
-        let negative = boosting.get("negative")?;
-        let negative_boost = boosting
-            .get("negative_boost")
-            .and_then(Value::as_f64)
-            .unwrap_or(0.2);
-        let (positive_matched, positive_score) =
-            evaluate_search_query_source_with_mappings(source, doc_id, positive, mappings)?;
-        if !positive_matched {
-            return Some((false, 0.0));
-        }
-        let (negative_matched, _) =
-            evaluate_search_query_source_with_mappings(source, doc_id, negative, mappings)?;
-        let boost = boosting
-            .get("boost")
-            .and_then(finite_number_value)
-            .unwrap_or(1.0);
-        let score = if negative_matched {
-            positive_score.max(1.0) * negative_boost
-        } else {
-            positive_score.max(1.0)
-        };
-        let score = score * boost;
-        return Some((true, score));
-    }
-    if let Some(ids_query) = query.get("ids").and_then(Value::as_object) {
-        let matched = ids_query_values_match_doc_id(ids_query.get("values"), doc_id);
-        return Some((
-            matched,
-            if matched {
-                direct_named_query_boost(query)
-            } else {
-                0.0
-            },
-        ));
-    }
-    if let Some(query_string) = query.get("query_string").and_then(Value::as_object) {
-        return Some(evaluate_text_query_spec(source, query_string, false));
-    }
-    if let Some(simple_query_string) = query.get("simple_query_string").and_then(Value::as_object) {
-        return Some(evaluate_text_query_spec(source, simple_query_string, true));
-    }
-    if let Some(wildcard_query) = query.get("wildcard").and_then(Value::as_object) {
-        let (field, expected) = wildcard_query.iter().next()?;
-        let (expected_value, case_insensitive) =
-            extract_string_query_value_and_case_insensitive(expected)?;
-        let matched = value_matches_wildcard(
-            lookup_query_field_value(source, field),
-            &expected_value,
-            case_insensitive,
-        );
-        return Some((
-            matched,
-            if matched {
-                direct_named_query_boost(query)
-            } else {
-                0.0
-            },
-        ));
-    }
-    if let Some(prefix_query) = query.get("prefix").and_then(Value::as_object) {
-        let (field, expected) = prefix_query.iter().next()?;
-        let (expected_value, case_insensitive) =
-            extract_string_query_value_and_case_insensitive(expected)?;
-        let matched = value_matches_prefix(
-            lookup_query_field_value(source, field),
-            &expected_value,
-            case_insensitive,
-        );
-        return Some((
-            matched,
-            if matched {
-                direct_named_query_boost(query)
-            } else {
-                0.0
-            },
-        ));
-    }
-    if let Some(regexp_query) = query.get("regexp").and_then(Value::as_object) {
-        let (field, expected) = regexp_query.iter().next()?;
-        let (expected_value, case_insensitive) =
-            extract_string_query_value_and_case_insensitive(expected)?;
-        let matched = value_matches_regexp(
-            lookup_query_field_value(source, field),
-            &expected_value,
-            case_insensitive,
-        );
-        return Some((
-            matched,
-            if matched {
-                direct_named_query_boost(query)
-            } else {
-                0.0
-            },
-        ));
-    }
-    if let Some(fuzzy_query) = query.get("fuzzy").and_then(Value::as_object) {
-        let (field, expected) = fuzzy_query.iter().next()?;
-        let (expected_value, fuzzy_options) = extract_fuzzy_query_value(expected)?;
-        let matched = value_matches_fuzzy(
-            lookup_query_field_value(source, field),
-            expected_value,
-            fuzzy_options.fuzziness,
-            fuzzy_options.prefix_length,
-            fuzzy_options.transpositions,
-        );
-        return Some((
-            matched,
-            if matched {
-                direct_named_query_boost(query)
-            } else {
-                0.0
-            },
-        ));
-    }
-    if let Some(exists_query) = query.get("exists").and_then(Value::as_object) {
-        let field = exists_query.get("field").and_then(opensearch_text_value)?;
-        let matched =
-            lookup_query_field_value(source, field.as_str()).is_some_and(value_exists_for_query);
-        return Some((
-            matched,
-            if matched {
-                direct_named_query_boost(query)
-            } else {
-                0.0
-            },
-        ));
-    }
-    if let Some(terms_set_query) = query.get("terms_set").and_then(Value::as_object) {
-        let (field, expected) = terms_set_query.iter().next()?;
-        let (matched, score) = value_matches_terms_set(source, field, expected)?;
-        return Some((matched, score));
-    }
-    if let Some(rank_feature) = query.get("rank_feature").and_then(Value::as_object) {
-        let field = rank_feature.get("field").and_then(Value::as_str)?;
-        let score =
-            rank_feature_score(lookup_query_field_value(source, field), Some(rank_feature))?;
-        return Some((score > 0.0, score));
-    }
-    if let Some(neural_sparse) = query.get("neural_sparse").and_then(Value::as_object) {
-        let (field, spec) = neural_sparse.iter().next()?;
-        let spec_object = spec.as_object()?;
-        let query_tokens = spec_object.get("query_tokens").and_then(Value::as_object)?;
-        let score =
-            neural_sparse_query_score(lookup_query_field_value(source, field), query_tokens);
-        return Some((score > 0.0, score));
-    }
-    if let Some(distance_feature) = query.get("distance_feature").and_then(Value::as_object) {
-        let field = distance_feature.get("field").and_then(Value::as_str)?;
-        let origin = distance_feature.get("origin")?;
-        let pivot = distance_feature.get("pivot")?;
-        let matched =
-            value_matches_distance_feature(lookup_query_field_value(source, field), origin, pivot);
-        return Some((matched, if matched { 1.0 } else { 0.0 }));
-    }
-    if let Some(constant_score) = query.get("constant_score").and_then(Value::as_object) {
-        let inner_query = constant_score
-            .get("filter")
-            .or_else(|| constant_score.get("query"))?;
-        let (matched, _) =
-            evaluate_search_query_source_with_mappings(source, doc_id, inner_query, mappings)?;
-        let boost = constant_score
-            .get("boost")
-            .and_then(finite_number_value)
-            .unwrap_or(1.0);
-        return Some((matched, if matched { boost } else { 0.0 }));
-    }
-    if query.get("wrapper").is_some() {
-        let inner_query = decode_wrapper_query(query).ok()?;
-        return evaluate_search_query_source_with_mappings(source, doc_id, &inner_query, mappings);
-    }
-    if let Some(function_score) = query.get("function_score").and_then(Value::as_object) {
-        let inner_query = function_score.get("query")?;
-        let (matched, inner_score) =
-            evaluate_search_query_source_with_mappings(source, doc_id, inner_query, mappings)?;
-        if !matched {
-            return Some((false, 0.0));
-        }
-        let function_value =
-            evaluate_function_score_value(source, doc_id, function_score, mappings)?;
-        let max_boost = function_score
-            .get("max_boost")
-            .and_then(finite_number_value)
-            .unwrap_or(f64::MAX);
-        let function_value = function_value.min(max_boost);
-        let boost_mode = function_score
-            .get("boost_mode")
-            .and_then(Value::as_str)
-            .unwrap_or("multiply");
-        let score = combine_function_boost_score(inner_score, function_value, boost_mode);
-        if function_score
-            .get("min_score")
-            .and_then(finite_number_value)
-            .is_some_and(|min_score| score < min_score)
-        {
-            return Some((false, 0.0));
-        }
-        return Some((true, score.max(0.0)));
-    }
-    if let Some(script_score) = query.get("script_score").and_then(Value::as_object) {
-        let inner_query = script_score.get("query")?;
-        let (matched, _) =
-            evaluate_search_query_source_with_mappings(source, doc_id, inner_query, mappings)?;
-        if !matched {
-            return Some((false, 0.0));
-        }
-        let score = script_score
-            .get("script")
-            .and_then(Value::as_object)
-            .and_then(|script| script.get("source"))
-            .and_then(Value::as_str)
-            .and_then(|value| value.parse::<f64>().ok())
-            .unwrap_or(1.0);
-        let boost = script_score
-            .get("boost")
-            .and_then(finite_number_value)
-            .unwrap_or(1.0);
-        let score = score * boost;
-        if script_score
-            .get("min_score")
-            .and_then(finite_number_value)
-            .is_some_and(|min_score| score < min_score)
-        {
-            return Some((false, 0.0));
-        }
-        return Some((true, score.max(0.0)));
-    }
-    if let Some(script_query) = query.get("script").and_then(Value::as_object) {
-        let matched = script_query
-            .get("script")
-            .is_some_and(|script| matches_script_filter_query(source, script));
-        return Some((matched, if matched { 1.0 } else { 0.0 }));
-    }
-    if let Some(span_term) = query.get("span_term").and_then(Value::as_object) {
-        return evaluate_span_query(source, span_term)
-            .map(|matched| (matched, if matched { 1.0 } else { 0.0 }));
-    }
-    if let Some(span_or) = query.get("span_or").and_then(Value::as_object) {
-        let matched = evaluate_span_or_query(source, span_or)?;
-        return Some((matched, if matched { 1.0 } else { 0.0 }));
-    }
-    if let Some(span_first) = query.get("span_first").and_then(Value::as_object) {
-        let matched = evaluate_span_first_query(source, span_first)?;
-        return Some((matched, if matched { 1.0 } else { 0.0 }));
-    }
-    if let Some(span_not) = query.get("span_not").and_then(Value::as_object) {
-        let matched = evaluate_span_not_query(source, span_not)?;
-        return Some((matched, if matched { 1.0 } else { 0.0 }));
-    }
-    if let Some(span_containing) = query.get("span_containing").and_then(Value::as_object) {
-        let matched = evaluate_span_containing_query(source, span_containing)?;
-        return Some((matched, if matched { 1.0 } else { 0.0 }));
-    }
-    if let Some(span_within) = query.get("span_within").and_then(Value::as_object) {
-        let matched = evaluate_span_containing_query(source, span_within)?;
-        return Some((matched, if matched { 1.0 } else { 0.0 }));
-    }
-    if let Some(span_near) = query.get("span_near").and_then(Value::as_object) {
-        let matched = evaluate_span_near_query(source, span_near)?;
-        return Some((matched, if matched { 1.0 } else { 0.0 }));
-    }
-    if let Some(span_multi) = query.get("span_multi").and_then(Value::as_object) {
-        let matched = evaluate_span_multi_query(source, span_multi)?;
-        return Some((matched, if matched { 1.0 } else { 0.0 }));
-    }
-    if let Some(field_masking_span) = field_masking_span_query_object(query) {
-        let matched = evaluate_field_masking_span_query(source, field_masking_span)?;
-        return Some((matched, if matched { 1.0 } else { 0.0 }));
-    }
-    if let Some(more_like_this) = query.get("more_like_this").and_then(Value::as_object) {
-        let like = more_like_this
-            .get("like")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        let fields = more_like_this
-            .get("fields")
-            .and_then(Value::as_array)?
-            .iter()
-            .filter_map(Value::as_str)
-            .collect::<Vec<_>>();
-        let mut best_score: f64 = 0.0;
-        for field in fields {
-            best_score = best_score.max(score_match_query(
+            let matched = value_matches_phrase_with_analyzer(
                 lookup_query_field_value(source, field),
-                like,
+                &query_text,
+                false,
+                extract_match_phrase_slop(expected),
+                extract_match_query_analyzer(expected),
+            );
+            return Some((matched, if matched { boost } else { 0.0 }));
+        }
+        if let Some(match_phrase_prefix) =
+            query.get("match_phrase_prefix").and_then(Value::as_object)
+        {
+            let (field, expected) = match_phrase_prefix.iter().next()?;
+            let query_text = extract_match_query_value(expected).unwrap_or_default();
+            let boost = direct_named_query_boost(query);
+            if query_text.trim().is_empty() && extract_zero_terms_query_all(expected) {
+                return Some((true, boost));
+            }
+            let matched = value_matches_phrase_with_analyzer(
+                lookup_query_field_value(source, field),
+                &query_text,
+                true,
+                extract_match_phrase_slop(expected),
+                extract_match_query_analyzer(expected),
+            );
+            return Some((matched, if matched { boost } else { 0.0 }));
+        }
+        if let Some(match_bool_prefix) = query.get("match_bool_prefix").and_then(Value::as_object) {
+            let (field, expected) = match_bool_prefix.iter().next()?;
+            let expected_value = extract_match_query_value(expected)?;
+            let haystacks = lookup_query_field_value(source, field)
+                .map(collect_string_leaf_values)
+                .unwrap_or_default();
+            let matched = value_matches_multi_match_bool_prefix(
+                &haystacks,
+                &expected_value,
+                extract_match_query_operator(expected),
+                extract_match_minimum_should_match(expected),
+            );
+            return Some((
+                matched,
+                if matched {
+                    direct_named_query_boost(query)
+                } else {
+                    0.0
+                },
             ));
         }
-        return Some((best_score > 0.0, best_score));
-    }
-    if let Some(intervals_query) = query.get("intervals").and_then(Value::as_object) {
-        let (field, spec) = intervals_query.iter().next()?;
-        let matched = evaluate_intervals_query(source, field, spec)?;
-        return Some((matched, if matched { 1.0 } else { 0.0 }));
-    }
-    if let Some(nested_query) = query.get("nested").and_then(Value::as_object) {
-        let path = nested_query.get("path").and_then(Value::as_str)?;
-        let inner_query = nested_query.get("query")?;
-        let candidates = source.get(path)?.as_array()?;
-        let mut scores = Vec::new();
-        for candidate in candidates {
-            let (inner_matched, inner_score) = evaluate_search_query_source_with_mappings(
-                candidate,
-                doc_id,
-                inner_query,
-                mappings,
-            )?;
-            if inner_matched {
-                scores.push(inner_score);
-            }
-        }
-        let matched = !scores.is_empty();
-        let score_mode = nested_query
-            .get("score_mode")
-            .and_then(Value::as_str)
-            .unwrap_or("avg");
-        return Some((
-            matched,
-            if matched {
-                combine_nested_scores(&scores, score_mode)
-            } else {
-                0.0
-            },
-        ));
-    }
-    if let Some(geo_distance_query) = query.get("geo_distance").and_then(Value::as_object) {
-        let distance = geo_distance_query.get("distance")?;
-        let max_distance_meters =
-            parse_distance_meters_with_unit(distance, geo_distance_query.get("unit"))?;
-        let (field, point) = geo_distance_query.iter().find(|(key, _)| {
-            !matches!(
-                key.as_str(),
-                "distance"
-                    | "unit"
-                    | "distance_type"
-                    | "validation_method"
-                    | "ignore_unmapped"
-                    | "boost"
-                    | "_name"
-            )
-        })?;
-        let candidate_point =
-            lookup_query_field_value(source, field).and_then(parse_geo_point_value)?;
-        let query_point = parse_geo_point_value(point)?;
-        let distance_meters = haversine_distance_meters(candidate_point, query_point);
-        let matched = distance_meters <= max_distance_meters;
-        return Some((matched, if matched { 1.0 } else { 0.0 }));
-    }
-    if let Some(geo_bounding_box_query) = query.get("geo_bounding_box").and_then(Value::as_object) {
-        let (field, box_spec) = geo_bounding_box_query.iter().find(|(key, _)| {
-            !matches!(
-                key.as_str(),
-                "ignore_unmapped" | "validation_method" | "type" | "_name" | "boost"
-            )
-        })?;
-        let box_object = box_spec.as_object()?;
-        let (top_left, bottom_right) = parse_geo_bounding_box_corners(box_object)?;
-        let candidate_point =
-            lookup_query_field_value(source, field).and_then(parse_geo_point_value)?;
-        let matched = geo_point_in_bounding_box(candidate_point, top_left, bottom_right);
-        return Some((matched, if matched { 1.0 } else { 0.0 }));
-    }
-    if let Some(geo_polygon_query) = query.get("geo_polygon").and_then(Value::as_object) {
-        let (field, polygon_spec) = geo_polygon_query.iter().find(|(key, _)| {
-            !matches!(
-                key.as_str(),
-                "ignore_unmapped" | "validation_method" | "_name" | "boost"
-            )
-        })?;
-        let points = polygon_spec
-            .as_object()?
-            .get("points")?
-            .as_array()?
-            .iter()
-            .map(parse_geo_point_value)
-            .collect::<Option<Vec<_>>>()?;
-        let candidate_point =
-            lookup_query_field_value(source, field).and_then(parse_geo_point_value)?;
-        let matched = geo_point_in_polygon(candidate_point, &points);
-        return Some((matched, if matched { 1.0 } else { 0.0 }));
-    }
-    if let Some(geo_shape_query) = query.get("geo_shape").and_then(Value::as_object) {
-        let (field, shape_spec) = geo_shape_query
-            .iter()
-            .find(|(key, _)| !matches!(key.as_str(), "ignore_unmapped" | "_name" | "boost"))?;
-        let shape_object = shape_spec.as_object()?;
-        let candidate_point =
-            lookup_query_field_value(source, field).and_then(geo_shape_field_point_value)?;
-        let relation = shape_object
-            .get("relation")
-            .and_then(Value::as_str)
-            .map(str::to_ascii_lowercase)
-            .unwrap_or_else(|| "intersects".to_string());
-        let query_shape = shape_object.get("shape")?;
-        let matched = match relation.as_str() {
-            "intersects" | "within" => geo_shape_contains_point(query_shape, candidate_point),
-            "disjoint" => !geo_shape_contains_point(query_shape, candidate_point),
-            "contains" => {
-                geo_shape_point_value(query_shape).is_some_and(|point| point == candidate_point)
-            }
-            _ => false,
-        };
-        return Some((matched, if matched { 1.0 } else { 0.0 }));
-    }
-    if let Some(bool_query) = query.get("bool").and_then(Value::as_object) {
-        let mut total_score = 0.0;
-        let mut has_scoring_clause = false;
-        let mut has_filter_clause = false;
-        let mut bool_matched_without_score = false;
-        for clause in bool_query_clauses(bool_query, "must") {
-            let (matched, score) =
-                evaluate_search_query_source_with_mappings(source, doc_id, clause, mappings)?;
-            if !matched {
+        if let Some(combined_fields) = query.get("combined_fields").and_then(Value::as_object) {
+            let query_text = combined_fields.get("query").and_then(Value::as_str)?;
+            if query_text.trim().is_empty() {
                 return Some((false, 0.0));
             }
-            total_score += score;
-            has_scoring_clause = true;
+            let fields = extract_multi_match_fields(combined_fields.get("fields"));
+            let field_refs = fields.iter().map(String::as_str).collect::<Vec<_>>();
+            let operator = combined_fields
+                .get("operator")
+                .and_then(Value::as_str)
+                .unwrap_or("or");
+            let haystacks = collect_searchable_field_values(source, Some(field_refs.as_slice()));
+            let (matched, score) = evaluate_text_query_strings(
+                &haystacks,
+                query_text,
+                operator,
+                false,
+                combined_fields.get("minimum_should_match"),
+            );
+            return Some((matched, score));
         }
-        let filters = bool_query_clauses(bool_query, "filter");
-        if !filters.is_empty() {
-            has_filter_clause = true;
-            let matched = filters.iter().all(|clause| {
-                evaluate_search_query_source_with_mappings(source, doc_id, clause, mappings)
-                    .map(|(matched, _)| matched)
-                    .unwrap_or(false)
-            });
-            if !matched {
-                return Some((false, 0.0));
-            }
-            bool_matched_without_score = true;
-        }
-        for clause in bool_query_clauses(bool_query, "must_not") {
-            let (matched, _) =
-                evaluate_search_query_source_with_mappings(source, doc_id, clause, mappings)?;
-            if matched {
-                return Some((false, 0.0));
-            }
-            bool_matched_without_score = true;
-        }
-        let shoulds = bool_query_clauses(bool_query, "should");
-        if !shoulds.is_empty() {
-            let mut matched_should = 0usize;
-            for clause in &shoulds {
-                let (matched, score) =
-                    evaluate_search_query_source_with_mappings(source, doc_id, clause, mappings)?;
-                if matched {
-                    matched_should += 1;
-                    total_score += score;
-                    has_scoring_clause = true;
+        if let Some(dis_max) = query.get("dis_max").and_then(Value::as_object) {
+            let queries = dis_max.get("queries").and_then(Value::as_array)?;
+            let mut best_score: f64 = 0.0;
+            let mut matched = false;
+            for clause in queries {
+                let (clause_matched, clause_score) = self.evaluate(source, doc_id, clause)?;
+                if clause_matched {
+                    matched = true;
+                    best_score = best_score.max(clause_score);
                 }
             }
-            let has_required_positive_clause =
-                bool_query.get("must").is_some() || has_filter_clause;
-            let required = bool_query
-                .get("minimum_should_match")
-                .and_then(|value| bool_minimum_should_match_value(value, shoulds.len()))
-                .map(|value| {
-                    if value == 0
-                        && shoulds
-                            .iter()
-                            .any(|clause| value_contains_vector_query(clause))
-                    {
-                        0
-                    } else if !has_required_positive_clause {
-                        value.max(1)
-                    } else {
-                        value
-                    }
-                })
-                .unwrap_or_else(|| if has_required_positive_clause { 0 } else { 1 });
-            if matched_should < required {
+            return Some((matched, if matched { best_score.max(1.0) } else { 0.0 }));
+        }
+        if let Some(boosting) = query.get("boosting").and_then(Value::as_object) {
+            let positive = boosting.get("positive")?;
+            let negative = boosting.get("negative")?;
+            let negative_boost = boosting
+                .get("negative_boost")
+                .and_then(Value::as_f64)
+                .unwrap_or(0.2);
+            let (positive_matched, positive_score) = self.evaluate(source, doc_id, positive)?;
+            if !positive_matched {
                 return Some((false, 0.0));
             }
-            if matched_should == 0 && required == 0 {
-                bool_matched_without_score = true;
+            let (negative_matched, _) = self.evaluate(source, doc_id, negative)?;
+            let boost = boosting
+                .get("boost")
+                .and_then(finite_number_value)
+                .unwrap_or(1.0);
+            let score = if negative_matched {
+                positive_score.max(1.0) * negative_boost
+            } else {
+                positive_score.max(1.0)
+            };
+            let score = score * boost;
+            return Some((true, score));
+        }
+        if let Some(ids_query) = query.get("ids").and_then(Value::as_object) {
+            let matched = ids_query_values_match_doc_id(ids_query.get("values"), doc_id);
+            return Some((
+                matched,
+                if matched {
+                    direct_named_query_boost(query)
+                } else {
+                    0.0
+                },
+            ));
+        }
+        if let Some(query_string) = query.get("query_string").and_then(Value::as_object) {
+            return Some(evaluate_text_query_spec(source, query_string, false));
+        }
+        if let Some(simple_query_string) =
+            query.get("simple_query_string").and_then(Value::as_object)
+        {
+            return Some(evaluate_text_query_spec(source, simple_query_string, true));
+        }
+        if let Some(wildcard_query) = query.get("wildcard").and_then(Value::as_object) {
+            let (field, expected) = wildcard_query.iter().next()?;
+            let (expected_value, case_insensitive) =
+                extract_string_query_value_and_case_insensitive(expected)?;
+            let matched = value_matches_wildcard(
+                lookup_query_field_value(source, field),
+                &expected_value,
+                case_insensitive,
+            );
+            return Some((
+                matched,
+                if matched {
+                    direct_named_query_boost(query)
+                } else {
+                    0.0
+                },
+            ));
+        }
+        if let Some(prefix_query) = query.get("prefix").and_then(Value::as_object) {
+            let (field, expected) = prefix_query.iter().next()?;
+            let (expected_value, case_insensitive) =
+                extract_string_query_value_and_case_insensitive(expected)?;
+            let matched = value_matches_prefix(
+                lookup_query_field_value(source, field),
+                &expected_value,
+                case_insensitive,
+            );
+            return Some((
+                matched,
+                if matched {
+                    direct_named_query_boost(query)
+                } else {
+                    0.0
+                },
+            ));
+        }
+        if let Some(regexp_query) = query.get("regexp").and_then(Value::as_object) {
+            let (field, expected) = regexp_query.iter().next()?;
+            let (expected_value, case_insensitive) =
+                extract_string_query_value_and_case_insensitive(expected)?;
+            let matched = value_matches_regexp(
+                lookup_query_field_value(source, field),
+                &expected_value,
+                case_insensitive,
+            );
+            return Some((
+                matched,
+                if matched {
+                    direct_named_query_boost(query)
+                } else {
+                    0.0
+                },
+            ));
+        }
+        if let Some(fuzzy_query) = query.get("fuzzy").and_then(Value::as_object) {
+            let (field, expected) = fuzzy_query.iter().next()?;
+            let (expected_value, fuzzy_options) = extract_fuzzy_query_value(expected)?;
+            let matched = value_matches_fuzzy(
+                lookup_query_field_value(source, field),
+                expected_value,
+                fuzzy_options.fuzziness,
+                fuzzy_options.prefix_length,
+                fuzzy_options.transpositions,
+            );
+            return Some((
+                matched,
+                if matched {
+                    direct_named_query_boost(query)
+                } else {
+                    0.0
+                },
+            ));
+        }
+        if let Some(exists_query) = query.get("exists").and_then(Value::as_object) {
+            let field = exists_query.get("field").and_then(opensearch_text_value)?;
+            if let Some(values) = self.keyword_values(source, &field)? {
+                let matched = value_exists_for_query(&values);
+                return Some((
+                    matched,
+                    if matched {
+                        direct_named_query_boost(query)
+                    } else {
+                        0.0
+                    },
+                ));
             }
+            let matched = lookup_query_field_value(source, field.as_str())
+                .is_some_and(value_exists_for_query);
+            return Some((
+                matched,
+                if matched {
+                    direct_named_query_boost(query)
+                } else {
+                    0.0
+                },
+            ));
         }
-        if has_scoring_clause {
-            return Some((true, total_score.max(1.0)));
+        if let Some(terms_set_query) = query.get("terms_set").and_then(Value::as_object) {
+            let (field, expected) = terms_set_query.iter().next()?;
+            let (matched, score) = value_matches_terms_set(source, field, expected)?;
+            return Some((matched, score));
         }
-        if has_filter_clause || bool_matched_without_score {
-            return Some((true, 1.0));
+        if let Some(rank_feature) = query.get("rank_feature").and_then(Value::as_object) {
+            let field = rank_feature.get("field").and_then(Value::as_str)?;
+            let score =
+                rank_feature_score(lookup_query_field_value(source, field), Some(rank_feature))?;
+            return Some((score > 0.0, score));
         }
-    }
-    if let Some(knn_query) = query.get("knn").and_then(Value::as_object) {
-        let (field, spec) = knn_query.iter().next()?;
-        let spec_object = spec.as_object()?;
-        if let Some(filter) = spec_object.get("filter") {
-            let (matched, _) =
-                evaluate_search_query_source_with_mappings(source, doc_id, filter, mappings)?;
+        if let Some(neural_sparse) = query.get("neural_sparse").and_then(Value::as_object) {
+            let (field, spec) = neural_sparse.iter().next()?;
+            let spec_object = spec.as_object()?;
+            let query_tokens = spec_object.get("query_tokens").and_then(Value::as_object)?;
+            let score =
+                neural_sparse_query_score(lookup_query_field_value(source, field), query_tokens);
+            return Some((score > 0.0, score));
+        }
+        if let Some(distance_feature) = query.get("distance_feature").and_then(Value::as_object) {
+            let field = distance_feature.get("field").and_then(Value::as_str)?;
+            let origin = distance_feature.get("origin")?;
+            let pivot = distance_feature.get("pivot")?;
+            let matched = value_matches_distance_feature(
+                lookup_query_field_value(source, field),
+                origin,
+                pivot,
+            );
+            return Some((matched, if matched { 1.0 } else { 0.0 }));
+        }
+        if let Some(constant_score) = query.get("constant_score").and_then(Value::as_object) {
+            let inner_query = constant_score
+                .get("filter")
+                .or_else(|| constant_score.get("query"))?;
+            let (matched, _) = self.evaluate(source, doc_id, inner_query)?;
+            let boost = constant_score
+                .get("boost")
+                .and_then(finite_number_value)
+                .unwrap_or(1.0);
+            return Some((matched, if matched { boost } else { 0.0 }));
+        }
+        if query.get("wrapper").is_some() {
+            let inner_query = decode_wrapper_query(query).ok()?;
+            return self.evaluate(source, doc_id, &inner_query);
+        }
+        if let Some(function_score) = query.get("function_score").and_then(Value::as_object) {
+            let inner_query = function_score.get("query")?;
+            let (matched, inner_score) = self.evaluate(source, doc_id, inner_query)?;
             if !matched {
                 return Some((false, 0.0));
             }
-        }
-        let vector = spec_object.get("vector")?.as_array()?;
-        let score = score_knn_query(lookup_query_field_value(source, field), vector);
-        if score <= f64::MIN / 2.0 {
-            return Some((false, 0.0));
-        }
-        if let Some(min_score) = spec_object.get("min_score").and_then(Value::as_f64) {
-            if score < min_score {
+            let function_value =
+                evaluate_function_score_value(source, doc_id, function_score, self)?;
+            let max_boost = function_score
+                .get("max_boost")
+                .and_then(finite_number_value)
+                .unwrap_or(f64::MAX);
+            let function_value = function_value.min(max_boost);
+            let boost_mode = function_score
+                .get("boost_mode")
+                .and_then(Value::as_str)
+                .unwrap_or("multiply");
+            let score = combine_function_boost_score(inner_score, function_value, boost_mode);
+            if function_score
+                .get("min_score")
+                .and_then(finite_number_value)
+                .is_some_and(|min_score| score < min_score)
+            {
                 return Some((false, 0.0));
             }
+            return Some((true, score.max(0.0)));
         }
-        if let Some(max_distance) = spec_object.get("max_distance").and_then(Value::as_f64) {
-            if score < max_distance {
+        if let Some(script_score) = query.get("script_score").and_then(Value::as_object) {
+            let inner_query = script_score.get("query")?;
+            let (matched, _) = self.evaluate(source, doc_id, inner_query)?;
+            if !matched {
                 return Some((false, 0.0));
             }
+            let score = script_score
+                .get("script")
+                .and_then(Value::as_object)
+                .and_then(|script| script.get("source"))
+                .and_then(Value::as_str)
+                .and_then(|value| value.parse::<f64>().ok())
+                .unwrap_or(1.0);
+            let boost = script_score
+                .get("boost")
+                .and_then(finite_number_value)
+                .unwrap_or(1.0);
+            let score = score * boost;
+            if script_score
+                .get("min_score")
+                .and_then(finite_number_value)
+                .is_some_and(|min_score| score < min_score)
+            {
+                return Some((false, 0.0));
+            }
+            return Some((true, score.max(0.0)));
         }
-        return Some((true, score));
-    }
-    if let Some(hybrid_query) = query.get("hybrid").and_then(Value::as_object) {
-        let clauses = hybrid_query.get("queries").and_then(Value::as_array)?;
-        let mut total_score = 0.0;
-        let mut matched = false;
-        for clause in clauses {
-            let (clause_matched, clause_score) =
-                evaluate_search_query_source_with_mappings(source, doc_id, clause, mappings)?;
-            if clause_matched {
-                matched = true;
-                total_score += clause_score;
+        if let Some(script_query) = query.get("script").and_then(Value::as_object) {
+            let matched = script_query
+                .get("script")
+                .is_some_and(|script| matches_script_filter_query(source, script));
+            return Some((matched, if matched { 1.0 } else { 0.0 }));
+        }
+        if let Some(span_term) = query.get("span_term").and_then(Value::as_object) {
+            return evaluate_span_query(source, span_term)
+                .map(|matched| (matched, if matched { 1.0 } else { 0.0 }));
+        }
+        if let Some(span_or) = query.get("span_or").and_then(Value::as_object) {
+            let matched = evaluate_span_or_query(source, span_or)?;
+            return Some((matched, if matched { 1.0 } else { 0.0 }));
+        }
+        if let Some(span_first) = query.get("span_first").and_then(Value::as_object) {
+            let matched = evaluate_span_first_query(source, span_first)?;
+            return Some((matched, if matched { 1.0 } else { 0.0 }));
+        }
+        if let Some(span_not) = query.get("span_not").and_then(Value::as_object) {
+            let matched = evaluate_span_not_query(source, span_not)?;
+            return Some((matched, if matched { 1.0 } else { 0.0 }));
+        }
+        if let Some(span_containing) = query.get("span_containing").and_then(Value::as_object) {
+            let matched = evaluate_span_containing_query(source, span_containing)?;
+            return Some((matched, if matched { 1.0 } else { 0.0 }));
+        }
+        if let Some(span_within) = query.get("span_within").and_then(Value::as_object) {
+            let matched = evaluate_span_containing_query(source, span_within)?;
+            return Some((matched, if matched { 1.0 } else { 0.0 }));
+        }
+        if let Some(span_near) = query.get("span_near").and_then(Value::as_object) {
+            let matched = evaluate_span_near_query(source, span_near)?;
+            return Some((matched, if matched { 1.0 } else { 0.0 }));
+        }
+        if let Some(span_multi) = query.get("span_multi").and_then(Value::as_object) {
+            let matched = evaluate_span_multi_query(source, span_multi)?;
+            return Some((matched, if matched { 1.0 } else { 0.0 }));
+        }
+        if let Some(field_masking_span) = field_masking_span_query_object(query) {
+            let matched = evaluate_field_masking_span_query(source, field_masking_span)?;
+            return Some((matched, if matched { 1.0 } else { 0.0 }));
+        }
+        if let Some(more_like_this) = query.get("more_like_this").and_then(Value::as_object) {
+            let like = more_like_this
+                .get("like")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let fields = more_like_this
+                .get("fields")
+                .and_then(Value::as_array)?
+                .iter()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>();
+            let mut best_score: f64 = 0.0;
+            for field in fields {
+                best_score = best_score.max(score_match_query(
+                    lookup_query_field_value(source, field),
+                    like,
+                ));
+            }
+            return Some((best_score > 0.0, best_score));
+        }
+        if let Some(intervals_query) = query.get("intervals").and_then(Value::as_object) {
+            let (field, spec) = intervals_query.iter().next()?;
+            let matched = evaluate_intervals_query(source, field, spec)?;
+            return Some((matched, if matched { 1.0 } else { 0.0 }));
+        }
+        if let Some(nested_query) = query.get("nested").and_then(Value::as_object) {
+            let path = nested_query.get("path").and_then(Value::as_str)?;
+            let inner_query = nested_query.get("query")?;
+            let Some(value) = extract_source_path_value(source, path) else {
+                return Some((false, 0.0));
+            };
+            let candidates = match value {
+                Value::Array(values) => values,
+                value => vec![value],
+            };
+            let mut scores = Vec::new();
+            for candidate in candidates {
+                if !candidate.is_object() {
+                    continue;
+                }
+                // A nested child keeps its full field paths, but cannot see its parent or siblings.
+                let scoped_source = path.rsplit('.').fold(
+                    candidate,
+                    |child, segment| serde_json::json!({segment: child}),
+                );
+                let (inner_matched, inner_score) =
+                    self.evaluate(&scoped_source, doc_id, inner_query)?;
+                if inner_matched {
+                    scores.push(inner_score);
+                }
+            }
+            let matched = !scores.is_empty();
+            let score_mode = nested_query
+                .get("score_mode")
+                .and_then(Value::as_str)
+                .unwrap_or("avg");
+            return Some((
+                matched,
+                if matched {
+                    combine_nested_scores(&scores, score_mode)
+                } else {
+                    0.0
+                },
+            ));
+        }
+        if let Some(geo_distance_query) = query.get("geo_distance").and_then(Value::as_object) {
+            let distance = geo_distance_query.get("distance")?;
+            let max_distance_meters =
+                parse_distance_meters_with_unit(distance, geo_distance_query.get("unit"))?;
+            let (field, point) = geo_distance_query.iter().find(|(key, _)| {
+                !matches!(
+                    key.as_str(),
+                    "distance"
+                        | "unit"
+                        | "distance_type"
+                        | "validation_method"
+                        | "ignore_unmapped"
+                        | "boost"
+                        | "_name"
+                )
+            })?;
+            let candidate_point =
+                lookup_query_field_value(source, field).and_then(parse_geo_point_value)?;
+            let query_point = parse_geo_point_value(point)?;
+            let distance_meters = haversine_distance_meters(candidate_point, query_point);
+            let matched = distance_meters <= max_distance_meters;
+            return Some((matched, if matched { 1.0 } else { 0.0 }));
+        }
+        if let Some(geo_bounding_box_query) =
+            query.get("geo_bounding_box").and_then(Value::as_object)
+        {
+            let (field, box_spec) = geo_bounding_box_query.iter().find(|(key, _)| {
+                !matches!(
+                    key.as_str(),
+                    "ignore_unmapped" | "validation_method" | "type" | "_name" | "boost"
+                )
+            })?;
+            let box_object = box_spec.as_object()?;
+            let (top_left, bottom_right) = parse_geo_bounding_box_corners(box_object)?;
+            let candidate_point =
+                lookup_query_field_value(source, field).and_then(parse_geo_point_value)?;
+            let matched = geo_point_in_bounding_box(candidate_point, top_left, bottom_right);
+            return Some((matched, if matched { 1.0 } else { 0.0 }));
+        }
+        if let Some(geo_polygon_query) = query.get("geo_polygon").and_then(Value::as_object) {
+            let (field, polygon_spec) = geo_polygon_query.iter().find(|(key, _)| {
+                !matches!(
+                    key.as_str(),
+                    "ignore_unmapped" | "validation_method" | "_name" | "boost"
+                )
+            })?;
+            let points = polygon_spec
+                .as_object()?
+                .get("points")?
+                .as_array()?
+                .iter()
+                .map(parse_geo_point_value)
+                .collect::<Option<Vec<_>>>()?;
+            let candidate_point =
+                lookup_query_field_value(source, field).and_then(parse_geo_point_value)?;
+            let matched = geo_point_in_polygon(candidate_point, &points);
+            return Some((matched, if matched { 1.0 } else { 0.0 }));
+        }
+        if let Some(geo_shape_query) = query.get("geo_shape").and_then(Value::as_object) {
+            let (field, shape_spec) = geo_shape_query
+                .iter()
+                .find(|(key, _)| !matches!(key.as_str(), "ignore_unmapped" | "_name" | "boost"))?;
+            let shape_object = shape_spec.as_object()?;
+            let candidate_point =
+                lookup_query_field_value(source, field).and_then(geo_shape_field_point_value)?;
+            let relation = shape_object
+                .get("relation")
+                .and_then(Value::as_str)
+                .map(str::to_ascii_lowercase)
+                .unwrap_or_else(|| "intersects".to_string());
+            let query_shape = shape_object.get("shape")?;
+            let matched = match relation.as_str() {
+                "intersects" | "within" => geo_shape_contains_point(query_shape, candidate_point),
+                "disjoint" => !geo_shape_contains_point(query_shape, candidate_point),
+                "contains" => {
+                    geo_shape_point_value(query_shape).is_some_and(|point| point == candidate_point)
+                }
+                _ => false,
+            };
+            return Some((matched, if matched { 1.0 } else { 0.0 }));
+        }
+        if let Some(bool_query) = query.get("bool").and_then(Value::as_object) {
+            let mut total_score = 0.0;
+            let mut has_scoring_clause = false;
+            let mut has_filter_clause = false;
+            let mut bool_matched_without_score = false;
+            let musts = bool_query_clauses(bool_query, "must");
+            let filters = bool_query_clauses(bool_query, "filter");
+            let must_nots = bool_query_clauses(bool_query, "must_not");
+            let shoulds = bool_query_clauses(bool_query, "should");
+            // OpenSearch rewrites an empty bool to match_all before applying its minimum.
+            if musts.is_empty() && filters.is_empty() && must_nots.is_empty() && shoulds.is_empty()
+            {
+                return Some((true, 1.0));
+            }
+            for clause in &musts {
+                let (matched, score) = self.evaluate(source, doc_id, clause)?;
+                if !matched {
+                    return Some((false, 0.0));
+                }
+                total_score += score;
+                has_scoring_clause = true;
+            }
+            if !filters.is_empty() {
+                has_filter_clause = true;
+                let matched = filters.iter().all(|clause| {
+                    self.evaluate(source, doc_id, clause)
+                        .map(|(matched, _)| matched)
+                        .unwrap_or(false)
+                });
+                if !matched {
+                    return Some((false, 0.0));
+                }
+                bool_matched_without_score = true;
+            }
+            for clause in must_nots {
+                let (matched, _) = self.evaluate(source, doc_id, clause)?;
+                if matched {
+                    return Some((false, 0.0));
+                }
+                bool_matched_without_score = true;
+            }
+            if !shoulds.is_empty() {
+                let mut matched_should = 0usize;
+                for clause in &shoulds {
+                    let (matched, score) = self.evaluate(source, doc_id, clause)?;
+                    if matched {
+                        matched_should += 1;
+                        total_score += score;
+                        has_scoring_clause = true;
+                    }
+                }
+                let has_required_positive_clause = !musts.is_empty() || has_filter_clause;
+                let required = bool_query
+                    .get("minimum_should_match")
+                    .and_then(|value| bool_minimum_should_match_value(value, shoulds.len()))
+                    .map(|value| {
+                        if value == 0
+                            && shoulds
+                                .iter()
+                                .any(|clause| value_contains_vector_query(clause))
+                        {
+                            0
+                        } else if !has_required_positive_clause {
+                            value.max(1)
+                        } else {
+                            value
+                        }
+                    })
+                    .unwrap_or_else(|| if has_required_positive_clause { 0 } else { 1 });
+                if matched_should < required {
+                    return Some((false, 0.0));
+                }
+                if matched_should == 0 && required == 0 {
+                    bool_matched_without_score = true;
+                }
+            }
+            if has_scoring_clause {
+                return Some((true, total_score * direct_named_query_boost(query)));
+            }
+            if has_filter_clause {
+                return Some((true, 0.0));
+            }
+            if bool_matched_without_score {
+                return Some((true, 1.0));
             }
         }
-        return Some((matched, if matched { total_score.max(1.0) } else { 0.0 }));
+        if let Some(knn_query) = query.get("knn").and_then(Value::as_object) {
+            let (field, spec) = knn_query.iter().next()?;
+            let spec_object = spec.as_object()?;
+            if let Some(filter) = spec_object.get("filter") {
+                let (matched, _) = self.evaluate(source, doc_id, filter)?;
+                if !matched {
+                    return Some((false, 0.0));
+                }
+            }
+            let vector = spec_object.get("vector")?.as_array()?;
+            let score = score_knn_query(lookup_query_field_value(source, field), vector);
+            if score <= f64::MIN / 2.0 {
+                return Some((false, 0.0));
+            }
+            if let Some(min_score) = spec_object.get("min_score").and_then(Value::as_f64) {
+                if score < min_score {
+                    return Some((false, 0.0));
+                }
+            }
+            if let Some(max_distance) = spec_object.get("max_distance").and_then(Value::as_f64) {
+                if score < max_distance {
+                    return Some((false, 0.0));
+                }
+            }
+            return Some((true, score));
+        }
+        if let Some(hybrid_query) = query.get("hybrid").and_then(Value::as_object) {
+            let clauses = hybrid_query.get("queries").and_then(Value::as_array)?;
+            let mut total_score = 0.0;
+            let mut matched = false;
+            for clause in clauses {
+                let (clause_matched, clause_score) = self.evaluate(source, doc_id, clause)?;
+                if clause_matched {
+                    matched = true;
+                    total_score += clause_score;
+                }
+            }
+            return Some((matched, if matched { total_score.max(1.0) } else { 0.0 }));
+        }
+        if let Some(range_query) = query.get("range").and_then(Value::as_object) {
+            let (field, bounds) = range_query.iter().next()?;
+            let matched = value_matches_range(lookup_query_field_value(source, field), bounds);
+            return Some((
+                matched,
+                if matched {
+                    direct_named_query_boost(query)
+                } else {
+                    0.0
+                },
+            ));
+        }
+        Some((false, 0.0))
     }
-    if let Some(range_query) = query.get("range").and_then(Value::as_object) {
-        let (field, bounds) = range_query.iter().next()?;
-        let matched = value_matches_range(lookup_query_field_value(source, field), bounds);
-        return Some((
-            matched,
-            if matched {
-                direct_named_query_boost(query)
-            } else {
-                0.0
-            },
-        ));
-    }
-    Some((false, 0.0))
 }
 
 fn collect_matched_named_queries(
@@ -48917,7 +50424,7 @@ fn evaluate_function_score_value(
     source: &Value,
     doc_id: &str,
     function_score: &serde_json::Map<String, Value>,
-    mappings: &Value,
+    evaluator: &mut SourceQueryEvaluator<'_>,
 ) -> Option<f64> {
     let mut values = Vec::new();
     if let Some(weight) = function_score.get("weight").and_then(finite_number_value) {
@@ -48947,7 +50454,7 @@ fn evaluate_function_score_value(
             };
             if let Some(filter) = function.get("filter") {
                 let (matched, _) =
-                    evaluate_search_query_source_with_mappings(source, doc_id, filter, mappings)?;
+                    evaluator.evaluate(source, doc_id, filter)?;
                 if !matched {
                     continue;
                 }
@@ -53429,7 +54936,11 @@ fn build_search_aggregations(
     let mut result = serde_json::Map::new();
     let mut terms_doc_counts: std::collections::BTreeMap<String, Vec<(String, u64)>> =
         std::collections::BTreeMap::new();
-    for (name, aggregation) in aggregations {
+    let is_pipeline = |aggregation: &Value| aggregation.as_object()
+        .and_then(first_supported_bucket_metric_pipeline_aggregation).is_some();
+    for (name, aggregation) in aggregations.iter().filter(|(_, value)| !is_pipeline(value))
+        .chain(aggregations.iter().filter(|(_, value)| is_pipeline(value)))
+    {
         let Some(aggregation_object) = aggregation.as_object() else {
             continue;
         };
@@ -53682,7 +55193,7 @@ fn build_search_aggregations(
                     "[1:67] [terms] unknown field [keyed]",
                 ));
             }
-            let mut counts = std::collections::BTreeMap::new();
+            let mut counts = std::collections::BTreeMap::<String, (Value, u64)>::new();
             for hit in hits {
                 let key = hit
                     .get("_source")
@@ -53690,20 +55201,33 @@ fn build_search_aggregations(
                     .filter(|value| !value.is_null())
                     .or(missing);
                 if let Some(key_value) = key {
-                    if !aggregation_term_is_allowed_by_include_exclude(
-                        key_value,
-                        terms.get("include"),
-                        terms.get("exclude"),
-                    )? {
-                        continue;
-                    }
-                    let Some(key) = key_value.as_str() else {
-                        continue;
+                    let expanded;
+                    let values = if key_value.is_array() {
+                        expanded = fallback_scalar_bucket_values(key_value);
+                        if expanded.is_empty() {
+                            missing.map(std::slice::from_ref).unwrap_or(&[])
+                        } else {
+                            expanded.as_slice()
+                        }
+                    } else {
+                        std::slice::from_ref(key_value)
                     };
-                    *counts.entry(key.to_string()).or_insert(0_u64) += 1;
+                    for value in values {
+                        if !(value.is_string() || value.is_number()) {
+                            continue;
+                        }
+                        if !aggregation_term_is_allowed_by_include_exclude(
+                            value, terms.get("include"), terms.get("exclude"),
+                        )? {
+                            continue;
+                        }
+                        let entry = counts.entry(fallback_bucket_sort_key(value))
+                            .or_insert_with(|| (value.clone(), 0));
+                        entry.1 += 1;
+                    }
                 }
             }
-            let mut buckets: Vec<(String, u64)> = counts.into_iter().collect();
+            let mut buckets = counts.into_values().collect::<Vec<_>>();
             buckets.retain(|(_, doc_count)| *doc_count >= min_doc_count);
             let order = terms.get("order").and_then(Value::as_object);
             let order_key = order
@@ -53711,11 +55235,11 @@ fn build_search_aggregations(
                 .map(|(key, direction)| (key.as_str(), direction.as_str().unwrap_or("desc")));
             match order_key {
                 Some(("_count", "asc")) => buckets
-                    .sort_by(|left, right| left.1.cmp(&right.1).then_with(|| left.0.cmp(&right.0))),
+                    .sort_by(|left, right| left.1.cmp(&right.1).then_with(|| aggregation_bucket_key_cmp(&left.0, &right.0))),
                 Some(("_count", _)) | None => buckets
-                    .sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0))),
-                Some(("_key", "desc")) => buckets.sort_by(|left, right| right.0.cmp(&left.0)),
-                Some(("_key", _)) => buckets.sort_by(|left, right| left.0.cmp(&right.0)),
+                    .sort_by(|left, right| right.1.cmp(&left.1).then_with(|| aggregation_bucket_key_cmp(&left.0, &right.0))),
+                Some(("_key", "desc")) => buckets.sort_by(|left, right| aggregation_bucket_key_cmp(&right.0, &left.0)),
+                Some(("_key", _)) => buckets.sort_by(|left, right| aggregation_bucket_key_cmp(&left.0, &right.0)),
                 Some(_) => {
                     return Err(build_unsupported_search_response(
                         "unsupported aggregation option [terms.order]",
@@ -53742,7 +55266,7 @@ fn build_search_aggregations(
                     .iter()
                     .filter_map(|bucket| {
                         Some((
-                            bucket.get("key")?.as_str()?.to_string(),
+                            aggregation_bucket_sort_key(bucket.get("key")?),
                             bucket.get("doc_count")?.as_u64()?,
                         ))
                     })
@@ -55696,12 +57220,7 @@ fn aggregation_bucket_sort_key(value: &Value) -> String {
 
 fn aggregation_bucket_key_cmp(left: &Value, right: &Value) -> std::cmp::Ordering {
     match (left, right) {
-        (Value::Number(left), Value::Number(right)) => {
-            let left = left.as_f64().unwrap_or(f64::NAN);
-            let right = right.as_f64().unwrap_or(f64::NAN);
-            left.partial_cmp(&right)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        }
+        (Value::Number(_), Value::Number(_)) => compare_json_scalars(left, right),
         _ => aggregation_bucket_sort_key(left).cmp(&aggregation_bucket_sort_key(right)),
     }
 }
@@ -57637,26 +59156,29 @@ fn field_caps_index_matches_filter(
     filter: &Value,
     docs: &DocumentMap,
     mappings: &Value,
-) -> bool {
+) -> Result<bool, EngineError> {
+    validate_multi_field_query_options(filter, mappings)?;
     if filter.is_null() || filter.as_object().is_some_and(|object| object.is_empty()) {
-        return true;
+        return Ok(true);
     }
     if filter.get("match_all").is_some() {
-        return true;
+        return Ok(true);
     }
     if filter.get("match_none").is_some() {
-        return false;
+        return Ok(false);
     }
-    docs.iter().any(|(key, record)| {
+    for (key, record) in docs {
         let (record_index, doc_id) = key
             .split_once(':')
             .map_or((key.as_str(), key.as_str()), |(index, id)| (index, id));
-        record_index == index
-            && record.refreshed
-            && evaluate_search_query_source_with_mappings(&record.source, doc_id, filter, mappings)
-                .map(|(matched, _)| matched)
-                .unwrap_or(false)
-    })
+        if record_index == index && record.refreshed
+            && evaluate_search_query_source_checked(&record.source, doc_id, filter, mappings)?
+                .is_some_and(|(matched, _)| matched)
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn infer_dynamic_mapping_for_value(value: &Value) -> Value {
@@ -59027,6 +60549,27 @@ fn cluster_setting_filter_pattern_matches(pattern: &str, key: &str) -> bool {
     !anchored_end || parts.last().map_or(true, |part| key.ends_with(part))
 }
 
+fn validate_search_bucket_limit_settings(persistent: &Value, transient: &Value) -> Option<RestResponse> {
+    for section in [persistent, transient] {
+        // Inspect both input spellings before flattening can discard an invalid object value.
+        for value in section.get("search.max_buckets").into_iter().chain(section.pointer("/search/max_buckets")) {
+            if value.is_null() { continue; }
+            let parsed = match value {
+                Value::String(raw) => raw.parse::<i32>().ok(),
+                Value::Number(number) => number.as_i64().and_then(|n| i32::try_from(n).ok()),
+                _ => None,
+            };
+            if parsed.is_some_and(|limit| limit >= 0) { continue; }
+            let raw = value.as_str().map(str::to_owned).unwrap_or_else(|| value.to_string());
+            return Some(RestResponse::opensearch_error_kind(
+                os_rest::RestErrorKind::IllegalArgument,
+                format!("failed to parse setting [search.max_buckets] with value [{raw}]: expected an integer between 0 and 2147483647"),
+            ));
+        }
+    }
+    None
+}
+
 fn validate_pit_cluster_keep_alive_settings(
     persistent: &Value,
     transient: &Value,
@@ -59246,6 +60789,360 @@ fn rollover_conditions_met(condition_results: &Value) -> bool {
 mod tests {
     use super::*;
     use os_core::OPENSEARCH_3_7_0_TRANSPORT;
+
+    #[test]
+    fn bucket_limit_engine_error_retains_rest_metadata() {
+        let error = os_engine::EngineError::TooManyBuckets {
+            max_buckets: 65_535,
+            bucket_count: 65_536,
+        };
+        let expected = error.opensearch_error_body();
+        let response = super::engine_error_to_rest_response(error);
+        assert_eq!(response.status, 503);
+        assert_eq!(response.body, serde_json::json!({"error": expected, "status": 503}));
+    }
+
+    #[test]
+    fn remote_partial_search_retains_bucket_limit_cause_without_changing_status() {
+        use os_transport::action::{OpenSearchSearchResponseWire, OpenSearchShardSearchFailureWire};
+        use os_transport::error::TransportError;
+        let response = OpenSearchSearchResponseWire {
+            total_shards: 2,
+            successful_shards: 1,
+            shard_failures: vec![OpenSearchShardSearchFailureWire {
+                shard_target: None, reason: "outer".into(), status: "SERVICE_UNAVAILABLE".into(),
+                cause: Some(TransportError {
+                    class_name: "java.lang.IllegalArgumentException".into(),
+                    message: Some("outer".into()), search_context_id: None, max_buckets: None,
+                    cause: Some(Box::new(TransportError {
+                        class_name: "org.opensearch.search.aggregations.MultiBucketConsumerService.TooManyBucketsException".into(),
+                        message: Some("too many buckets".into()), cause: None,
+                        search_context_id: None, max_buckets: Some(65_535),
+                    })),
+                }),
+            }],
+            ..OpenSearchSearchResponseWire::empty_with_total_hits(0)
+        };
+        let rest = search_response_wire_to_rest_response(response, false);
+        assert_eq!(rest.status, 200);
+        assert_eq!(rest.body["_shards"], serde_json::json!({
+            "total": 2, "successful": 1, "skipped": 0, "failed": 1,
+            "failures": [{"shard": -1, "index": null, "reason": {
+                "type": "illegal_argument_exception", "reason": "outer",
+                "caused_by": {"type": "too_many_buckets_exception", "reason": "too many buckets", "max_buckets": 65535}
+            }}]
+        }));
+        let empty = search_response_wire_to_rest_response(OpenSearchSearchResponseWire::empty_with_total_hits(0), false);
+        assert!(empty.body["_shards"].get("failures").is_none());
+    }
+
+    #[test]
+    fn remote_shard_failure_preserves_target_and_cluster_alias() {
+        use os_transport::action::{OpenSearchSearchResponseWire, OpenSearchShardSearchFailureWire, OpenSearchSearchShardTargetWire};
+        for (alias, expected) in [(None, "logs"), (Some(""), "logs"), (Some("remote"), "remote:logs")] {
+            let response = OpenSearchSearchResponseWire {
+                total_shards: 2, successful_shards: 1,
+                shard_failures: vec![OpenSearchShardSearchFailureWire {
+                    shard_target: Some(OpenSearchSearchShardTargetWire {
+                        node_id: Some("node-a".into()), index: "logs".into(),
+                        index_uuid: "uuid-logs".into(), shard_id: 3,
+                        cluster_alias: alias.map(str::to_string),
+                    }),
+                    reason: "missing context".into(), status: "NOT_FOUND".into(),
+                    cause: Some(os_transport::error::TransportError {
+                        class_name: "org.opensearch.search.SearchContextMissingException".into(),
+                        message: Some("missing context".into()), cause: None,
+                        search_context_id: None, max_buckets: None,
+                    }),
+                }],
+                ..OpenSearchSearchResponseWire::empty_with_total_hits(0)
+            };
+            let rest = search_response_wire_to_rest_response(response, true);
+            assert_eq!(rest.status, 200);
+            assert_eq!(rest.body["_shards"]["failures"][0], serde_json::json!({
+                "shard": 3, "index": expected, "node": "node-a",
+                "reason": {"type": "search_context_missing_exception", "reason": "missing context"},
+            }));
+            assert_eq!(rest.body["hits"]["total"], 0);
+        }
+    }
+
+    #[test]
+    fn native_search_fallback_preserves_only_existing_eligible_errors() {
+        for error in [
+            EngineError::InvalidRequest { reason: "unsupported native path".into() },
+            EngineError::IndexNotFound { index: "missing".into() },
+        ] {
+            assert!(native_search_error_response(error).is_none());
+        }
+        for error in [
+            EngineError::TooManyBuckets { max_buckets: 0, bucket_count: 1 },
+            EngineError::TooManyBuckets { max_buckets: 65_535, bucket_count: 65_536 },
+            EngineError::BackendFailure { reason: "unavailable".into() },
+            EngineError::VersionConflict { reason: "conflict".into() },
+            EngineError::IndexAlreadyExists { index: "logs".into() },
+            EngineError::DocumentNotFound { index: "logs".into(), id: "1".into() },
+        ] {
+            let expected_status = error.status_code();
+            let expected_body = error.opensearch_error_body();
+            let response = native_search_error_response(error).expect("fatal error cannot fall back");
+            assert_eq!(response.status, expected_status);
+            assert_eq!(response.body, serde_json::json!({
+                "error": expected_body, "status": expected_status,
+            }));
+        }
+    }
+
+    #[test]
+    fn recovery_failure_blocks_rest_reads_and_mutations() {
+        let node = SteelNode::new(NodeInfo {
+            name: "recovery-guard".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.set_shared_runtime_state_recovery_failed(true);
+        for (method, path) in [
+            (RestMethod::Get, "/"), (RestMethod::Get, "/_search"),
+            (RestMethod::Put, "/blocked-index"), (RestMethod::Post, "/_bulk"),
+            (RestMethod::Delete, "/blocked-index"), (RestMethod::Post, "/_refresh"),
+        ] {
+            let response = node.handle_rest_request(RestRequest::new(method, path));
+            assert_eq!(response.status, 503, "{path}");
+            assert_eq!(response.body["error"]["type"], "unavailable_shards_exception");
+        }
+        assert!(node.created_indices_state.lock().unwrap().is_empty());
+        assert!(node.documents_state.lock().unwrap().is_empty());
+        node.sync_shared_runtime_state_from_disk();
+        assert!(node.shared_runtime_state_recovery_failed());
+    }
+
+    #[test]
+    fn recovery_failure_preserves_original_file_and_does_not_clear_on_missing_file() {
+        let root = std::env::temp_dir().join(format!("steelsearch-recovery-guard-{}-{}",
+            std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("shared-runtime.json");
+        let original = b"{corrupt original state";
+        let mut node = SteelNode::new(NodeInfo {
+            name: "recovery-file-guard".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put, "/guarded")).status, 200);
+        node.shared_runtime_state_path = Some(path.clone());
+        node.development_data_path = Some(root.clone());
+        std::fs::write(&path, original).unwrap();
+        node.sync_shared_runtime_state_from_disk();
+        assert!(node.shared_runtime_state_recovery_failed());
+        node.dirty_development_shards.lock().unwrap().insert(("guarded".to_string(), 0));
+        node.persist_shared_runtime_state_to_disk();
+        node.persist_development_shard_state_to_disk();
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        assert!(!root.join("shards").exists());
+        std::fs::remove_file(&path).unwrap();
+        node.sync_shared_runtime_state_from_disk();
+        node.persist_shared_runtime_state_to_disk();
+        assert!(node.shared_runtime_state_recovery_failed());
+        assert!(!path.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn routing_metadata_distinguishes_legacy_modern_and_corruption() {
+        let mut entry = serde_json::json!({"settings": {"index": {"number_of_shards": "3"}}});
+        assert_eq!(index_routing_from_metadata(&entry).unwrap().routing_shards(), 3);
+        let modern = IndexRouting::new(3, Some(12), 2).unwrap();
+        entry["_steelsearch_routing"] = serde_json::to_value(modern).unwrap();
+        assert_eq!(index_routing_from_metadata(&entry).unwrap(), modern);
+        for bad in [serde_json::Value::Null,
+            serde_json::json!({"primary_shards": 3, "routing_shards": 4, "partition_size": 1}),
+            serde_json::json!({"primary_shards": 4, "routing_shards": 12, "partition_size": 1})] {
+            entry["_steelsearch_routing"] = bad;
+            assert!(index_routing_from_metadata(&entry).is_err());
+        }
+    }
+
+    #[test]
+    fn routing_rebuild_preserves_legacy_and_modern_layouts() {
+        let node = SteelNode::new(NodeInfo {
+            name: "routing-rebuild".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        for index in ["legacy-routing", "modern-routing"] {
+            let response = node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, format!("/{index}"))
+                    .with_json_body(serde_json::json!({"settings": {"index": {
+                        "number_of_shards": 3, "number_of_replicas": 0
+                    }}})));
+            assert_eq!(response.status, 200);
+        }
+        node.metadata_manifest_state.lock().unwrap()["indices"]["legacy-routing"]
+            .as_object_mut().unwrap().remove("_steelsearch_routing");
+        node.rebuild_native_engine_from_recovered_runtime_state().unwrap();
+        let legacy = node.native_engine.index_schema("legacy-routing").unwrap();
+        let modern = node.native_engine.index_schema("modern-routing").unwrap();
+        assert!(legacy.routing.is_none());
+        assert_eq!(legacy.index_routing().unwrap().routing_shards(), 3);
+        assert_eq!(modern.index_routing().unwrap().routing_shards(), 768);
+        for index in ["legacy-routing", "modern-routing"] {
+            assert_eq!(node.index_routing(index), node.native_engine.index_routing(index).unwrap());
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, format!("/{index}")));
+            assert_eq!(response.status, 200);
+            assert!(response.body[index].get("_steelsearch_routing").is_none());
+        }
+    }
+
+    #[test]
+    fn routing_rebuild_validates_all_schemas_before_deleting_existing_engine_state() {
+        let node = SteelNode::new(NodeInfo {
+            name: "routing-reject".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        let response = node.handle_rest_request(RestRequest::new(RestMethod::Put, "/routing-reject"));
+        assert_eq!(response.status, 200);
+        let before = node.native_engine.index_schema("routing-reject").unwrap();
+        node.metadata_manifest_state.lock().unwrap()["indices"]["routing-reject"]["_steelsearch_routing"] = Value::Null;
+        assert!(node.rebuild_native_engine_from_recovered_runtime_state().is_err());
+        assert_eq!(node.native_engine.index_schema("routing-reject").unwrap(), before);
+    }
+
+    #[test]
+    fn routing_scope_and_document_filters_match_live_reference_vectors() {
+        let routes = ["tenant-a", "tenant-other-1", "tenant-b", "tenant-c", "tenant-d"];
+        for (routing_shards, partition, expected_ids, expected_scope) in [
+            (None, 1, vec![0, 1, 2, 3, 6, 7], vec![2]),
+            (Some(3), 1, vec![0, 1, 4, 5], vec![2]),
+            (Some(12), 1, vec![0, 1, 4, 5], vec![1]),
+            (Some(12), 2, vec![0, 1, 4, 5, 6], vec![1]),
+        ] {
+            let layout = IndexRouting::new(3, routing_shards, partition).unwrap();
+            let scope = search_shard_scope_for_routing_values(
+                &["routing-test".to_string()], &["tenant-a".to_string()], |_| layout);
+            assert_eq!(scope["routing-test"], expected_scope.into_iter().collect());
+            let mut ids = Vec::new();
+            for (n, route) in routes.iter().enumerate() {
+                for copy in 0..2 {
+                    let rank = n * 2 + copy;
+                    let record = StoredDocument {
+                        source: serde_json::json!({"rank": rank}), version: 1,
+                        seq_no: rank as i64, primary_term: 1, routing: Some(route.to_string()),
+                        refreshed: true, top_level_array_fields: BTreeSet::new(),
+                    };
+                    if document_matches_requested_routing_shards("routing-test", &format!("doc-{rank}"),
+                        &record, &["tenant-a".to_string()], |_| layout) {
+                        ids.push(rank);
+                    }
+                }
+            }
+            assert_eq!(ids, expected_ids);
+        }
+        let layout = IndexRouting::new(3, Some(12), 2).unwrap();
+        let scope = search_shard_scope_for_routing_values(
+            &["routing-test".to_string()], &["tenant-c".to_string(), "tenant-c".to_string()], |_| layout);
+        assert_eq!(scope["routing-test"], BTreeSet::from([0, 1]));
+    }
+
+    #[test]
+    fn routing_node_uses_engine_layout_for_dirty_shards_and_shard_listing() {
+        let node = SteelNode::new(NodeInfo {
+            name: "routing-node".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        let response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/routing-test").with_json_body(serde_json::json!({
+                "settings": {"index": {"number_of_shards": 3, "number_of_replicas": 0,
+                    "number_of_routing_shards": 12, "routing_partition_size": 2}},
+                "mappings": {"_routing": {"required": true}}
+            })));
+        assert_eq!(response.status, 200);
+        assert_eq!(node.index_routing("routing-test"), node.native_engine.index_routing("routing-test").unwrap());
+        let response = node.handle_rest_request(
+            RestRequest::new(RestMethod::Get, "/routing-test/_search_shards?routing=tenant-c"));
+        assert_eq!(response.status, 200);
+        let ids = response.body["shards"].as_array().unwrap().iter()
+            .map(|group| group[0]["shard"].as_u64().unwrap()).collect::<BTreeSet<_>>();
+        assert_eq!(ids, BTreeSet::from([0, 1]));
+        node.mark_development_shard_dirty("routing-test", "doc-6", Some("tenant-c"));
+        let expected = node.index_document_shard("routing-test", "doc-6", Some("tenant-c"));
+        assert!(node.dirty_development_shards.lock().unwrap().contains(&("routing-test".to_string(), expected)));
+    }
+
+    #[test]
+    fn index_settings_normalization_preserves_leaves_and_is_idempotent() {
+        let input = serde_json::json!({
+            "number_of_shards": 3,
+            "index.number_of_shards": 2,
+            "index": {"number_of_replicas": 0, "analysis": {
+                "analyzer": {"custom": {"type": "custom", "tokenizer": "standard"}}
+            }},
+            "analysis.analyzer.custom.filter": ["lowercase"],
+            "refresh_interval": null,
+            "archived.unknown": true,
+            "routing.*": "value"
+        });
+        let expected = serde_json::json!({
+            "index": {
+                "number_of_shards": "3", "number_of_replicas": "0",
+                "analysis": {"analyzer": {"custom": {
+                    "type": "custom", "tokenizer": "standard", "filter": ["lowercase"]
+                }}},
+                "refresh_interval": null
+            },
+            "archived": {"unknown": "true"},
+            "routing": {"*": "value"}
+        });
+        assert_eq!(normalize_index_settings(&input), expected);
+        assert_eq!(normalize_index_settings(&expected), expected);
+    }
+
+    #[test]
+    fn index_settings_normalization_applies_to_engine_and_manifest() {
+        for settings in [
+            serde_json::json!({"number_of_shards": 3, "number_of_replicas": 0}),
+            serde_json::json!({"index": {"number_of_shards": 3, "number_of_replicas": 0}}),
+            serde_json::json!({"index.number_of_shards": 3, "index.number_of_replicas": 0}),
+            serde_json::json!({"number_of_shards": 3, "index.number_of_shards": 2,
+                "index": {"number_of_replicas": 0}}),
+        ] {
+            let node = SteelNode::new(NodeInfo {
+                name: "settings-test".to_string(),
+                version: OPENSEARCH_3_7_0_TRANSPORT,
+            });
+            let response = node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/settings-test")
+                    .with_json_body(serde_json::json!({"settings": settings})),
+            );
+            assert_eq!(response.status, 200, "{:?}", response.body);
+            let response = node.handle_rest_request(
+                RestRequest::new(RestMethod::Get, "/settings-test/_settings"),
+            );
+            assert_eq!(response.status, 200);
+            let settings = &response.body["settings-test"]["settings"];
+            assert_eq!(settings["index"]["number_of_shards"], "3");
+            assert_eq!(settings["index"]["number_of_replicas"], "0");
+            assert!(settings.get("number_of_shards").is_none());
+            assert_eq!(node.index_primary_shard_count("settings-test"), 3);
+            assert_eq!(node.native_engine.index_schema("settings-test").unwrap().number_of_shards, 3);
+            let response = node.handle_rest_request(
+                RestRequest::new(RestMethod::Get, "/settings-test/_search_shards"),
+            );
+            assert_eq!(response.status, 200);
+            assert_eq!(response.body["shards"].as_array().unwrap().len(), 3);
+        }
+    }
+
+    #[test]
+    fn index_settings_normalization_preserves_template_layer_precedence() {
+        let mut entry = serde_json::json!({});
+        for fragment in [
+            serde_json::json!({"settings": {"number_of_shards": 5, "number_of_replicas": 1},
+                "mappings": {"properties": {"tag": {"type": "keyword"}}}}),
+            serde_json::json!({"settings": {"index.number_of_shards": 4},
+                "aliases": {"settings-alias": {}}}),
+            serde_json::json!({"settings": {"index": {"number_of_shards": 2}}}),
+            serde_json::json!({"settings": {"number_of_shards": 3, "number_of_replicas": 0}}),
+        ] {
+            SteelNode::merge_index_template_fragment(&mut entry, &fragment);
+        }
+        let entry = SteelNode::normalize_index_manifest_entry("settings-test", entry);
+        assert_eq!(entry["settings"]["index"]["number_of_shards"], "3");
+        assert_eq!(entry["settings"]["index"]["number_of_replicas"], "0");
+        assert_eq!(entry["mappings"]["properties"]["tag"]["type"], "keyword");
+        assert_eq!(entry["aliases"]["settings-alias"], serde_json::json!({}));
+    }
 
     #[test]
     fn split_document_key_preserves_routing_suffix_after_second_colon() {
@@ -59951,6 +61848,72 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(response.body["openapi"], "3.0.3");
         assert_eq!(response.body["info"]["title"], "Steelsearch API");
+    }
+
+    #[test]
+    fn data_stream_routing_creation_rollover_and_cleanup_preserve_engine_contract() {
+        let node = SteelNode::new(NodeInfo {
+            name: "stream-routing".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        let template = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/_index_template/routing-stream")
+                .with_json_body(serde_json::json!({
+                    "index_patterns": ["routing-stream"], "data_stream": {},
+                    "template": {"settings": {"index": {
+                        "number_of_shards": 3, "number_of_replicas": 0,
+                        "number_of_routing_shards": 12
+                    }}}
+                })));
+        assert_eq!(template.status, 200);
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put, "/_data_stream/routing-stream")).status, 200);
+        let first = SteelNode::data_stream_backing_index_name("routing-stream", 1);
+        let second = SteelNode::data_stream_backing_index_name("routing-stream", 2);
+        assert_eq!(node.native_engine.index_routing(&first).unwrap(), IndexRouting::new(3, Some(12), 1).unwrap());
+        assert_eq!(node.index_routing(&first), node.native_engine.index_routing(&first).unwrap());
+        let before = node.metadata_manifest_state.lock().unwrap().clone();
+        let dry_run = node.handle_rest_request(RestRequest::new(RestMethod::Post, "/routing-stream/_rollover?dry_run=true"));
+        assert_eq!(dry_run.status, 200);
+        assert_eq!(*node.metadata_manifest_state.lock().unwrap(), before);
+        assert!(node.native_engine.index_schema(&second).is_none());
+
+        node.native_engine.create_index(CreateIndexRequest {
+            index: second.clone(), settings: serde_json::json!({}), mappings: serde_json::json!({}),
+        }).unwrap();
+        let collision_schema = node.native_engine.index_schema(&second).unwrap();
+        let collision = node.handle_rest_request(RestRequest::new(RestMethod::Post, "/routing-stream/_rollover"));
+        assert_eq!(collision.status, 400);
+        assert_eq!(*node.metadata_manifest_state.lock().unwrap(), before);
+        assert!(!node.created_indices_state.lock().unwrap().contains(&second));
+        assert_eq!(node.native_engine.index_schema(&second).unwrap(), collision_schema);
+        node.native_engine.delete_index(&second).unwrap();
+
+        let rollover = node.handle_rest_request(RestRequest::new(RestMethod::Post, "/routing-stream/_rollover"));
+        assert_eq!(rollover.status, 200);
+        assert_eq!(rollover.body["rolled_over"], true);
+        assert_eq!(node.index_routing(&second), node.native_engine.index_routing(&second).unwrap());
+        assert_eq!(node.index_routing(&second).routing_shards(), 12);
+        assert_eq!(node.metadata_manifest_state.lock().unwrap()["data_streams"]["routing-stream"]["generation"], 2);
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Delete, "/_data_stream/routing-stream")).status, 200);
+        assert!(node.native_engine.index_schema(&first).is_none());
+        assert!(node.native_engine.index_schema(&second).is_none());
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put, "/_data_stream/routing-stream")).status, 200);
+    }
+
+    #[test]
+    fn data_stream_failed_engine_creation_does_not_publish_metadata() {
+        let node = SteelNode::new(NodeInfo {
+            name: "stream-routing-failure".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        node.metadata_manifest_state.lock().unwrap()["templates"]["index_templates"]["invalid-stream"] = serde_json::json!({
+            "index_template": {"index_patterns": ["invalid-stream"], "data_stream": {},
+                "template": {"settings": {"index": {"number_of_shards": 3, "number_of_routing_shards": 4}}}}
+        });
+        let before = node.metadata_manifest_state.lock().unwrap().clone();
+        let response = node.handle_rest_request(RestRequest::new(RestMethod::Put, "/_data_stream/invalid-stream"));
+        assert_eq!(response.status, 400);
+        assert_eq!(*node.metadata_manifest_state.lock().unwrap(), before);
+        assert!(node.created_indices_state.lock().unwrap().is_empty());
+        assert!(node.native_engine.index_schema(&SteelNode::data_stream_backing_index_name("invalid-stream", 1)).is_none());
     }
 
     #[test]
@@ -61817,7 +63780,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         env::set_var("SECURITY_SERVICE_ACCOUNT_ROLE", "writer");
         env::set_var("SECURITY_SERVICE_ACCOUNT_TENANTS", "tenant-a");
 
-        let users_file = security_authentication_users_file().expect("env subjects parse");
+        let users_file = security_authentication_users_file(None).expect("env subjects parse");
 
         assert_eq!(users_file.users.len(), 2);
         assert_eq!(users_file.service_accounts.len(), 1);
@@ -61851,7 +63814,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             vec!["tenant-a".to_string()]
         );
         assert_eq!(
-            security_basic_credentials_with_roles().expect("env credentials with roles"),
+            security_basic_credentials_with_roles(None).expect("env credentials with roles"),
             vec![
                 (
                     "admin".to_string(),
@@ -61934,11 +63897,11 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         .expect("write authentication users file");
         env::set_var("SECURITY_AUTHENTICATION_USERS_FILE", &users_path);
 
-        let users_file = security_authentication_users_file().expect("users file should parse");
+        let users_file = security_authentication_users_file(None).expect("users file should parse");
         assert_eq!(users_file.users.len(), 2);
         assert_eq!(users_file.service_accounts.len(), 1);
         assert_eq!(
-            security_basic_credentials_with_roles().expect("file credentials with roles"),
+            security_basic_credentials_with_roles(None).expect("file credentials with roles"),
             vec![
                 (
                     "file-admin".to_string(),
@@ -62216,6 +64179,63 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         env::remove_var("SECURITY_WRITER_USERNAME");
         env::remove_var("SECURITY_WRITER_PASSWORD");
         env::remove_var("SECURITY_WRITER_TENANTS");
+    }
+
+    #[test]
+    fn configured_authentication_file_is_node_scoped_and_fails_closed() {
+        let _lock = security_env_lock();
+        env::set_var("STEELSEARCH_SECURITY_ENABLED", "true");
+        env::set_var("SECURITY_ADMIN_USERNAME", "admin");
+        env::set_var("SECURITY_ADMIN_PASSWORD", "admin");
+        let root = env::temp_dir().join(format!(
+            "steelsearch-configured-auth-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let users = root.join("users.json");
+        fs::write(
+            &users,
+            r#"{"users":[{"username":"admin","password":"admin","roles":["admin"]}]}"#,
+        )
+        .unwrap();
+        env::set_var(
+            "SECURITY_AUTHENTICATION_USERS_FILE",
+            root.join("missing-legacy.json"),
+        );
+        let node = SteelNode::new(NodeInfo {
+            name: "configured-auth".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        })
+        .with_authentication_users_file(Some(users.clone()));
+        let other = SteelNode::new(node.info.clone())
+            .with_authentication_users_file(Some(root.join("missing-configured.json")));
+        for path in ["/", "/_cluster/health"] {
+            let request = RestRequest::new(RestMethod::Get, path)
+                .with_header("Authorization", "Basic YWRtaW46YWRtaW4=");
+            assert_eq!(
+                node.handle_rest_request(request.clone()).status,
+                200,
+                "{path}"
+            );
+            assert_eq!(other.handle_rest_request(request).status, 401, "{path}");
+        }
+        env::remove_var("SECURITY_AUTHENTICATION_USERS_FILE");
+        for content in ["invalid json", "{}"] {
+            fs::write(&users, content).unwrap();
+            for path in ["/", "/_cluster/health"] {
+                let request = RestRequest::new(RestMethod::Get, path)
+                    .with_header("Authorization", "Basic YWRtaW46YWRtaW4=");
+                assert_eq!(node.handle_rest_request(request).status, 401, "{path}");
+            }
+        }
+        env::remove_var("STEELSEARCH_SECURITY_ENABLED");
+        env::remove_var("SECURITY_ADMIN_USERNAME");
+        env::remove_var("SECURITY_ADMIN_PASSWORD");
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -66353,6 +68373,117 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn fallback_bucket_metric_pipelines_wait_for_selected_terms() {
+        let hits = ["a", "a", "b"].map(|service| serde_json::json!({"_source": {"service": service}}));
+        for kind in ["sum_bucket", "avg_bucket", "min_bucket", "max_bucket", "stats_bucket", "extended_stats_bucket", "percentiles_bucket"] {
+            let mut pipeline = serde_json::json!({});
+            pipeline[kind] = serde_json::json!({"buckets_path": "services>_count"});
+            let child = serde_json::json!({"a_pipeline": pipeline.clone(),
+                "services": {"terms": {"field": "service", "size": 1}}, "z_pipeline": pipeline});
+            for (request, pointer) in [(child.clone(), ""), (serde_json::json!({"all": {"global": {}, "aggs": child}}), "/all")] {
+                let result = build_search_aggregations(Some(&request), &hits, &hits).unwrap().unwrap();
+                let value = result.pointer(pointer).unwrap();
+                assert_eq!(value["a_pipeline"], value["z_pipeline"], "{kind}/{pointer}");
+                match kind {
+                    "stats_bucket" | "extended_stats_bucket" => {
+                        assert_eq!(value["a_pipeline"]["count"], 1);
+                        assert_eq!(value["a_pipeline"]["sum"].as_f64(), Some(2.0));
+                    }
+                    "percentiles_bucket" => {
+                        let values = value["a_pipeline"]["values"].as_object().unwrap();
+                        assert!(!values.is_empty());
+                        assert!(values.values().all(|value| value.as_f64() == Some(2.0)));
+                    }
+                    _ => assert_eq!(value["a_pipeline"]["value"].as_f64(), Some(2.0)),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn rest_global_pipeline_order_matches_selected_terms_for_single_and_multi_index() {
+        let node = SteelNode::new(NodeInfo {name: "pipeline-order".into(), version: OPENSEARCH_3_7_0_TRANSPORT});
+        for index in ["pipeline-a", "pipeline-b"] {
+            assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put, format!("/{index}"))
+                .with_json_body(serde_json::json!({"settings": {"number_of_shards": 1, "number_of_replicas": 0},
+                    "mappings": {"properties": {"service": {"type": "keyword"}}}}))).status, 200);
+            for (id, service) in ["a", "a", "b"].into_iter().enumerate() {
+                assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put, format!("/{index}/_doc/{id}"))
+                    .with_json_body(serde_json::json!({"service": service}))).status, 201);
+            }
+            assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Post, format!("/{index}/_refresh"))).status, 200);
+        }
+        let child = serde_json::json!({"services": {"terms": {"field": "service", "size": 1}},
+            "a_total": {"sum_bucket": {"buckets_path": "services>_count"}},
+            "z_total": {"sum_bucket": {"buckets_path": "services>_count"}}});
+        for (target, expected) in [("pipeline-a", 2.0), ("pipeline-a,pipeline-b", 4.0)] {
+            for size in [0, 10] {
+                for (aggs, pointer) in [(child.clone(), ""), (serde_json::json!({"all": {"global": {}, "aggs": child.clone()}}), "/all")] {
+                    let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, format!("/{target}/_search"))
+                        .with_json_body(serde_json::json!({"size": size, "aggs": aggs})));
+                    assert_eq!(response.status, 200, "{}", response.body);
+                    let value = response.body["aggregations"].pointer(pointer).unwrap();
+                    assert_eq!(value["services"]["buckets"].as_array().unwrap().len(), 1);
+                    for total in ["a_total", "z_total"] {
+                        assert_eq!(value[total]["value"].as_f64(), Some(expected), "{target}/{size}/{pointer}/{total}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cluster_bucket_limit_validation_rejects_invalid_values_without_partial_updates() {
+        let node = SteelNode::new(NodeInfo {name: "bucket-settings".into(), version: OPENSEARCH_3_7_0_TRANSPORT});
+        let seed = node.handle_rest_request(RestRequest::new(RestMethod::Put, "/_cluster/settings")
+            .with_json_body(serde_json::json!({"persistent": {"search.max_buckets": 10}, "transient": {"search.max_buckets": 20}})));
+        assert_eq!(seed.status, 200);
+        let before = node.cluster_settings_state.lock().unwrap().clone();
+        for section in ["persistent", "transient"] {
+            for nested in [false, true] {
+                for invalid in [serde_json::json!(-1), serde_json::json!(2147483648_i64),
+                    serde_json::json!(1.0), serde_json::json!(1.5), serde_json::json!(true),
+                    serde_json::json!([]), serde_json::json!({}), serde_json::json!({"bad": 1}),
+                    serde_json::json!("1.0"), serde_json::json!(" 1"), serde_json::json!("1 "),
+                    serde_json::json!("nope"), serde_json::json!(""), serde_json::json!("-1"),
+                    serde_json::json!("2147483648")]
+                {
+                    let mut value = serde_json::json!({"cluster.info.update.interval": "45s"});
+                    if nested { value["search"] = serde_json::json!({"max_buckets": invalid.clone()}); }
+                    else { value["search.max_buckets"] = invalid.clone(); }
+                    let mut body = serde_json::json!({});
+                    body[section] = value;
+                    let response = node.handle_rest_request(RestRequest::new(RestMethod::Put, "/_cluster/settings").with_json_body(body));
+                    assert_eq!(response.status, 400, "{section}/{nested}/{invalid}");
+                    assert_eq!(response.body["error"]["type"], "illegal_argument_exception");
+                    assert_eq!(*node.cluster_settings_state.lock().unwrap(), before);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cluster_bucket_limit_validation_accepts_boundaries_and_null_reset() {
+        for value in [serde_json::json!(0), serde_json::json!(65535), serde_json::json!(i32::MAX),
+            serde_json::json!("0"), serde_json::json!("+1"), serde_json::json!("01"), serde_json::json!("2147483647"), Value::Null]
+        {
+            for section in ["persistent", "transient"] {
+                let node = SteelNode::new(NodeInfo {name: "bucket-settings".into(), version: OPENSEARCH_3_7_0_TRANSPORT});
+                let mut body = serde_json::json!({});
+                body[section] = serde_json::json!({"search": {"max_buckets": 10}});
+                assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put, "/_cluster/settings").with_json_body(body.clone())).status, 200);
+                body[section] = serde_json::json!({"search": {"max_buckets": value.clone()}});
+                assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put, "/_cluster/settings").with_json_body(body)).status, 200);
+                let state = node.cluster_settings_state.lock().unwrap();
+                if value.is_null() { assert!(state[section].get("search.max_buckets").is_none()); }
+                else { assert_eq!(state[section]["search.max_buckets"], value); }
+            }
+        }
+        let invalid = serde_json::json!({"search.max_buckets": 1, "search": {"max_buckets": {}}});
+        assert!(validate_search_bucket_limit_settings(&invalid, &serde_json::json!({})).is_some());
+    }
+
+    #[test]
     fn cluster_settings_put_rejects_invalid_timeout_like_opensearch() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
@@ -67394,6 +69525,617 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn nodes_stats_refresh_counters_are_local_index_totals_not_cluster_totals() {
+        let mut node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        for index in ["timing-a", "timing-b"] {
+            let response = node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, format!("/{index}"))
+                    .with_json_body(serde_json::json!({
+                        "mappings": {"properties": {"title": {"type": "text"}}}
+                    })),
+            );
+            assert_eq!(response.status, 200);
+            for id in 0..2 {
+                assert_eq!(node.handle_rest_request(
+                    RestRequest::new(RestMethod::Put, format!("/{index}/_doc/{id}"))
+                        .with_json_body(serde_json::json!({"title": "timing sample"})),
+                ).status, 201);
+                assert_eq!(node.handle_rest_request(RestRequest::new(
+                    RestMethod::Post, format!("/{index}/_refresh"),
+                )).status, 200);
+            }
+        }
+        let expected = serde_json::to_value(
+            node.native_engine.search_cache_telemetry_snapshot().unwrap(),
+        ).unwrap();
+        assert!(expected["refresh_tantivy_commit_nanos"].as_u64().unwrap() > 0);
+        node.cluster_view = Some(DevelopmentClusterView {
+            cluster_name: "timing-scope".to_string(),
+            cluster_uuid: "timing-scope".to_string(),
+            local_node_id: "node-b".to_string(),
+            nodes: ["node-a", "node-b", "node-c"].into_iter().map(|id| DevelopmentClusterNode {
+                node_id: id.to_string(),
+                node_name: id.to_string(),
+                http_address: None,
+                transport_address: "127.0.0.1:9300".to_string(),
+                roles: vec!["data".to_string()],
+                local: id == "node-b",
+            }).collect(),
+            coordination: None,
+        });
+        let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
+        assert_eq!(response.status, 200);
+        let nodes = response.body["nodes"].as_object().unwrap();
+        assert_eq!(nodes.len(), 3);
+        for (id, stats) in nodes {
+            let counters = &stats["steelsearch"]["search_cache"];
+            if id == "node-b" {
+                for key in ["refresh_tantivy_commit_nanos", "refresh_tantivy_document_add_nanos",
+                            "refresh_tantivy_reload_nanos", "refresh_tantivy_doc_id_lookup_nanos"] {
+                    assert_eq!(counters[key], expected[key], "{key}");
+                }
+            } else {
+                assert_eq!(counters, &serde_json::json!({}), "remote node {id}");
+            }
+        }
+    }
+
+    #[test]
+    fn alias_search_rest_scopes_native_fallback_and_global_aggregations() {
+        for shards in [1, 3] {
+            let node = alias_count_test_node(shards);
+            for suffix in ["", "?ignore_unavailable=false"] {
+                for (target, expected) in [("red-a", 2), ("selected", 3), ("red-*", 3),
+                    ("red-a,count-a", 3), ("red-a,all-count-a", 3), ("red-a,count-b", 5)] {
+                    let response = node.handle_rest_request(RestRequest::new(RestMethod::Post,
+                        format!("/{target}/_search{suffix}"))
+                        .with_json_body(serde_json::json!({"query": {"match_all": {}}, "size": 10})));
+                    assert_eq!(response.status, 200, "{target}: {}", response.body);
+                    assert_eq!(response.body["hits"]["total"]["value"], expected);
+                    assert_eq!(response.body["hits"]["hits"].as_array().unwrap().len(), expected as usize);
+                }
+                let response = node.handle_rest_request(RestRequest::new(RestMethod::Post,
+                    format!("/red-a/_search{suffix}"))
+                    .with_json_body(serde_json::json!({
+                        "query": {"term": {"value": 10}}, "post_filter": {"term": {"value": 20}},
+                        "aggs": {"matched": {"sum": {"field": "value"}},
+                            "scope": {"global": {}, "aggs": {"total": {"sum": {"field": "value"}}}}}
+                    })));
+                assert_eq!(response.status, 200, "{}", response.body);
+                assert_eq!(response.body["hits"]["total"]["value"], 0);
+                assert_eq!(response.body["aggregations"]["matched"]["value"].as_f64(), Some(10.0));
+                assert_eq!(response.body["aggregations"]["scope"]["doc_count"], 2);
+                assert_eq!(response.body["aggregations"]["scope"]["total"]["value"].as_f64(), Some(30.0));
+            }
+            let scope = node.resolve_search_targets_with_alias_filters("red-a", false, false, "open").unwrap();
+            let native = node.try_native_engine_search_response(&scope.indices, &BTreeMap::new(), &scope.alias_filters,
+                &serde_json::json!({"query": {"match_all": {}}}), false, false).expect("native alias path");
+            assert_eq!(native.status, 200);
+            assert_eq!(native.body["hits"]["total"]["value"], 2);
+        }
+    }
+
+    #[test]
+    fn alias_search_rest_rejects_invalid_filters_and_preserves_scroll_selection() {
+        let node = alias_count_test_node(3);
+        let first = node.handle_rest_request(RestRequest::new(RestMethod::Post, "/red-a/_search?scroll=1m")
+            .with_json_body(serde_json::json!({"query": {"match_all": {}}, "size": 1})));
+        assert_eq!(first.status, 200, "{}", first.body);
+        assert_eq!(first.body["hits"]["total"]["value"], 2);
+        assert_eq!(first.body["hits"]["hits"][0]["_source"]["tenant"], "red");
+        node.metadata_manifest_state.lock().unwrap()["indices"]["count-a"]["aliases"]["red-a"]["filter"] =
+            serde_json::json!({"term": {"tenant": "blue"}});
+        let second = node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_search/scroll")
+            .with_json_body(serde_json::json!({"scroll": "1m", "scroll_id": first.body["_scroll_id"]})));
+        assert_eq!(second.status, 200, "{}", second.body);
+        assert_eq!(second.body["hits"]["hits"][0]["_source"]["tenant"], "red");
+        for suffix in ["", "?ignore_unavailable=false"] {
+            let current = node.handle_rest_request(RestRequest::new(RestMethod::Post, format!("/red-a/_search{suffix}"))
+                .with_json_body(serde_json::json!({"query": {"match_all": {}}})));
+            assert_eq!(current.status, 200);
+            assert_eq!(current.body["hits"]["total"]["value"], 1);
+            assert_eq!(current.body["hits"]["hits"][0]["_source"]["tenant"], "blue");
+        }
+        node.metadata_manifest_state.lock().unwrap()["indices"]["count-a"]["aliases"]["red-a"]["filter"] =
+            serde_json::json!({"unknown_alias_query": {}});
+        for suffix in ["", "?ignore_unavailable=false"] {
+            assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Post, format!("/red-a/_search{suffix}"))
+                .with_json_body(serde_json::json!({"query": {"match_all": {}}}))).status, 400);
+        }
+    }
+
+    #[test]
+    fn alias_pit_search_preserves_creation_filter_after_alias_change_and_restore() {
+        for shards in [1, 3] {
+            let node = alias_count_test_node(shards);
+            let opened = node.handle_rest_request(RestRequest::new(RestMethod::Post,
+                "/red-a/_search/point_in_time?keep_alive=1m"));
+            assert_eq!(opened.status, 200, "{}", opened.body);
+            let id = opened.body["pit_id"].as_str().unwrap().to_string();
+            assert_eq!(rest_pit_alias_filters(Some(&id)).unwrap()["count-a"],
+                serde_json::json!({"term": {"tenant": "red"}}));
+            let context = node.resolve_pit_context(&id, None).unwrap();
+            assert_eq!(context.documents.len(), 3, "retain full scoring/background population");
+            node.metadata_manifest_state.lock().unwrap()["indices"]["count-a"]["aliases"]["red-a"]["filter"] =
+                serde_json::json!({"term": {"tenant": "blue"}});
+            let current = node.handle_rest_request(RestRequest::new(RestMethod::Post, "/red-a/_search")
+                .with_json_body(serde_json::json!({"query": {"match_all": {}}})));
+            assert_eq!(current.body["hits"]["total"]["value"], 1);
+            // Exercise the serialized persisted representation, then remove alias metadata.
+            let persisted = persisted_pit_contexts_from_runtime(&node.pit_contexts.lock().unwrap());
+            let bytes = serde_json::to_vec(&persisted).unwrap();
+            *node.pit_contexts.lock().unwrap() = runtime_pit_contexts_from_persisted(
+                serde_json::from_slice(&bytes).unwrap());
+            node.metadata_manifest_state.lock().unwrap()["indices"]["count-a"]["aliases"]
+                .as_object_mut().unwrap().remove("red-a");
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(serde_json::json!({"pit": {"id": id},
+                    "query": {"term": {"value": 10}},
+                    "aggs": {"scope": {"global": {}, "aggs": {"sum": {"sum": {"field": "value"}}}}}
+                })));
+            assert_eq!(response.status, 200, "{}", response.body);
+            assert_eq!(response.body["hits"]["total"]["value"], 1);
+            assert_eq!(response.body["hits"]["hits"][0]["_source"]["tenant"], "red");
+            assert_eq!(response.body["aggregations"]["scope"]["doc_count"], 2);
+            assert_eq!(response.body["aggregations"]["scope"]["sum"]["value"].as_f64(), Some(30.0));
+            let mut total = 0;
+            for slice in 0..2 {
+                let native = node.try_native_engine_pit_search_response(&context.indices, &context,
+                    &serde_json::json!({"query": {"match_all": {}}, "slice": {"id": slice, "max": 2}}),
+                    Some(&id), false, false).expect("native PIT alias path");
+                assert_eq!(native.status, 200, "{}", native.body);
+                total += native.body["hits"]["total"]["value"].as_u64().unwrap();
+                for hit in native.body["hits"]["hits"].as_array().unwrap() {
+                    assert_eq!(hit["_source"]["tenant"], "red");
+                }
+            }
+            assert_eq!(total, 2);
+        }
+    }
+
+    #[test]
+    fn alias_pit_search_preserves_multi_index_and_unrestricted_selections() {
+        let node = alias_count_test_node(3);
+        for (target, expected) in [("selected", 3), ("red-*", 3),
+            ("red-a,count-a", 3), ("count-a,red-a", 3), ("red-a,all-count-a", 3),
+            ("red-a,count-b", 5)] {
+            let opened = node.handle_rest_request(RestRequest::new(RestMethod::Post,
+                format!("/{target}/_search/point_in_time?keep_alive=1m")));
+            assert_eq!(opened.status, 200, "{target}: {}", opened.body);
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_search")
+                .with_json_body(serde_json::json!({"pit": {"id": opened.body["pit_id"]},
+                    "query": {"match_all": {}}, "size": 10})));
+            assert_eq!(response.status, 200, "{target}: {}", response.body);
+            assert_eq!(response.body["hits"]["total"]["value"], expected, "{target}");
+        }
+    }
+
+    #[test]
+    fn alias_pit_wire_filter_errors_do_not_become_unrestricted() {
+        assert!(rest_pit_alias_filters(Some("invalid-context")).is_err());
+        assert!(rest_pit_alias_filters(Some(&build_local_pit_id(1))).unwrap().is_empty());
+        let node = alias_count_test_node(1);
+        let targets = node.resolve_pit_targets_with_alias_filters("red-a", false, None, "open").unwrap();
+        let id = node.build_rest_search_context_pit_id(&targets.indices, &targets.alias_filters, 1).unwrap();
+        let original = os_transport::action::OpenSearchSearchContextIdWire::decode(&id).unwrap();
+        for source in [b"not json".as_slice(), b"{\"unknown_alias_query\":{}}".as_slice()] {
+            let mut broken = original.clone();
+            let filter = broken.alias_filters.values_mut().next().unwrap();
+            let Some(os_transport::action::OpenSearchQueryBuilderWire::Wrapper(wrapper)) = filter.query.as_mut() else {
+                panic!("expected JSON wrapper");
+            };
+            wrapper.source = source.to_vec().into();
+            let broken_id = broken.encode(OPENSEARCH_3_7_0_TRANSPORT).unwrap();
+            assert!(rest_pit_alias_filters(Some(&broken_id)).is_err());
+        }
+    }
+
+    #[test]
+    fn alias_pit_disk_restart_expires_context_without_reusing_id() {
+        let root = std::env::temp_dir().join(format!("steelsearch-pit-restart-{}-{}",
+            std::process::id(), std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let mut node = alias_count_test_node(1);
+        node.development_data_path = Some(root.clone());
+        node.shared_runtime_state_path = Some(root.join("shared.json"));
+        let opened = node.handle_rest_request(RestRequest::new(RestMethod::Post,
+            "/red-a/_search/point_in_time?keep_alive=1m"));
+        assert_eq!(opened.status, 200, "{}", opened.body);
+        let old_id = opened.body["pit_id"].as_str().unwrap().to_string();
+        node.persist_shared_runtime_state_to_disk();
+        let bytes = std::fs::read(root.join("shared.json")).unwrap();
+        let mut state: SharedRuntimeState = serde_json::from_slice(&bytes).unwrap();
+        assert!(state.pit_contexts.is_empty(), "reader contexts are not durable");
+        // A legacy file containing contexts must not resurrect them either.
+        state.pit_contexts = persisted_pit_contexts_from_runtime(&node.pit_contexts.lock().unwrap());
+        std::fs::write(root.join("shared.json"), serde_json::to_vec(&state).unwrap()).unwrap();
+        drop(node);
+        let mut restarted = SteelNode::new(NodeInfo {
+            name: "alias-count".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        restarted.development_data_path = Some(root.clone());
+        restarted.shared_runtime_state_path = Some(root.join("shared.json"));
+        restarted.sync_shared_runtime_state_from_disk();
+        assert!(!restarted.shared_runtime_state_recovery_failed());
+        assert!(restarted.pit_contexts.lock().unwrap().is_empty());
+        let reopened = restarted.handle_rest_request(RestRequest::new(RestMethod::Post,
+            "/red-a/_search/point_in_time?keep_alive=1m"));
+        assert_eq!(reopened.status, 200, "{}", reopened.body);
+        let new_id = reopened.body["pit_id"].as_str().unwrap();
+        assert_ne!(old_id, new_id, "a retired PIT must not address a new reader snapshot");
+        let stale = restarted.handle_rest_request(RestRequest::new(RestMethod::Post, "/_search")
+            .with_json_body(serde_json::json!({"pit": {"id": old_id}, "query": {"match_all": {}}})));
+        assert_eq!(stale.status, 404, "{}", stale.body);
+        let current = restarted.handle_rest_request(RestRequest::new(RestMethod::Post, "/_search")
+            .with_json_body(serde_json::json!({"pit": {"id": new_id}, "query": {"match_all": {}}})));
+        assert_eq!(current.status, 200, "{}", current.body);
+        assert_eq!(current.body["hits"]["total"]["value"], 2);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn fallback_numeric_terms_preserve_keys_order_and_document_counts() {
+        let hits = vec![
+            serde_json::json!({"_source": {"rank": [2, 2, 10, 9007199254740993_u64, 9007199254740992_u64]}}),
+            serde_json::json!({"_source": {"rank": [10, -2]}}),
+            serde_json::json!({"_source": {}}),
+            serde_json::json!({"_source": {"rank": null}}),
+        ];
+        for (order, keys) in [
+            (serde_json::json!({"_key": "asc"}), serde_json::json!([-2,-1,2,10,9007199254740992_u64,9007199254740993_u64])),
+            (serde_json::json!({"_key": "desc"}), serde_json::json!([9007199254740993_u64,9007199254740992_u64,10,2,-1,-2])),
+            (serde_json::json!({"_count": "desc"}), serde_json::json!([-1,10,-2,2,9007199254740992_u64,9007199254740993_u64])),
+            (serde_json::json!({"_count": "asc"}), serde_json::json!([-2,2,9007199254740992_u64,9007199254740993_u64,-1,10])),
+        ] {
+            let aggs = serde_json::json!({"ranks": {"terms": {"field": "rank", "missing": -1, "order": order}}});
+            let result = build_search_aggregations(Some(&aggs), &hits, &hits).unwrap().unwrap();
+            let buckets = result["ranks"]["buckets"].as_array().unwrap();
+            assert_eq!(serde_json::json!(buckets.iter().map(|bucket| bucket["key"].clone()).collect::<Vec<_>>()), keys);
+            assert_eq!(buckets.iter().map(|bucket| bucket["doc_count"].as_u64().unwrap()).sum::<u64>(), 8);
+            assert_eq!(buckets.iter().find(|bucket| bucket["key"] == 2).unwrap()["doc_count"], 1);
+        }
+        let filtered = serde_json::json!({"ranks": {"terms": {"field": "rank", "include": [2,10], "exclude": [10]}}});
+        let result = build_search_aggregations(Some(&filtered), &hits, &hits).unwrap().unwrap();
+        assert_eq!(result["ranks"]["buckets"], serde_json::json!([{"key":2,"doc_count":1}]));
+        let limited = serde_json::json!({"ranks": {"terms": {"field": "rank", "missing": -1, "min_doc_count": 2, "size": 1}}});
+        let result = build_search_aggregations(Some(&limited), &hits, &hits).unwrap().unwrap();
+        assert_eq!(result["ranks"]["buckets"], serde_json::json!([{"key":-1,"doc_count":2}]));
+        assert_eq!(result["ranks"]["sum_other_doc_count"], 2);
+        let empty = vec![serde_json::json!({"_source":{"rank":[]}}),
+            serde_json::json!({"_source":{"rank":[null,null]}})];
+        let result = build_search_aggregations(Some(&limited), &empty, &empty).unwrap().unwrap();
+        assert_eq!(result["ranks"]["buckets"], serde_json::json!([{"key":-1,"doc_count":2}]));
+        let strings = vec![serde_json::json!({"_source":{"rank":["2","10","2"]}})];
+        let request = serde_json::json!({"ranks":{"terms":{"field":"rank","order":{"_key":"asc"}}}});
+        let result = build_search_aggregations(Some(&request), &strings, &strings).unwrap().unwrap();
+        assert_eq!(result["ranks"]["buckets"], serde_json::json!([
+            {"key":"10","doc_count":1},{"key":"2","doc_count":1}]));
+    }
+
+    #[test]
+    fn search_missing_wildcard_options_do_not_ignore_missing_literals() {
+        let node = alias_count_test_node(3);
+        for (target, options, status, total) in [
+            ("missing*", "", 200, 0),
+            ("missing?", "", 200, 0),
+            ("missing", "", 404, 0),
+            ("missing", "allow_no_indices=true", 404, 0),
+            ("missing*", "allow_no_indices=false", 404, 0),
+            ("missing*", "ignore_unavailable=true&allow_no_indices=false", 404, 0),
+            ("missing", "ignore_unavailable=true", 200, 0),
+            ("missing", "ignore_unavailable=true&allow_no_indices=false", 404, 0),
+            ("count-a,missing*", "", 200, 3),
+            ("count-a,missing", "", 404, 0),
+            ("count-a,missing", "ignore_unavailable=true&allow_no_indices=false", 200, 3),
+            ("count-a,missing*", "ignore_unavailable=true&allow_no_indices=false", 404, 0),
+            ("red-a,missing*", "", 200, 2),
+            ("red-a,count-b,missing*", "", 200, 5),
+            ("_all", "", 200, 6),
+            ("*", "", 200, 6),
+            ("missing*", "expand_wildcards=none", 200, 0),
+            ("missing", "expand_wildcards=none", 200, 0),
+            ("missing*", "expand_wildcards=none&allow_no_indices=false", 404, 0),
+            ("count-a,missing*", "expand_wildcards=none", 404, 0),
+            ("count-a,missing*", "expand_wildcards=none&ignore_unavailable=true", 200, 3),
+            ("red-a", "expand_wildcards=none", 200, 2),
+            ("_all", "expand_wildcards=none", 200, 0),
+        ] {
+            let request = RestRequest::new(RestMethod::Post,
+                format!("/{}/_search?{options}", target.replace('?', "%3F")))
+                .with_json_body(serde_json::json!({"query": {"match_all": {}}, "size": 0, "track_total_hits": true}));
+            let response = node.handle_rest_request(request);
+            assert_eq!(response.status, status, "{target}/{options}: {}", response.body);
+            if status == 200 {
+                assert_eq!(response.body["hits"]["total"]["value"], total, "{target}/{options}");
+            } else {
+                assert_eq!(response.body["error"]["type"], "index_not_found_exception");
+            }
+        }
+    }
+
+    #[test]
+    fn alias_pit_resolution_preserves_creation_options() {
+        let node = alias_scope_test_node();
+        let mut comparisons = 0;
+        for target in ["", "missing", "missing*", "missing?", "_all", "shared",
+            "shared,missing", "shared,missing*", "closed-alias", "logs-a,tenant-red"] {
+            for ignore in [false, true] {
+                for allow in [None, Some(false), Some(true)] {
+                    for expand in ["open", "closed", "all", "none", "invalid"] {
+                        // Preserve the previous PIT route's per-selector option policy.
+                        let old = (|| -> Result<Vec<String>, RestResponse> {
+                            let mut indices = Vec::new();
+                            for selector in target.split(',').filter(|part| !part.is_empty()) {
+                                let wildcard = selector == "_all" || selector.contains('*') || selector.contains('?');
+                                indices.extend(node.resolve_search_targets(selector, ignore,
+                                    ignore || allow.unwrap_or(wildcard), expand)?);
+                            }
+                            indices.sort();
+                            indices.dedup();
+                            Ok(indices)
+                        })();
+                        let new = node.resolve_pit_targets_with_alias_filters(target, ignore, allow, expand);
+                        match (old, new) {
+                            (Ok(old), Ok(new)) => assert_eq!(old, new.indices),
+                            (Err(old), Err(new)) => {
+                                assert_eq!(old.status, new.status);
+                                assert_eq!(old.body, new.body);
+                            }
+                            _ => panic!("PIT options drift: {target}/{ignore}/{allow:?}/{expand}"),
+                        }
+                        comparisons += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(comparisons, 300);
+    }
+
+    #[test]
+    fn alias_pit_resolution_unions_filters_and_owns_snapshot() {
+        let node = alias_scope_test_node();
+        for target in ["tenant-red,tenant-blue", "tenant-blue,tenant-red", "tenant-*"] {
+            let resolved = node.resolve_pit_targets_with_alias_filters(target, false, None, "open").unwrap();
+            assert_eq!(resolved.indices, vec!["logs-a"]);
+            let filter = &resolved.alias_filters["logs-a"];
+            for (tenant, expected) in [("red", true), ("blue", true), ("other", false)] {
+                assert_eq!(evaluate_search_query_source_with_mappings(
+                    &serde_json::json!({"tenant": tenant}), "one", filter, &Value::Null)
+                    .map(|(matched, _)| matched), Some(expected));
+            }
+        }
+        for target in ["tenant-red,logs-a", "logs-a,tenant-red", "tenant-red,unfiltered",
+            "unfiltered,tenant-red", "tenant-red,events", "tenant-red,_all"] {
+            let resolved = node.resolve_pit_targets_with_alias_filters(target, false, None, "open").unwrap();
+            assert!(!resolved.alias_filters.contains_key("logs-a"), "{target}");
+        }
+        let captured = node.resolve_pit_targets_with_alias_filters("shared", false, None, "open").unwrap();
+        assert_eq!(captured.alias_filters["logs-a"], serde_json::json!({"term": {"tenant": "red"}}));
+        assert_eq!(captured.alias_filters["logs-b"], serde_json::json!({"term": {"tenant": "blue"}}));
+        node.metadata_manifest_state.lock().unwrap()["indices"]["logs-a"]["aliases"]["shared"]["filter"] =
+            serde_json::json!({"match_none": {}});
+        assert_eq!(captured.alias_filters["logs-a"], serde_json::json!({"term": {"tenant": "red"}}));
+    }
+
+    #[test]
+    fn alias_pit_creation_rejects_invalid_filter_before_allocating_context() {
+        let node = alias_count_test_node(1);
+        node.metadata_manifest_state.lock().unwrap()["indices"]["count-a"]["aliases"]["red-a"]["filter"] =
+            serde_json::json!({"unknown_alias_query": {}});
+        let before = *node.next_pit_id.lock().unwrap();
+        let response = node.handle_rest_request(RestRequest::new(RestMethod::Post,
+            "/red-a/_search/point_in_time?keep_alive=1m"));
+        assert_eq!(response.status, 400, "{}", response.body);
+        assert!(node.pit_contexts.lock().unwrap().is_empty());
+        assert!(node.pit_native_snapshots.lock().unwrap().is_empty());
+        assert_eq!(*node.next_pit_id.lock().unwrap(), before);
+        // A direct selection does not use the malformed alias filter.
+        let response = node.handle_rest_request(RestRequest::new(RestMethod::Post,
+            "/red-a,count-a/_search/point_in_time?keep_alive=1m"));
+        assert_eq!(response.status, 200, "{}", response.body);
+    }
+
+    fn alias_scope_test_node() -> SteelNode {
+        let node = SteelNode::new(NodeInfo {
+            name: "alias-scope".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        *node.metadata_manifest_state.lock().unwrap() = serde_json::json!({
+            "indices": {
+                "logs-a": {"aliases": {
+                    "tenant-red": {"filter": {"term": {"tenant": "red"}}},
+                    "tenant-blue": {"filter": {"term": {"tenant": "blue"}}},
+                    "shared": {"filter": {"term": {"tenant": "red"}}},
+                    "unfiltered": {}, "null-filter": {"filter": null},
+                    "opaque": {"filter": {"unknown_query": {}}}
+                }},
+                "logs-b": {"aliases": {
+                    "shared": {"filter": {"term": {"tenant": "blue"}}}
+                }},
+                "closed": {"state": "close", "aliases": {"closed-alias": {
+                    "filter": {"term": {"tenant": "red"}}
+                }}}
+            },
+            "data_streams": {"events": {"indices": [{"index_name": "logs-a"}]}}
+        });
+        node
+    }
+
+    fn alias_count_test_node(shards: u32) -> SteelNode {
+        let node = SteelNode::new(NodeInfo {
+            name: "alias-count".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        for (index, alias, selected) in [("count-a", "red-a", "red"), ("count-b", "red-b", "blue")] {
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Put, format!("/{index}"))
+                .with_json_body(serde_json::json!({
+                    "settings": {"number_of_shards": shards},
+                    "mappings": {"properties": {"tenant": {"type": "keyword"}, "value": {"type": "integer"}}},
+                    "aliases": {
+                        alias: {"filter": {"term": {"tenant": selected}}},
+                        "selected": {"filter": {"term": {"tenant": selected}}},
+                        format!("all-{index}"): {}
+                    }
+                })));
+            assert_eq!(response.status, 200, "{}", response.body);
+            for (id, tenant, value) in [("r1", "red", 10), ("r2", "red", 20), ("b1", "blue", 100)] {
+                assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put, format!("/{index}/_doc/{id}"))
+                    .with_json_body(serde_json::json!({"tenant": tenant, "value": value}))).status, 201);
+            }
+            assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Post, format!("/{index}/_refresh"))).status, 200);
+        }
+        node
+    }
+
+    #[test]
+    fn alias_count_rest_applies_filters_unions_and_direct_index_precedence() {
+        for shards in [1, 3] {
+            let node = alias_count_test_node(shards);
+            for (target, count) in [
+                ("red-a", 2), ("red-b", 1), ("selected", 3), ("red-*", 3),
+                ("red-a,red-a", 2), ("red-a,red-b", 3), ("red-b,red-a", 3),
+                ("red-a,count-a", 3), ("count-a,red-a", 3),
+                ("red-a,all-count-a", 3), ("all-count-a,red-a", 3),
+                ("red-a,count-b", 5), ("count-*,red-a", 6), ("_all", 6), ("missing-*", 0),
+            ] {
+                let response = node.handle_rest_request(RestRequest::new(RestMethod::Get, format!("/{target}/_count")));
+                assert_eq!(response.status, 200, "{target}: {}", response.body);
+                assert_eq!(response.body["count"], count, "{target}/shards={shards}");
+            }
+            let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, "/selected/_count")
+                .with_json_body(serde_json::json!({"query": {"term": {"value": 10}}})));
+            assert_eq!(response.status, 200);
+            assert_eq!(response.body["count"], 1);
+            for routing in ["tenant-a", "tenant-b", "tenant-c"] {
+                let alias = node.handle_rest_request(RestRequest::new(RestMethod::Get,
+                    format!("/red-a/_count?routing={routing}")));
+                let direct = node.handle_rest_request(RestRequest::new(RestMethod::Post,
+                    format!("/count-a/_count?routing={routing}"))
+                    .with_json_body(serde_json::json!({"query": {"term": {"tenant": "red"}}})));
+                assert_eq!(alias.status, 200);
+                assert_eq!(direct.status, 200);
+                assert_eq!(alias.body, direct.body);
+            }
+        }
+    }
+
+    #[test]
+    fn alias_count_rest_preserves_refresh_boundary_and_server_owned_filter() {
+        let node = alias_count_test_node(3);
+        let injection = serde_json::json!({"count-a": {"match_all": {}}});
+        let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, "/red-a/_count")
+            .with_json_body(serde_json::json!({"query": {"match_all": {}}, "_steelsearch_alias_filters": injection})));
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body["count"], 2);
+        let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, "/red-a/_count")
+            .with_json_body(serde_json::json!({"query": {
+                "query": {"match_all": {}}, "_steelsearch_alias_filters": injection
+            }})));
+        assert_eq!(response.status, 400);
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put, "/count-a/_doc/late")
+            .with_json_body(serde_json::json!({"tenant": "red", "value": 30}))).status, 201);
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Get, "/red-a/_count")).body["count"], 2);
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Post, "/count-a/_refresh")).status, 200);
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Get, "/red-a/_count")).body["count"], 3);
+        node.metadata_manifest_state.lock().unwrap()["indices"]["count-a"]["aliases"]["red-a"]["filter"] =
+            serde_json::json!({"unsupported_alias_query": {}});
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Get, "/red-a/_count")).status, 400);
+    }
+
+    #[test]
+    fn alias_count_mode_preserves_previous_selector_error_options() {
+        let node = alias_scope_test_node();
+        for target in ["shared", "missing", "missing,*", "missing,shared", "missing-*", "closed-*", "events", "_all", ""] {
+            for ignore in [false, true] {
+                for allow in [false, true] {
+                    let previous = (|| {
+                        let mut indices = Vec::new();
+                        for selector in target.split(',').filter(|value| !value.is_empty()) {
+                            indices.extend(node.resolve_search_targets(selector, ignore,
+                                allow || selector.contains('*') || selector.contains('?'), "open")?);
+                        }
+                        indices.sort(); indices.dedup();
+                        Ok::<_, RestResponse>(indices)
+                    })();
+                    let scoped = node.resolve_search_targets_with_alias_filters_mode::<true>(target, ignore, allow, "open");
+                    match (previous, scoped) {
+                        (Ok(previous), Ok(scoped)) => assert_eq!(previous, scoped.indices),
+                        (Err(previous), Err(scoped)) => {
+                            assert_eq!(previous.status, scoped.status);
+                            assert_eq!(previous.body, scoped.body);
+                        }
+                        _ => panic!("count options changed: {target}/{ignore}/{allow}"),
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn alias_scope_unions_filters_and_unrestricted_selection_dominates() {
+        let node = alias_scope_test_node();
+        let red = serde_json::json!({"term": {"tenant": "red"}});
+        let blue = serde_json::json!({"term": {"tenant": "blue"}});
+        for selector in ["tenant-red,tenant-blue", "tenant-blue,tenant-red", "tenant-*",
+                         "tenant-red,tenant-red,tenant-blue"] {
+            let resolved = node.resolve_search_targets_with_alias_filters(selector, false, false, "open").unwrap();
+            assert_eq!(resolved.indices, vec!["logs-a"]);
+            assert_eq!(resolved.alias_filters["logs-a"], serde_json::json!({"bool": {
+                "should": [blue, red], "minimum_should_match": 1
+            }}));
+        }
+        for selector in ["logs-a,tenant-red", "tenant-red,logs-a", "unfiltered,tenant-red",
+                         "tenant-red,unfiltered", "tenant-red,null-filter", "tenant-red,events",
+                         "events,tenant-red", "logs-*,tenant-red", "_all,tenant-red"] {
+            let resolved = node.resolve_search_targets_with_alias_filters(selector, false, false, "open").unwrap();
+            assert!(resolved.alias_filters.is_empty(), "{selector}");
+            assert_eq!(resolved.indices, node.resolve_search_targets(selector, false, false, "open").unwrap());
+        }
+        let resolved = node.resolve_search_targets_with_alias_filters("shared", false, false, "open").unwrap();
+        assert_eq!(resolved.alias_filters, BTreeMap::from([
+            ("logs-a".to_string(), red), ("logs-b".to_string(), blue),
+        ]));
+    }
+
+    #[test]
+    fn alias_scope_owns_filters_without_silently_discarding_unknown_queries() {
+        let node = alias_scope_test_node();
+        let captured = node.resolve_search_targets_with_alias_filters("tenant-red", false, false, "open").unwrap();
+        node.metadata_manifest_state.lock().unwrap()["indices"]["logs-a"]["aliases"]["tenant-red"]["filter"] =
+            serde_json::json!({"term": {"tenant": "changed"}});
+        assert_eq!(captured.alias_filters["logs-a"], serde_json::json!({"term": {"tenant": "red"}}));
+        let fresh = node.resolve_search_targets_with_alias_filters("tenant-red", false, false, "open").unwrap();
+        assert_ne!(fresh, captured);
+        let opaque = node.resolve_search_targets_with_alias_filters("opaque", false, false, "open").unwrap();
+        assert_eq!(opaque.alias_filters["logs-a"], serde_json::json!({"unknown_query": {}}));
+    }
+
+    #[test]
+    fn alias_scope_preserves_name_resolution_and_error_options() {
+        let node = alias_scope_test_node();
+        for selector in ["shared", "missing", "missing,*", "closed", "closed-*", "events", "_all", ""] {
+            for ignore in [false, true] {
+                for allow in [false, true] {
+                    for expand in ["open", "closed", "all", "none", "invalid"] {
+                        let names = node.resolve_search_targets(selector, ignore, allow, expand);
+                        let scoped = node.resolve_search_targets_with_alias_filters(selector, ignore, allow, expand);
+                        match (names, scoped) {
+                            (Ok(names), Ok(scoped)) => assert_eq!(names, scoped.indices),
+                            (Err(names), Err(scoped)) => {
+                                assert_eq!(names.status, scoped.status);
+                                assert_eq!(names.body, scoped.body);
+                            }
+                            _ => panic!("scope resolution drift: {selector}/{ignore}/{allow}/{expand}"),
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn refresh_without_dirty_development_shards_does_not_persist_every_shard() {
         let root = std::env::temp_dir().join(format!(
             "steelsearch-clean-refresh-shard-persist-{}",
@@ -67488,6 +70230,316 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(persisted_after_clean_refresh, persisted_shards);
 
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn document_deletion_sequences_prevent_stale_log_reads_and_recovery() {
+        for mode in ["single", "bulk", "by-query"] {
+            let root = std::env::temp_dir().join(format!("steelsearch-deletion-sequences-{mode}-{}-{}",
+                std::process::id(), std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+            let mut node = SteelNode::new(NodeInfo {
+                name: "delete-sequences".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+            });
+            assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put, "/deleted-log")
+                .with_json_body(serde_json::json!({"settings": {"number_of_shards": 1}}))).status, 200);
+            assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put,
+                "/deleted-log/_doc/one?refresh=true")
+                .with_json_body(serde_json::json!({"value": "old"}))).status, 201);
+            let shard_path = root.join("shards/deleted-log/0");
+            node.native_engine.persist_index_shard_state("deleted-log", 0, &shard_path).unwrap();
+            node.development_data_path = Some(root.clone());
+            let stale_log = std::fs::read(shard_path.join("steelsearch-operations.jsonl")).unwrap();
+            assert!(node.lookup_development_operation_log_document("deleted-log", "one", "").is_some());
+            let response = match mode {
+                "single" => node.handle_rest_request(RestRequest::new(RestMethod::Delete,
+                    "/deleted-log/_doc/one?refresh=false")),
+                "bulk" => {
+                    let mut request = RestRequest::new(RestMethod::Post, "/_bulk?refresh=false");
+                    request.body = b"{\"delete\":{\"_index\":\"deleted-log\",\"_id\":\"one\"}}\n".to_vec();
+                    let response = node.handle_rest_request(request);
+                    assert_eq!(response.body["items"][0]["delete"]["status"], 200);
+                    response
+                }
+                _ => node.handle_rest_request(RestRequest::new(RestMethod::Post,
+                    "/deleted-log/_delete_by_query").with_json_body(serde_json::json!({"query": {"match_all": {}}}))),
+            };
+            assert_eq!(response.status, 200, "{mode}: {:?}", response.body);
+            // Reinstall the pre-delete log to model deferred shard persistence.
+            std::fs::write(shard_path.join("steelsearch-operations.jsonl"), &stale_log).unwrap();
+            for method in [RestMethod::Get, RestMethod::Head] {
+                assert_eq!(node.handle_rest_request(RestRequest::new(method,
+                    "/deleted-log/_doc/one")).status, 404, "{mode}");
+            }
+            node.merge_development_operation_log_documents_into_runtime();
+            assert!(node.documents_state.lock().unwrap().is_empty(), "{mode}");
+            let state_path = root.join("shared.json");
+            node.shared_runtime_state_path = Some(state_path.clone());
+            node.persist_shared_runtime_state_to_disk();
+            let persisted: SharedRuntimeState = serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
+            assert!(!persisted.document_deletion_sequences.is_empty());
+            std::fs::write(shard_path.join("steelsearch-operations.jsonl"), &stale_log).unwrap();
+            let mut restarted = SteelNode::new(NodeInfo {
+                name: "delete-sequences".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+            });
+            restarted.development_data_path = Some(root.clone());
+            restarted.shared_runtime_state_path = Some(state_path);
+            restarted.sync_shared_runtime_state_from_disk();
+            assert!(!restarted.shared_runtime_state_recovery_failed(), "{mode}");
+            assert!(restarted.documents_state.lock().unwrap().is_empty(), "{mode}");
+            assert_eq!(restarted.handle_rest_request(RestRequest::new(RestMethod::Get,
+                "/deleted-log/_doc/one")).status, 404, "{mode}");
+            assert_eq!(restarted.handle_rest_request(RestRequest::new(RestMethod::Put,
+                "/deleted-log/_doc/one?refresh=true")
+                .with_json_body(serde_json::json!({"value": "new"}))).status, 201);
+            let get = restarted.handle_rest_request(RestRequest::new(RestMethod::Get, "/deleted-log/_doc/one"));
+            assert_eq!(get.status, 200);
+            assert_eq!(get.body["_source"]["value"], "new");
+            let restored = restarted.lookup_development_operation_log_document("deleted-log", "one", "").unwrap();
+            assert_eq!(restored.source["value"], "new", "{mode}");
+            let mut legacy = serde_json::to_value(persisted).unwrap();
+            legacy.as_object_mut().unwrap().remove("document_deletion_sequences");
+            assert!(serde_json::from_value::<SharedRuntimeState>(legacy).unwrap().document_deletion_sequences.is_empty());
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn index_recreation_isolates_old_logs_and_deletions_across_restart() {
+        for shards in [1, 3] {
+            for auto_create in [false, true] {
+              for delete_refresh in [false, true] {
+                let root = std::env::temp_dir().join(format!("steelsearch-index-generation-{shards}-{auto_create}-{}-{}",
+                    std::process::id(), std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+                let state_path = root.join("shared.json");
+                let mut node = SteelNode::new(NodeInfo {
+                    name: "generation".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+                });
+                node.development_data_path = Some(root.clone());
+                node.shared_runtime_state_path = Some(state_path.clone());
+                assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put, "/generation")
+                    .with_json_body(serde_json::json!({"settings": {"number_of_shards": shards}}))).status, 200);
+                let old_uuid = node.native_engine.shard_manifest("generation").unwrap().index_uuid;
+                for id in ["old", "reused"] {
+                    let routing = if id == "reused" { "old-tenant" } else { "tenant-old" };
+                    assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put,
+                        format!("/generation/_doc/{id}?routing={routing}&refresh=true"))
+                        .with_json_body(serde_json::json!({"value": "old"}))).status, 201);
+                }
+                assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Delete,
+                    format!("/generation/_doc/reused?routing=old-tenant&refresh={delete_refresh}"))).status, 200);
+                assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Delete, "/generation")).status, 200);
+                assert!(!node.pending_native_deletes.lock().unwrap().contains_key("generation"));
+                assert!(!node.unrefreshed_document_keys.lock().unwrap().contains_key("generation"));
+                assert!(!node.dirty_development_shards.lock().unwrap().iter().any(|(index, _)| index == "generation"));
+                if !auto_create {
+                    assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put, "/generation")
+                        .with_json_body(serde_json::json!({"settings": {"number_of_shards": shards}}))).status, 200);
+                    assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Get,
+                        "/generation/_doc/old?routing=tenant-old")).status, 404);
+                    node.merge_development_operation_log_documents_into_runtime();
+                    assert!(node.documents_state.lock().unwrap().is_empty());
+                }
+                let write = node.handle_rest_request(RestRequest::new(RestMethod::Put,
+                    "/generation/_doc/reused?routing=tenant-reused&refresh=true")
+                    .with_json_body(serde_json::json!({"value": "new"})));
+                assert_eq!(write.status, 201, "{:?}", write.body);
+                assert_eq!(write.body["_seq_no"], 0);
+                assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Post, "/generation/_refresh")).status, 200);
+                let current_search = node.handle_rest_request(RestRequest::new(RestMethod::Post,
+                    "/generation/_search").with_json_body(serde_json::json!({"query": {"match_all": {}}})));
+                assert_eq!(current_search.status, 200);
+                assert_eq!(current_search.body["hits"]["total"]["value"], 1);
+                assert_eq!(current_search.body["hits"]["hits"][0]["_id"], "reused");
+                let new_uuid = node.native_engine.shard_manifest("generation").unwrap().index_uuid;
+                assert_ne!(old_uuid, new_uuid);
+                assert_eq!(node.index_uuid("generation"), new_uuid);
+                let cluster_state = node.cluster_state_body();
+                for shard in cluster_state["routing_table"]["indices"]["generation"]["shards"].as_object().unwrap().values() {
+                    assert_eq!(shard[0]["index_uuid"], new_uuid);
+                }
+                assert!(!node.document_deletion_sequences.lock().unwrap().contains_key("generation"));
+                // A failed duplicate create must not rotate identity or clear live documents.
+                assert_ne!(node.handle_rest_request(RestRequest::new(RestMethod::Put, "/generation")).status, 200);
+                assert_eq!(node.index_uuid("generation"), new_uuid);
+                node.persist_shared_runtime_state_to_disk();
+                let mut restarted = SteelNode::new(NodeInfo {
+                    name: "generation".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+                });
+                restarted.development_data_path = Some(root.clone());
+                restarted.shared_runtime_state_path = Some(state_path);
+                restarted.sync_shared_runtime_state_from_disk();
+                assert!(!restarted.shared_runtime_state_recovery_failed());
+                assert_eq!(restarted.native_engine.shard_manifest("generation").unwrap().index_uuid, new_uuid);
+                assert_eq!(restarted.handle_rest_request(RestRequest::new(RestMethod::Get,
+                    "/generation/_doc/old?routing=tenant-old")).status, 404);
+                let get = restarted.handle_rest_request(RestRequest::new(RestMethod::Get,
+                    "/generation/_doc/reused?routing=tenant-reused"));
+                assert_eq!(get.status, 200);
+                assert_eq!(get.body["_source"]["value"], "new");
+                let search = restarted.handle_rest_request(RestRequest::new(RestMethod::Post,
+                    "/generation/_search").with_json_body(serde_json::json!({"query": {"match_all": {}}})));
+                assert_eq!(search.status, 200, "{:?}", search.body);
+                assert_eq!(search.body["hits"]["total"]["value"], 1);
+                assert_eq!(search.body["hits"]["hits"].as_array().unwrap().len(), 1);
+                assert_eq!(search.body["hits"]["hits"][0]["_id"], "reused");
+                assert_eq!(search.body["hits"]["hits"][0]["_source"]["value"], "new");
+                std::fs::remove_dir_all(root).unwrap();
+              }
+            }
+        }
+    }
+
+    #[test]
+    fn deletion_sequence_recovery_repairs_missing_and_stale_watermarks() {
+        for mode in ["missing", "partial", "stale"] {
+            let root = std::env::temp_dir().join(format!("steelsearch-recovery-watermarks-{mode}-{}-{}",
+                std::process::id(), std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+            std::fs::create_dir_all(&root).unwrap();
+            let state_path = root.join("shared.json");
+            let mut node = SteelNode::new(NodeInfo {
+                name: "watermarks".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+            });
+            for index in ["deleted-only", "with-survivor"] {
+                assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put, format!("/{index}"))
+                    .with_json_body(serde_json::json!({"settings": {"number_of_shards": 3}}))).status, 200);
+                for id in ["one", "two"] {
+                    assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put,
+                        format!("/{index}/_doc/{id}?routing=tenant-{id}&refresh=true"))
+                        .with_json_body(serde_json::json!({"value": "old"}))).status, 201);
+                }
+                assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Delete,
+                    format!("/{index}/_doc/one?routing=tenant-one&refresh=true"))).status, 200);
+            }
+            assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Delete,
+                "/deleted-only/_doc/two?routing=tenant-two&refresh=true")).status, 200);
+            node.development_data_path = Some(root.clone());
+            node.shared_runtime_state_path = Some(state_path.clone());
+            node.persist_shared_runtime_state_to_disk();
+            let mut persisted: SharedRuntimeState = serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
+            let expected = persisted.next_seq_no_by_index.clone();
+            match mode {
+                "missing" => persisted.next_seq_no_by_index.clear(),
+                "partial" => { persisted.next_seq_no_by_index.remove("deleted-only"); }
+                _ => persisted.next_seq_no_by_index.values_mut().for_each(|next| *next = 0),
+            }
+            persisted.next_seq_no = 0;
+            std::fs::write(&state_path, serde_json::to_vec(&persisted).unwrap()).unwrap();
+            let mut restarted = SteelNode::new(NodeInfo {
+                name: "watermarks".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+            });
+            restarted.development_data_path = Some(root.clone());
+            restarted.shared_runtime_state_path = Some(state_path.clone());
+            restarted.sync_shared_runtime_state_from_disk();
+            assert!(!restarted.shared_runtime_state_recovery_failed(), "{mode}");
+            assert_eq!(*restarted.next_seq_no_by_index.lock().unwrap(), expected, "{mode}");
+            assert_eq!(*restarted.next_seq_no.lock().unwrap(), *expected.values().max().unwrap());
+            for index in ["deleted-only", "with-survivor"] {
+                assert_eq!(restarted.handle_rest_request(RestRequest::new(RestMethod::Get,
+                    format!("/{index}/_doc/one?routing=tenant-one"))).status, 404);
+                let write = restarted.handle_rest_request(RestRequest::new(RestMethod::Put,
+                    format!("/{index}/_doc/one?routing=tenant-one&refresh=true"))
+                    .with_json_body(serde_json::json!({"value": "new"})));
+                assert_eq!(write.status, 201, "{mode}: {:?}", write.body);
+                assert_eq!(write.body["_seq_no"].as_u64(), Some(expected[index]), "{mode}/{index}");
+            }
+            restarted.persist_shared_runtime_state_to_disk();
+            let mut second_restart = SteelNode::new(NodeInfo {
+                name: "watermarks".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+            });
+            second_restart.development_data_path = Some(root.clone());
+            second_restart.shared_runtime_state_path = Some(state_path);
+            second_restart.sync_shared_runtime_state_from_disk();
+            assert!(!second_restart.shared_runtime_state_recovery_failed());
+            for index in ["deleted-only", "with-survivor"] {
+                let get = second_restart.handle_rest_request(RestRequest::new(RestMethod::Get,
+                    format!("/{index}/_doc/one?routing=tenant-one")));
+                assert_eq!(get.status, 200);
+                assert_eq!(get.body["_source"]["value"], "new");
+                let search = second_restart.handle_rest_request(RestRequest::new(RestMethod::Post,
+                    format!("/{index}/_search")).with_json_body(serde_json::json!({"query": {"match_all": {}}})));
+                assert_eq!(search.status, 200, "{mode}: {:?}", search.body);
+                assert_eq!(search.body["hits"]["total"]["value"], if index == "deleted-only" { 1 } else { 2 });
+            }
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn deletion_sequence_recovery_rejects_invalid_state_before_installation() {
+        let root = std::env::temp_dir().join(format!("steelsearch-invalid-watermarks-{}-{}",
+            std::process::id(), std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        std::fs::create_dir_all(&root).unwrap();
+        let state_path = root.join("shared.json");
+        let mut source = SteelNode::new(NodeInfo {
+            name: "invalid-watermarks".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        assert_eq!(source.handle_rest_request(RestRequest::new(RestMethod::Put, "/incoming")).status, 200);
+        assert_eq!(source.handle_rest_request(RestRequest::new(RestMethod::Put, "/incoming/_doc/one?refresh=true")
+            .with_json_body(serde_json::json!({"value": "old"}))).status, 201);
+        source.development_data_path = Some(root.clone());
+        source.shared_runtime_state_path = Some(state_path.clone());
+        source.persist_shared_runtime_state_to_disk();
+        let valid: SharedRuntimeState = serde_json::from_slice(&std::fs::read(&state_path).unwrap()).unwrap();
+        for mode in ["negative-delete", "max-delete", "exhausted-delete", "negative-document",
+            "max-document", "max-next", "overflow-next", "max-global"]
+        {
+            let mut invalid = valid.clone();
+            match mode {
+                "negative-delete" | "max-delete" | "exhausted-delete" => {
+                    let sequence = match mode {
+                        "negative-delete" => -1,
+                        "max-delete" => i64::MAX,
+                        _ => i64::MAX - 1,
+                    };
+                    invalid.document_deletion_sequences.entry("incoming".to_string()).or_default()
+                        .entry(0).or_default().insert("deleted".to_string(), sequence);
+                }
+                "negative-document" | "max-document" => {
+                    invalid.documents.values_mut().next().unwrap().seq_no =
+                        if mode == "negative-document" { -1 } else { i64::MAX };
+                }
+                "max-global" => invalid.next_seq_no = i64::MAX as u64,
+                _ => { invalid.next_seq_no_by_index.insert("incoming".to_string(),
+                    if mode == "max-next" { i64::MAX as u64 } else { u64::MAX }); }
+            }
+            std::fs::write(&state_path, serde_json::to_vec(&invalid).unwrap()).unwrap();
+            let mut node = SteelNode::new(NodeInfo {
+                name: "invalid-watermarks".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+            });
+            assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put, "/existing")).status, 200);
+            let before = node.metadata_manifest_state.lock().unwrap().clone();
+            let before_sequences = node.next_seq_no_by_index.lock().unwrap().clone();
+            node.shared_runtime_state_path = Some(state_path.clone());
+            node.sync_shared_runtime_state_from_disk();
+            assert!(node.shared_runtime_state_recovery_failed(), "{mode}");
+            assert_eq!(*node.metadata_manifest_state.lock().unwrap(), before, "{mode}");
+            assert!(node.documents_state.lock().unwrap().is_empty(), "{mode}");
+            assert!(node.document_deletion_sequences.lock().unwrap().is_empty(), "{mode}");
+            assert_eq!(*node.next_seq_no_by_index.lock().unwrap(), before_sequences, "{mode}");
+            assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put, "/existing/_doc/new")
+                .with_json_body(serde_json::json!({"value": "new"}))).status, 503, "{mode}");
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn document_deletion_sequences_are_shard_scoped_and_monotonic() {
+        let node = SteelNode::new(NodeInfo {
+            name: "delete-scope".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put, "/delete-scope")
+            .with_json_body(serde_json::json!({"settings": {"number_of_shards": 3}}))).status, 200);
+        let shard = node.index_document_shard("delete-scope", "id:with:colon", Some("tenant"));
+        node.record_document_deletion("delete-scope", "id:with:colon", Some("tenant"), 7);
+        node.record_document_deletion("delete-scope", "id:with:colon", Some("tenant"), 4);
+        assert!(node.document_operation_was_deleted("delete-scope", shard, "id:with:colon", 7));
+        assert!(!node.document_operation_was_deleted("delete-scope", shard, "id:with:colon", 8));
+        assert!(!node.document_operation_was_deleted("delete-scope", (shard + 1) % 3, "id:with:colon", 1));
+        assert!(!node.document_operation_was_deleted("another-index", shard, "id:with:colon", 1));
     }
 
     #[test]
@@ -71671,7 +74723,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             recovery_refusal.body["error"]["reason"],
             Value::String(
-                "task submission rejected while shared runtime state recovery is incomplete"
+                "request rejected while shared runtime state recovery is incomplete"
                     .to_string()
             )
         );
@@ -72753,39 +75805,27 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let listed =
             restarted.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:901"));
-        assert_eq!(listed.status, 200);
-        assert_eq!(listed.body["task"]["id"], 901);
-        assert_eq!(listed.body["task"]["cancellable"], Value::Bool(true));
+        assert_eq!(listed.status, 503);
 
         let terminal =
             restarted.handle_rest_request(RestRequest::new(RestMethod::Get, "/_tasks/node-a:902"));
-        assert_eq!(terminal.status, 200);
-        assert_eq!(terminal.body["task"]["id"], 902);
-        assert_eq!(terminal.body["task"]["cancellable"], Value::Bool(false));
+        assert_eq!(terminal.status, 503);
 
         let pending = restarted
             .handle_rest_request(RestRequest::new(RestMethod::Get, "/_cluster/pending_tasks"));
-        assert_eq!(pending.status, 200);
-        let pending_tasks = pending.body["tasks"]
-            .as_array()
-            .expect("pending tasks array");
-        assert_eq!(pending_tasks.len(), 1);
-        assert_eq!(pending_tasks[0]["id"], 901);
+        assert_eq!(pending.status, 503);
 
         let cancel = restarted.handle_rest_request(RestRequest::new(
             RestMethod::Post,
             "/_tasks/node-a:901/_cancel",
         ));
-        assert_eq!(cancel.status, 200);
-        assert_eq!(
-            cancel.body["nodes"]["node-a"]["tasks"]["node-a:901"]["cancelled"],
-            Value::Bool(true)
-        );
-
-        let persisted = std::fs::read(&shared_state_path).expect("read repaired shared state");
-        let persisted: SharedRuntimeState =
-            serde_json::from_slice(&persisted).expect("parse repaired shared state");
-        assert!(persisted.cancelled_task_ids.contains("node-a:901"));
+        assert_eq!(cancel.status, 503);
+        assert!(!restarted.cancelled_task_ids.lock().unwrap().contains("node-a:901"));
+        let queue = restarted.task_queue_state.lock().unwrap();
+        assert_eq!(queue.as_ref().unwrap().pending[0].task_id, 901);
+        assert_eq!(queue.as_ref().unwrap().acknowledged[0].task_id, 902);
+        drop(queue);
+        assert_eq!(std::fs::read(&shared_state_path).unwrap(), b"{\"created_indices\":[");
 
         env::remove_var("STEELSEARCH_SYNC_SHARED_RUNTIME_STATE_PER_REQUEST");
         env::remove_var("STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE");
@@ -73369,6 +76409,51 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn concurrent_task_completions_initialize_one_searchable_tasks_index() {
+        const WORKERS: usize = 8;
+        for round in 0..4 {
+            let node = Arc::new(SteelNode::new(NodeInfo {
+                name: "steel-node".to_string(),
+                version: OPENSEARCH_3_7_0_TRANSPORT,
+            }));
+            let barrier = Arc::new(std::sync::Barrier::new(WORKERS));
+            let handles = (0..WORKERS).map(|worker| {
+                let node = Arc::clone(&node);
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    let task_id = node.record_completed_bulk_by_scroll_task(
+                        format!("concurrent task {worker}"), "reindex", "indices:data/write/reindex",
+                        &serde_json::json!({"created": worker + 1}),
+                    );
+                    (task_id, worker + 1)
+                })
+            }).collect::<Vec<_>>();
+            let completed = handles.into_iter().map(|handle| handle.join().unwrap())
+                .collect::<Vec<_>>();
+            let task_ids = completed.iter().map(|(id, _)| id).collect::<BTreeSet<_>>();
+            assert_eq!(task_ids.len(), WORKERS, "round {round}");
+            assert!(!node.shared_runtime_state_recovery_failed(), "round {round}");
+            let count = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/.tasks/_count"));
+            assert_eq!(count.status, 200, "round {round}: {:?}", count.body);
+            assert_eq!(count.body["count"], WORKERS, "round {round}");
+            assert_eq!(node.index_document_count(".tasks"), WORKERS);
+            for (task_id, created) in completed {
+                let doc_id = task_id.replace(':', "_");
+                let doc = node.handle_rest_request(RestRequest::new(
+                    RestMethod::Get, &format!("/.tasks/_doc/{doc_id}")));
+                assert_eq!(doc.status, 200, "{:?}", doc.body);
+                assert_eq!(doc.body["_source"]["response"]["created"], created);
+            }
+            let manifest = node.metadata_manifest_state.lock().unwrap();
+            let entry = &manifest["indices"][".tasks"];
+            assert_eq!(entry["settings"]["index"]["number_of_shards"], "1");
+            assert_eq!(node.native_engine.index_routing(".tasks"),
+                Some(index_routing_from_metadata(entry).unwrap()));
+        }
+    }
+
+    #[test]
     fn completed_bulk_by_scroll_tasks_materialize_tasks_index_documents() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
@@ -73758,7 +76843,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         assert_eq!(
             recovery_response.body["error"]["reason"],
             Value::String(
-                "task submission rejected while shared runtime state recovery is incomplete"
+                "request rejected while shared runtime state recovery is incomplete"
                     .to_string()
             )
         );
@@ -77213,6 +80298,78 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             body_without_template.body["error"]["reason"],
             "Validation Failed: 1: template is missing;2: template's script type is missing;"
         );
+    }
+
+    #[test]
+    fn count_uses_native_bool_nested_and_routing_semantics() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(),
+            version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        let index = "native-count-contract";
+        let created = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, &format!("/{index}"))
+                .with_json_body(serde_json::json!({
+                    "settings": {"number_of_shards": 3, "number_of_replicas": 0},
+                    "mappings": {"properties": {
+                        "tenant": {"type": "keyword"},
+                        "events": {"type": "nested", "properties": {
+                            "kind": {"type": "keyword"}, "state": {"type": "keyword"}
+                        }}
+                    }}
+                })),
+        );
+        assert_eq!(created.status, 200, "{:?}", created.body);
+        for (id, routing, source) in [
+            ("one", "tenant-a", serde_json::json!({"tenant": "a", "events": [
+                {"kind": "payment", "state": "blocked"},
+                {"kind": "cache", "state": "accepted"}
+            ]})),
+            ("two", "tenant-b", serde_json::json!({"tenant": "b", "events": [
+                {"kind": "payment", "state": "accepted"}
+            ]})),
+        ] {
+            let written = node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, &format!("/{index}/_doc/{id}?routing={routing}"))
+                    .with_json_body(source),
+            );
+            assert_eq!(written.status, 201, "{:?}", written.body);
+        }
+        let cases = [
+            (serde_json::json!({"bool": {"filter": {"term": {"tenant": "a"}}}}), 1),
+            (serde_json::json!({"bool": {"minimum_should_match": 1}}), 2),
+            (serde_json::json!({"match": {"tenant": "a"}}), 1),
+            (serde_json::json!({"nested": {"path": "events", "query": {"bool": {
+                "filter": [{"term": {"events.kind": "payment"}},
+                           {"term": {"events.state": "accepted"}}]
+            }}}}), 1),
+        ];
+        for refreshed in [false, true] {
+            if refreshed {
+                assert_eq!(node.handle_rest_request(RestRequest::new(
+                    RestMethod::Post, &format!("/{index}/_refresh"))).status, 200);
+            }
+            for (query, expected) in &cases {
+                let response = node.handle_rest_request(
+                    RestRequest::new(RestMethod::Post, &format!("/{index}/_count"))
+                        .with_json_body(serde_json::json!({"query": query})),
+                );
+                assert_eq!(response.status, 200, "{query}: {:?}", response.body);
+                assert_eq!(response.body["count"], if refreshed { *expected } else { 0 }, "{query}");
+            }
+        }
+        for routing in ["tenant-a", "tenant-b", "tenant-other-1"] {
+            let shard = node.index_document_shard(index, "", Some(routing));
+            let expected = [("one", "tenant-a"), ("two", "tenant-b")]
+                .into_iter()
+                .filter(|(id, route)| node.index_document_shard(index, id, Some(route)) == shard)
+                .count();
+            let response = node.handle_rest_request(RestRequest::new(
+                RestMethod::Get, &format!("/{index}/_count?routing={routing}")));
+            assert_eq!(response.status, 200, "{:?}", response.body);
+            assert_eq!(response.body["count"], expected);
+            assert_eq!(response.body["_shards"]["total"], 1);
+        }
     }
 
     #[test]
@@ -84879,6 +88036,75 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn fallback_bool_empty_clauses_and_should_defaults() {
+        let source = serde_json::json!({"tenant": "red"});
+        for body in [
+            serde_json::json!({}),
+            serde_json::json!({"minimum_should_match": 1}),
+            serde_json::json!({"minimum_should_match": "200%"}),
+            serde_json::json!({"must": [], "filter": [], "must_not": [], "should": []}),
+            serde_json::json!({"must": [], "should": [], "minimum_should_match": 2}),
+        ] {
+            let query = serde_json::json!({"bool": body});
+            assert!(validate_search_query_body(&query).is_none(), "{query}");
+            assert_eq!(evaluate_search_query_source(&source, "1", &query), Some((true, 1.0)), "{query}");
+        }
+        for required in [serde_json::json!({}), serde_json::json!({"must": []}),
+            serde_json::json!({"filter": []}), serde_json::json!({"must": [], "filter": []})] {
+            for minimum in [None, Some(serde_json::json!(0)), Some(serde_json::json!(1))] {
+                let mut body = required.clone();
+                body["should"] = serde_json::json!([{"term": {"tenant": "blue"}}]);
+                if let Some(minimum) = minimum {
+                    body["minimum_should_match"] = minimum;
+                }
+                let query = serde_json::json!({"bool": body});
+                assert_eq!(evaluate_search_query_source(&source, "1", &query), Some((false, 0.0)), "{query}");
+            }
+        }
+        let query = serde_json::json!({"bool": {
+            "must": {"match_all": {}}, "should": [{"term": {"tenant": "blue"}}]
+        }});
+        assert_eq!(evaluate_search_query_source(&source, "1", &query), Some((true, 1.0)));
+    }
+
+    #[test]
+    fn fallback_nested_keeps_full_paths_and_child_isolation() {
+        let source = serde_json::json!({"status": "parent", "events": [
+            {"status": "red", "weight": 1}, {"status": "blue", "weight": 2}, null
+        ]});
+        for (inner, expected) in [
+            (serde_json::json!({"term": {"events.status": "red"}}), true),
+            (serde_json::json!({"term": {"status": "red"}}), false),
+            (serde_json::json!({"term": {"status": "parent"}}), false),
+            (serde_json::json!({"term": {"other.status": "red"}}), false),
+            (serde_json::json!({"bool": {"must": [
+                {"term": {"events.status": "red"}}, {"term": {"events.weight": 2}}
+            ]}}), false),
+            (serde_json::json!({"bool": {"must_not": {"term": {"status": "red"}}}}), true),
+        ] {
+            let query = serde_json::json!({"nested": {"path": "events", "query": inner}});
+            assert_eq!(evaluate_search_query_source(&source, "1", &query).map(|v| v.0), Some(expected), "{query}");
+        }
+        let query = serde_json::json!({"nested": {"path": "events", "query": {"match_all": {}}}});
+        for source in [serde_json::json!({}), serde_json::json!({"events": null}),
+            serde_json::json!({"events": []}), serde_json::json!({"events": [null]})] {
+            assert_eq!(evaluate_search_query_source(&source, "1", &query), Some((false, 0.0)));
+        }
+        let source = serde_json::json!({"events": {"status": "red", "items": [{"code": "x"}]}});
+        let query = serde_json::json!({"nested": {"path": "events", "query": {
+            "nested": {"path": "events.items", "query": {"term": {"events.items.code": "x"}}}
+        }}});
+        assert_eq!(evaluate_search_query_source(&source, "1", &query).map(|v| v.0), Some(true));
+        let source = serde_json::json!({"events": [
+            {"items": [{"code": "x"}]}, {"items": [{"code": "y"}]}
+        ]});
+        let query = serde_json::json!({"nested": {"path": "events.items", "query": {
+            "term": {"events.items.code": "y"}
+        }}});
+        assert_eq!(evaluate_search_query_source(&source, "1", &query).map(|v| v.0), Some(true));
+    }
+
+    #[test]
     fn search_nested_accepts_options_and_combines_scores_by_mode() {
         let source = serde_json::json!({
             "events": [
@@ -84917,8 +88143,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                     "query": {
                         "bool": {
                             "must": [
-                                { "term": { "status": "timeout" } },
-                                { "rank_feature": { "field": "weight", "linear": {} } }
+                                { "term": { "events.status": "timeout" } },
+                                { "rank_feature": { "field": "events.weight", "linear": {} } }
                             ]
                         }
                     },
@@ -89844,7 +93070,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                             "path": "segments",
                             "query": {
                                 "knn": {
-                                    "embedding": {
+                                    "segments.embedding": {
                                         "vector": [1.0, 0.0, 0.0],
                                         "k": 2,
                                         "min_score": 0.5
@@ -89867,12 +93093,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                             "path": "segments",
                             "query": {
                                 "knn": {
-                                    "embedding": {
+                                    "segments.embedding": {
                                         "vector": [0.0, 1.0, 0.0],
                                         "k": 2,
                                         "min_score": 0.5,
                                         "filter": {
-                                            "term": { "tag": "keep" }
+                                            "term": { "segments.tag": "keep" }
                                         }
                                     }
                                 }
@@ -89893,12 +93119,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                             "path": "segments",
                             "query": {
                                 "knn": {
-                                    "embedding": {
+                                    "segments.embedding": {
                                         "vector": [0.0, 1.0, 0.0],
                                         "k": 2,
                                         "min_score": 0.5,
                                         "filter": {
-                                            "term": { "tag": "missing" }
+                                            "term": { "segments.tag": "missing" }
                                         }
                                     }
                                 }
@@ -89924,7 +93150,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                                         "path": "segments",
                                         "query": {
                                             "knn": {
-                                                "embedding": {
+                                                "segments.embedding": {
                                                     "vector": [1.0, 0.0, 0.0],
                                                     "k": 1,
                                                     "min_score": 0.5
@@ -89957,7 +93183,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                                         "path": "segments",
                                         "query": {
                                             "knn": {
-                                                "embedding": {
+                                                "segments.embedding": {
                                                     "vector": [1.0, 0.0, 0.0],
                                                     "k": 1,
                                                     "min_score": 0.5
@@ -89992,7 +93218,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                                         "path": "segments",
                                         "query": {
                                             "knn": {
-                                                "embedding": {
+                                                "segments.embedding": {
                                                     "vector": [1.0, 0.0, 0.0],
                                                     "k": 1,
                                                     "min_score": 0.5
@@ -93075,6 +96301,21 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             ),
         );
         assert_eq!(nested.status, 200);
+        assert_eq!(nested.body["hits"]["total"]["value"], 0);
+
+        let nested = node.handle_rest_request(
+            RestRequest::new(RestMethod::Post, "/logs-search-dsl-000001/_search").with_json_body(
+                serde_json::json!({
+                    "query": {
+                        "nested": {
+                            "path": "comments",
+                            "query": {"term": {"comments.author": "ann"}}
+                        }
+                    }
+                }),
+            ),
+        );
+        assert_eq!(nested.status, 200);
         assert_eq!(nested.body["hits"]["total"]["value"], 2);
 
         let nested_aggregation = node.handle_rest_request(
@@ -93944,9 +97185,9 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
                 .map(|hit| (hit["_id"].as_str().unwrap(), hit["sort"][0].clone()))
                 .collect::<Vec<_>>(),
             vec![
-                ("doc-b", serde_json::json!(5.5)),
-                ("doc-c", serde_json::json!(5.0)),
-                ("doc-a", serde_json::json!(2.0))
+                ("doc-b", serde_json::json!(6)),
+                ("doc-c", serde_json::json!(5)),
+                ("doc-a", serde_json::json!(2))
             ]
         );
 
@@ -97674,6 +100915,341 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn multi_field_mapping_lookup_resolves_fields_without_confusing_objects() {
+        let mappings = serde_json::json!({"properties": {
+            "value": {"type": "text", "fields": {"raw": {"type": "keyword", "ignore_above": 12}}},
+            "object": {"properties": {"value": {"type": "text", "fields": {
+                "raw": {"type": "keyword", "ignore_above": 24}
+            }}}}
+        }});
+        assert_eq!(lookup_mapping_property(&mappings, "value.raw"),
+            Some(&mappings["properties"]["value"]["fields"]["raw"]));
+        assert_eq!(lookup_mapping_property(&mappings, "object.value.raw"),
+            Some(&mappings["properties"]["object"]["properties"]["value"]["fields"]["raw"]));
+        assert!(lookup_mapping_property(&mappings, "value.absent").is_none());
+    }
+
+    #[test]
+    fn numeric_docvalue_fetch_flattens_sorts_and_preserves_duplicates_and_source() {
+        for (field_type, value, expected) in [
+            ("double", serde_json::json!([200.25, null, [0.25, 383.25], 200.25, 12.25]),
+                serde_json::json!([0.25, 12.25, 200.25, 200.25, 383.25])),
+            ("long", serde_json::json!([9007199254740993_i64, -1, 9007199254740992_i64]),
+                serde_json::json!([-1, 9007199254740992_i64, 9007199254740993_i64])),
+            ("double", serde_json::json!(12.5), serde_json::json!([12.5])),
+            ("double", serde_json::json!([null, [], [null]]), Value::Null),
+        ] {
+            let node = SteelNode::new(NodeInfo {
+                name: "numeric-docvalue-fetch".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+            });
+            assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put, "/numeric-fetch")
+                .with_json_body(serde_json::json!({"mappings": {"properties": {
+                    "value": {"type": field_type}
+                }}}))).status, 200);
+            let source = serde_json::json!({"value": value});
+            assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put,
+                "/numeric-fetch/_doc/one?refresh=true").with_json_body(source.clone())).status, 201);
+            for suffix in ["", "?pre_filter_shard_size=1"] {
+                let response = node.handle_rest_request(RestRequest::new(RestMethod::Post,
+                    format!("/numeric-fetch/_search{suffix}"))
+                    .with_json_body(serde_json::json!({"query": {"match_all": {}},
+                        "docvalue_fields": ["value"], "_source": true})));
+                assert_eq!(response.status, 200, "{}", response.body);
+                assert_eq!(response.body["hits"]["total"]["value"], 1);
+                let hit = &response.body["hits"]["hits"][0];
+                assert_eq!(hit["_source"], source);
+                assert_eq!(hit["fields"]["value"], expected, "{suffix}, {source}");
+                if expected.is_null() {
+                    assert!(hit["fields"].get("value").is_none());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn multi_field_sort_rejects_disabled_doc_values_in_both_search_paths() {
+        let node = SteelNode::new(NodeInfo {
+            name: "multi-no-doc-values".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put, "/multi-no-doc-values")
+            .with_json_body(serde_json::json!({"mappings": {"properties": {
+                "value": {"type": "text", "fields": {"raw": {"type": "keyword", "doc_values": false}}}
+            }}}))).status, 200);
+        for with_document in [false, true] {
+            if with_document {
+                assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put,
+                    "/multi-no-doc-values/_doc/one?refresh=true")
+                    .with_json_body(serde_json::json!({"value": "Alpha"}))).status, 201);
+            }
+            for suffix in ["", "?pre_filter_shard_size=1"] {
+                let response = node.handle_rest_request(RestRequest::new(RestMethod::Post,
+                    format!("/multi-no-doc-values/_search{suffix}"))
+                    .with_json_body(serde_json::json!({"sort": [{"value.raw": "asc"}]})));
+                assert_eq!(response.status, 400, "{}", response.body);
+                assert!(response.body["error"]["reason"].as_str().unwrap().contains("doc_values"), "{}", response.body);
+            }
+        }
+    }
+
+    #[test]
+    fn multi_field_fallback_evaluator_preserves_conversion_errors_in_recursive_queries() {
+        let mappings = serde_json::json!({"properties": {"value": {"type": "text", "fields": {
+            "raw": {"type": "keyword", "ignore_above": 8}
+        }}}});
+        let leaf = serde_json::json!({"term": {"value.raw": "Alpha"}});
+        for query in [leaf.clone(),
+            serde_json::json!({"bool": {"filter": [leaf.clone()]}}),
+            serde_json::json!({"bool": {"must_not": [leaf.clone()]}}),
+            serde_json::json!({"constant_score": {"filter": leaf.clone()}}),
+            serde_json::json!({"function_score": {"query": {"match_all": {}},
+                "functions": [{"filter": leaf.clone(), "weight": 2}]}}),
+            serde_json::json!({"dis_max": {"queries": [leaf]}}),
+        ] {
+            assert!(evaluate_search_query_source_checked(
+                &serde_json::json!({"value": {"invalid": true}}), "one", &query, &mappings).is_err(), "{query}");
+        }
+        let source = serde_json::json!({"value": ["Alpha", 12, null, "alpha beta"]});
+        for (query, expected) in [
+            (serde_json::json!({"term": {"value.raw": "Alpha"}}), true),
+            (serde_json::json!({"term": {"value.raw": "alpha"}}), false),
+            (serde_json::json!({"term": {"value.raw": {"value": "alpha", "case_insensitive": true}}}), true),
+            (serde_json::json!({"term": {"value.raw": "alpha beta"}}), false),
+            (serde_json::json!({"terms": {"value.raw": [12]}}), true),
+            (serde_json::json!({"exists": {"field": "value.raw"}}), true),
+        ] {
+            assert_eq!(evaluate_search_query_source_checked(&source, "one", &query, &mappings)
+                .unwrap().unwrap().0, expected, "{query}");
+        }
+    }
+
+    #[test]
+    fn multi_field_fallback_rest_queries_and_post_filters_use_indexed_values() {
+        let node = SteelNode::new(NodeInfo {
+            name: "multi-field-query".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put, "/multi-field-query")
+            .with_json_body(serde_json::json!({"mappings": {"properties": {
+                "value": {"type": "text", "fields": {"raw": {"type": "keyword", "ignore_above": 8}}}
+            }}}))).status, 200);
+        for (id, value) in [("one", "Alpha"), ("two", "alpha beta"), ("three", "beta")] {
+            assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put,
+                format!("/multi-field-query/_doc/{id}?refresh=true"))
+                .with_json_body(serde_json::json!({"value": value}))).status, 201);
+        }
+        for (query, expected) in [
+            (serde_json::json!({"term": {"value.raw": "Alpha"}}), vec!["one"]),
+            (serde_json::json!({"bool": {"filter": {"term": {"value.raw": "Alpha"}}}}), vec!["one"]),
+            (serde_json::json!({"term": {"value.raw": "alpha beta"}}), vec![]),
+            (serde_json::json!({"terms": {"value.raw": ["Alpha", "beta"]}}), vec!["one", "three"]),
+            (serde_json::json!({"exists": {"field": "value.raw"}}), vec!["one", "three"]),
+        ] {
+            for clause in ["query", "post_filter"] {
+                let response = node.handle_rest_request(RestRequest::new(RestMethod::Post,
+                    "/multi-field-query/_search?pre_filter_shard_size=1")
+                    .with_json_body(serde_json::json!({clause: query.clone()})));
+                assert_eq!(response.status, 200, "{}", response.body);
+                let hits = response.body["hits"]["hits"].as_array().unwrap();
+                let mut ids = hits.iter().map(|hit| hit["_id"].as_str().unwrap()).collect::<Vec<_>>();
+                ids.sort();
+                assert_eq!(ids, expected, "{clause}: {query}");
+                assert_eq!(response.body["hits"]["total"]["value"], expected.len());
+                for hit in hits {
+                    assert_eq!(hit["_source"].as_object().unwrap().len(), 1);
+                    assert_eq!(hit["_source"]["value"], if hit["_id"] == "one" { "Alpha" } else { "beta" });
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn multi_field_query_option_validation_is_scoped_and_runs_without_documents() {
+        let node = SteelNode::new(NodeInfo {
+            name: "multi-field-invalid".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put, "/multi-field-invalid")
+            .with_json_body(serde_json::json!({"mappings": {"properties": {
+                "value": {"type": "text", "fields": {"raw": {"type": "keyword"}}}
+            }}}))).status, 200);
+        // Inject unsupported metadata after creation to isolate search-time failure handling.
+        node.metadata_manifest_state.lock().unwrap()["indices"]["multi-field-invalid"]
+            ["mappings"]["properties"]["value"]["fields"]["raw"]["normalizer"] = Value::from("pending");
+        let leaf = serde_json::json!({"term": {"value.raw": "Alpha"}});
+        for query in [leaf.clone(), serde_json::json!({"bool": {"must": [
+            {"match_none": {}}, leaf.clone()
+        ]}}), serde_json::json!({"function_score": {"query": {"match_none": {}},
+            "functions": [{"filter": leaf, "weight": 2}]}})] {
+            for clause in ["query", "post_filter"] {
+                let response = node.handle_rest_request(RestRequest::new(RestMethod::Post,
+                    "/multi-field-invalid/_search?pre_filter_shard_size=1")
+                    .with_json_body(serde_json::json!({clause: query.clone()})));
+                assert_eq!(response.status, 400, "{}", response.body);
+                assert!(response.body["error"]["reason"].as_str().unwrap().contains("normalizer"));
+            }
+        }
+        let response = node.handle_rest_request(RestRequest::new(RestMethod::Post,
+            "/multi-field-invalid/_search?pre_filter_shard_size=1")
+            .with_json_body(serde_json::json!({"query": {"term": {"value": "Alpha"}}})));
+        assert_eq!(response.status, 200, "{}", response.body);
+        let mappings = node.metadata_manifest_state.lock().unwrap()["indices"]["multi-field-invalid"]
+            ["mappings"].clone();
+        assert!(validate_multi_field_query_options(&serde_json::json!({"script_score": {
+            "query": {"match_all": {}}, "script": {"source": "1", "params": {
+                "query": {"term": {"value.raw": "not a query"}}
+            }}
+        }}), &mappings).is_ok());
+        let encoded = base64::engine::general_purpose::STANDARD.encode(
+            serde_json::to_vec(&serde_json::json!({"exists": {"field": "value.raw"}})).unwrap());
+        assert!(validate_multi_field_query_options(&serde_json::json!({"wrapper": {"query": encoded}}),
+            &mappings).is_err());
+        let response = node.handle_rest_request(RestRequest::new(RestMethod::Post,
+            "/multi-field-invalid/_field_caps?fields=*")
+            .with_json_body(serde_json::json!({"index_filter": {"exists": {"field": "value.raw"}}})));
+        assert_eq!(response.status, 400, "{}", response.body);
+    }
+
+    #[test]
+    fn multi_field_sort_uses_parent_values_and_preserves_source() {
+        for dynamic in [false, true] {
+            let node = SteelNode::new(NodeInfo {
+                name: "multi-field-sort".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+            });
+            let mappings = if dynamic { serde_json::json!({}) } else {
+                serde_json::json!({"properties": {"value": {"type": "text", "fields": {
+                    "raw": {"type": "keyword"}
+                }}}})
+            };
+            assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put, "/multi-field-sort")
+                .with_json_body(serde_json::json!({"mappings": mappings}))).status, 200);
+            for (id, value) in [("a", "zulu"), ("z", "alpha")] {
+                assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put,
+                    format!("/multi-field-sort/_doc/{id}?refresh=true"))
+                    .with_json_body(serde_json::json!({"value": value}))).status, 201);
+            }
+            let subfield = if dynamic { "keyword" } else { "raw" };
+            let manifest = node.metadata_manifest_state.lock().unwrap();
+            assert_eq!(manifest["indices"]["multi-field-sort"]["mappings"]["properties"]
+                ["value"]["fields"][subfield]["type"], "keyword");
+            drop(manifest);
+            for suffix in ["", "?pre_filter_shard_size=1"] {
+                let response = node.handle_rest_request(RestRequest::new(RestMethod::Post,
+                    format!("/multi-field-sort/_search{suffix}"))
+                    .with_json_body(serde_json::json!({"query": {"match_all": {}},
+                        "sort": [{format!("value.{subfield}"): "asc"}]})));
+                assert_eq!(response.status, 200, "dynamic={dynamic}, {suffix}: {}", response.body);
+                let hits = response.body["hits"]["hits"].as_array().unwrap();
+                assert_eq!(hits.len(), 2);
+                for (hit, (id, value)) in hits.iter().zip([("z", "alpha"), ("a", "zulu")]) {
+                    assert_eq!(hit["_id"], id);
+                    assert_eq!(hit["sort"], serde_json::json!([value]));
+                    assert_eq!(hit["_source"], serde_json::json!({"value": value}));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn multi_field_mapped_sort_uses_one_value_rule_for_order_after_and_rendering() {
+        let mappings = std::collections::HashMap::from([("mapped-sort".to_string(),
+            serde_json::json!({"properties": {"value": {"type": "text", "fields": {
+                "raw": {"type": "keyword", "ignore_above": 8}
+            }}}}))]);
+        let hits = vec![
+            serde_json::json!({"_index": "mapped-sort", "_id": "a", "_seq_no": 0, "_source": {"value": "zulu"}}),
+            serde_json::json!({"_index": "mapped-sort", "_id": "z", "_seq_no": 1, "_source": {"value": "alpha"}}),
+            serde_json::json!({"_index": "mapped-sort", "_id": "array", "_seq_no": 2, "_source": {"value": ["beta", "Alpha", null, "ignored long value"]}}),
+            serde_json::json!({"_index": "mapped-sort", "_id": "missing", "_seq_no": 3, "_source": {"value": [null, "ignored long value"]}}),
+        ];
+        for (options, ids, values) in [
+            (serde_json::json!({"order": "asc"}), vec!["array", "z", "a", "missing"], serde_json::json!(["Alpha", "alpha", "zulu", null])),
+            (serde_json::json!({"order": "desc"}), vec!["a", "array", "z", "missing"], serde_json::json!(["zulu", "beta", "alpha", null])),
+            (serde_json::json!({"order": "asc", "mode": "max"}), vec!["z", "array", "a", "missing"], serde_json::json!(["alpha", "beta", "zulu", null])),
+            (serde_json::json!({"order": "asc", "missing": "_first"}), vec!["missing", "array", "z", "a"], serde_json::json!([null, "Alpha", "alpha", "zulu"])),
+            (serde_json::json!({"order": "asc", "missing": ""}), vec!["missing", "array", "z", "a"], serde_json::json!(["", "Alpha", "alpha", "zulu"])),
+        ] {
+            let sort = MappedSearchSort::new(&serde_json::json!([{"value.raw": options}]), &mappings).unwrap().unwrap();
+            let mut ordered = sort.order_hits(hits.clone()).unwrap();
+            sort.append_values(&mut ordered, &mappings).unwrap();
+            assert_eq!(ordered.iter().map(|hit| hit["_id"].as_str().unwrap()).collect::<Vec<_>>(), ids);
+            assert_eq!(ordered.iter().map(|hit| hit["sort"][0].clone()).collect::<Vec<_>>(), *values.as_array().unwrap());
+            for hit in &ordered {
+                assert_eq!(hit["_source"], hits.iter().find(|original| original["_id"] == hit["_id"]).unwrap()["_source"]);
+            }
+            for position in 0..ordered.len() {
+                let after = sort.after(ordered.clone(), ordered[position]["sort"].as_array().unwrap()).unwrap();
+                assert_eq!(after.iter().map(|hit| hit["_id"].as_str().unwrap()).collect::<Vec<_>>(), ids[position + 1..]);
+            }
+        }
+    }
+
+    #[test]
+    fn multi_field_mapped_sort_rest_pages_explicit_and_dynamic_values() {
+        for dynamic in [false, true] {
+            let node = SteelNode::new(NodeInfo {
+                name: "mapped-sort-pages".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+            });
+            let mappings = if dynamic { serde_json::json!({}) } else {
+                serde_json::json!({"properties": {"value": {"type": "text", "fields": {
+                    "raw": {"type": "keyword"}
+                }}}})
+            };
+            assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put, "/mapped-sort-pages")
+                .with_json_body(serde_json::json!({"mappings": mappings}))).status, 200);
+            for (id, value) in [("a", "zulu"), ("z", "alpha")] {
+                assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put,
+                    format!("/mapped-sort-pages/_doc/{id}?refresh=true"))
+                    .with_json_body(serde_json::json!({"value": value}))).status, 201);
+            }
+            let field = if dynamic { "value.keyword" } else { "value.raw" };
+            // The default/native mapping-validation red test remains separate until engine sorting is connected.
+            let mut body = serde_json::json!({"sort": [{field: {"order": "asc", "unmapped_type": "keyword"}}], "size": 1});
+            for (id, value) in [("z", "alpha"), ("a", "zulu")] {
+                let response = node.handle_rest_request(RestRequest::new(RestMethod::Post,
+                    "/mapped-sort-pages/_search?pre_filter_shard_size=1").with_json_body(body.clone()));
+                assert_eq!(response.status, 200, "dynamic={dynamic}: {}", response.body);
+                let hits = response.body["hits"]["hits"].as_array().unwrap();
+                assert_eq!(hits.len(), 1);
+                assert_eq!(hits[0]["_id"], id);
+                assert_eq!(hits[0]["sort"], serde_json::json!([value]));
+                assert_eq!(hits[0]["_source"], serde_json::json!({"value": value}));
+                assert_eq!(response.body["hits"]["total"]["value"], 2);
+                body["search_after"] = hits[0]["sort"].clone();
+            }
+        }
+    }
+
+    #[test]
+    fn multi_field_mapped_sort_keeps_index_options_and_errors_separate() {
+        let mapping = serde_json::json!({"properties": {"object": {"properties": {
+            "value": {"type": "text", "fields": {"raw": {"type": "keyword", "ignore_above": 8}}}
+        }}}});
+        let mut narrow = mapping.clone();
+        narrow["properties"]["object"]["properties"]["value"]["fields"]["raw"]["ignore_above"] = Value::from(2);
+        let mut mappings = std::collections::HashMap::from([("wide".to_string(), mapping), ("narrow".to_string(), narrow)]);
+        let sort_json = serde_json::json!([{"object.value.raw": "asc"}]);
+        let sort = MappedSearchSort::new(&sort_json, &mappings).unwrap().unwrap();
+        for (index, expected) in [("wide", serde_json::json!(["Beta"])), ("narrow", serde_json::json!([null]))] {
+            let hit = serde_json::json!({"_index": index, "_source": {"object": [{"value": "Beta"}]}});
+            assert_eq!(sort.values(&hit).unwrap(), *expected.as_array().unwrap());
+        }
+        let invalid = serde_json::json!({"_index": "wide", "_source": {"object": {"value": {"invalid": true}}}});
+        assert!(sort.order_hits(vec![invalid]).is_err());
+        assert!(MappedSearchSort::new(&serde_json::json!([{"object.value.raw": {"mode": "avg"}}]), &mappings).is_err());
+        let hit = serde_json::json!({"_index": "wide", "_source": {"object": [{"value": ["Beta", "Zulu"]}]}});
+        for (mode, expected) in [("MIN", "Beta"), ("mIn", "Beta"), ("MAX", "Zulu"), ("mAx", "Zulu")] {
+            let sort = MappedSearchSort::new(&serde_json::json!([{"object.value.raw": {"mode": mode}}]),
+                &mappings).unwrap().unwrap();
+            assert_eq!(sort.values(&hit).unwrap(), vec![Value::from(expected)]);
+        }
+        for numeric_type in ["long", "double", "date", "date_nanos"] {
+            assert!(MappedSearchSort::new(&serde_json::json!([{"object.value.raw": {
+                "numeric_type": numeric_type
+            }}]), &mappings).is_err());
+        }
+        mappings.get_mut("wide").unwrap()["properties"]["object"]["properties"]["value"]["fields"]["raw"]["normalizer"] = Value::from("pending");
+        assert!(MappedSearchSort::new(&sort_json, &mappings).is_err());
+    }
+
+    #[test]
     fn root_alias_route_supports_global_get_and_put_contracts() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
@@ -101198,6 +104774,12 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             ),
         );
         assert_eq!(create.status, 200);
+        let visible = node.handle_rest_request(
+            RestRequest::new(RestMethod::Put,
+                "/logs-unrefreshed-restore-source/_doc/doc-z?refresh=true")
+                .with_json_body(serde_json::json!({"tenant": "tenant-b"})),
+        );
+        assert_eq!(visible.status, 201);
         let index = node.handle_rest_request(
             RestRequest::new(
                 RestMethod::Put,
@@ -101245,6 +104827,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(before_refresh.status, 200);
         assert_eq!(before_refresh.body["hits"]["total"]["value"], 0);
+        let count_before = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get, "/restored-unrefreshed-restore-source/_count"));
+        assert_eq!(count_before.status, 200);
+        assert_eq!(count_before.body["count"], 1);
 
         let refresh = node.handle_rest_request(RestRequest::new(
             RestMethod::Post,
@@ -101260,6 +104846,10 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         );
         assert_eq!(after_refresh.status, 200);
         assert_eq!(after_refresh.body["hits"]["total"]["value"], 1);
+        let count_after = node.handle_rest_request(RestRequest::new(
+            RestMethod::Get, "/restored-unrefreshed-restore-source/_count"));
+        assert_eq!(count_after.status, 200);
+        assert_eq!(count_after.body["count"], 2);
         assert_eq!(
             after_refresh.body["hits"]["hits"][0]["_id"],
             Value::String("doc-1".to_string())
@@ -103275,6 +106865,475 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn alias_routing_conflicts_preserve_documents_and_sequences() {
+        let node = SteelNode::new(NodeInfo {
+            name: "routing-conflict".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put,
+            "/routing-conflict").with_json_body(serde_json::json!({"settings": {"number_of_shards": 3},
+                "aliases": {"routing-conflict-alias": {"index_routing": "tenant"}}}))).status, 200);
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put,
+            "/routing-conflict/_doc/one?routing=tenant&refresh=true")
+            .with_json_body(serde_json::json!({"value": "seed"}))).status, 201);
+        let sequences = node.next_seq_no_by_index.lock().unwrap().clone();
+        let global_sequence = *node.next_seq_no.lock().unwrap();
+        let documents = node.documents_state.lock().unwrap().clone();
+        let manifest = node.metadata_manifest_state.lock().unwrap().clone();
+        for (method, route, routing, body) in [
+            (RestMethod::Put, "_doc", "other", Some(serde_json::json!({"unexpected": true}))),
+            (RestMethod::Put, "_create", "other", Some(serde_json::json!({"unexpected": true}))),
+            (RestMethod::Post, "_update", "other", Some(serde_json::json!({"doc": {"unexpected": true}}))),
+            (RestMethod::Delete, "_doc", "other", None),
+            (RestMethod::Get, "_doc", "other", None),
+            (RestMethod::Get, "_source", "other", None),
+            (RestMethod::Get, "_doc", "", None),
+            (RestMethod::Get, "_source", "", None),
+        ] {
+            let mut request = RestRequest::new(method,
+                format!("/routing-conflict-alias/{route}/one?routing={routing}"));
+            if let Some(body) = body { request = request.with_json_body(body); }
+            let response = node.handle_rest_request(request);
+            assert_eq!(response.status, 400, "{route}, routing={routing}");
+            assert_eq!(response.body["error"]["type"], "illegal_argument_exception");
+            assert_eq!(response.body["error"]["reason"], format!(
+                "Alias [routing-conflict-alias] has index routing associated with it [tenant], and was provided with routing value [{routing}], rejecting operation"));
+            assert_eq!(*node.next_seq_no_by_index.lock().unwrap(), sequences);
+            assert_eq!(*node.next_seq_no.lock().unwrap(), global_sequence);
+            assert_eq!(*node.metadata_manifest_state.lock().unwrap(), manifest);
+            let current = node.documents_state.lock().unwrap();
+            assert_eq!(current.len(), documents.len());
+            assert!(documents.iter().all(|(key, old)| Arc::ptr_eq(&current[key], old)));
+        }
+        let mut lines = Vec::new();
+        for action in ["index", "create", "update", "delete"] {
+            lines.push(serde_json::json!({action: {"_index": "routing-conflict-alias", "_id": "one", "routing": "other"}}).to_string());
+            if action != "delete" {
+                lines.push(if action == "update" { serde_json::json!({"doc": {"unexpected": true}}) }
+                    else { serde_json::json!({"unexpected": true}) }.to_string());
+            }
+        }
+        lines.push(serde_json::json!({"index": {"_index": "routing-conflict-alias", "_id": "good", "routing": "tenant"}}).to_string());
+        lines.push(serde_json::json!({"value": "good"}).to_string());
+        let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_bulk")
+            .with_body(format!("{}\n", lines.join("\n")).into_bytes()));
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body["errors"], true);
+        let items = response.body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 5);
+        for (item, action) in items.iter().zip(["index", "create", "update", "delete"]) {
+            assert_eq!(item[action]["status"], 400);
+            assert_eq!(item[action]["_index"], "routing-conflict");
+            assert_eq!(item[action]["error"]["type"], "illegal_argument_exception");
+        }
+        assert_eq!(items[4]["index"]["status"], 201);
+        assert_eq!(node.next_seq_no_by_index.lock().unwrap()["routing-conflict"], sequences["routing-conflict"] + 1);
+        assert_eq!(*node.next_seq_no.lock().unwrap(), global_sequence + 1);
+        assert_eq!(node.documents_state.lock().unwrap().len(), documents.len() + 1);
+    }
+
+    #[test]
+    fn alias_routing_uses_selected_write_index_and_rejects_ambiguous_reads() {
+        let node = SteelNode::new(NodeInfo {
+            name: "routing-selection".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        for (index, routing, writable) in [("route-a", "old", false), ("route-b", "tenant", true)] {
+            assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put, format!("/{index}"))
+                .with_json_body(serde_json::json!({"aliases": {"route-write": {
+                    "index_routing": routing, "is_write_index": writable}}}))).status, 200);
+        }
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put, "/route-write/_doc/one")
+            .with_json_body(serde_json::json!({"value": "selected"}))).status, 201);
+        assert!(node.documents_state.lock().unwrap().contains_key("route-b:one:tenant"));
+        let read = node.handle_rest_request(RestRequest::new(RestMethod::Get, "/route-write/_doc/one"));
+        assert_eq!(read.status, 400);
+        assert_eq!(read.body["error"]["reason"], "alias [route-write] has more than one index associated with it [route-a, route-b], can't execute a single index op");
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Delete,
+            "/route-write/_doc/one?routing=old")).status, 400);
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Delete,
+            "/route-write/_doc/one?routing=tenant")).status, 200);
+        assert!(!node.documents_state.lock().unwrap().contains_key("route-b:one:tenant"));
+    }
+
+    #[test]
+    fn alias_routing_keeps_write_and_search_defaults_independent() {
+        let node = SteelNode::new(NodeInfo {
+            name: "routing-defaults".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put,
+            "/routing-defaults").with_json_body(serde_json::json!({"aliases": {
+                "shared-route": {"routing": "common"},
+                "write-route": {"index_routing": "writes"},
+                "search-route": {"search_routing": "reads"},
+                "split-route": {"index_routing": "writes", "search_routing": "reads"}
+            }}))).status, 200);
+        for (alias, write, search) in [
+            ("shared-route", Some("common"), Some("common")),
+            ("write-route", Some("writes"), None),
+            ("search-route", None, Some("reads")),
+            ("split-route", Some("writes"), Some("reads")),
+            ("routing-defaults", None, None),
+        ] {
+            assert_eq!(node.resolve_alias_write_routing(alias).as_deref(), write, "{alias}");
+            assert_eq!(node.resolve_alias_read_routing(alias).as_deref(), write, "{alias}");
+            assert_eq!(node.resolve_alias_search_routing(alias).as_deref(), search, "{alias}");
+        }
+    }
+
+    #[test]
+    fn empty_write_routing_uses_default_or_alias_routing() {
+        for shards in [1, 3] {
+            for alias in [false, true] {
+                for mode in ["index", "create", "upsert"] {
+                    let node = SteelNode::new(NodeInfo {
+                        name: "empty-write".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+                    });
+                    assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put,
+                        "/empty-write").with_json_body(serde_json::json!({
+                            "settings": {"number_of_shards": shards},
+                            "aliases": {"empty-write-alias": {"routing": "tenant"}}
+                        }))).status, 200);
+                    let target = if alias { "empty-write-alias" } else { "empty-write" };
+                    let route = match mode { "create" => "_create", "upsert" => "_update", _ => "_doc" };
+                    let source = serde_json::json!({"value": "visible"});
+                    let response = node.handle_rest_request(RestRequest::new(
+                        if mode == "upsert" { RestMethod::Post } else { RestMethod::Put },
+                        format!("/{target}/{route}/one?routing=&refresh=true"),
+                    ).with_json_body(if mode == "upsert" {
+                        serde_json::json!({"doc": source, "doc_as_upsert": true})
+                    } else { source }));
+                    assert_eq!(response.status, 201, "{mode}, shards={shards}, alias={alias}");
+                    let expected_routing = if alias { Some("tenant") } else { None };
+                    let key = format!("empty-write:one:{}", expected_routing.unwrap_or_default());
+                    {
+                        let docs = node.documents_state.lock().unwrap();
+                        let record = docs.get(&key).unwrap_or_else(|| panic!(
+                            "write did not use key {key}: mode={mode}, shards={shards}, alias={alias}, actual={:?}",
+                            docs.keys().collect::<Vec<_>>()));
+                        assert_eq!(record.routing.as_deref(), expected_routing,
+                            "empty write routing must be normalized before alias resolution: {mode}");
+                    }
+                    assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Get,
+                        format!("/{target}/_doc/one"))).status, 200);
+                    assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Delete,
+                        format!("/{target}/_doc/one?routing="))).status, 200);
+                    refresh_test_index(&node, "empty-write");
+                    for suffix in ["", "?ignore_unavailable=false"] {
+                        let visible = node.handle_rest_request(RestRequest::new(RestMethod::Post,
+                            format!("/empty-write/_search{suffix}"))
+                            .with_json_body(serde_json::json!({"query": {"match_all": {}}})));
+                        assert_eq!(visible.status, 200);
+                        assert_eq!(visible.body["hits"]["total"]["value"], 0,
+                            "delete left a searchable document: {mode}, {shards}, {alias}, {suffix}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn refresh_delete_replay_failure_preserves_pending_work() {
+        for path in ["/_refresh", "/delete-replay/_refresh"] {
+            let node = SteelNode::new(NodeInfo {
+                name: "delete-replay".to_string(),
+                version: OPENSEARCH_3_7_0_TRANSPORT,
+            });
+            assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put,
+                "/delete-replay")).status, 200);
+            assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put,
+                "/delete-replay/_doc/one?refresh=true")
+                .with_json_body(serde_json::json!({"value": "old"}))).status, 201);
+            assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Delete,
+                "/delete-replay/_doc/one")).status, 200);
+            node.native_engine.delete_index("delete-replay").unwrap();
+            for _ in 0..2 {
+                let response = node.handle_rest_request(RestRequest::new(RestMethod::Post, path));
+                assert_eq!(response.status, 404, "failed native replay must not report success: {path}");
+                assert_eq!(response.body["error"]["type"], "index_not_found_exception");
+                assert!(node.pending_native_deletes.lock().unwrap()["delete-replay"]
+                    .contains_key("delete-replay:one:"), "retry must retain the failed deletion");
+            }
+        }
+    }
+
+    #[test]
+    fn refresh_delete_replay_skips_replaced_generations() {
+        for shards in [1, 3] {
+            for routing in ["", "tenant"] {
+                for mutation in ["new-document", "new-delete", "index-recreate"] {
+                    let node = SteelNode::new(NodeInfo {
+                        name: "delete-identity".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+                    });
+                    let create = RestRequest::new(RestMethod::Put, "/delete-identity")
+                        .with_json_body(serde_json::json!({"settings": {"number_of_shards": shards}}));
+                    assert_eq!(node.handle_rest_request(create.clone()).status, 200);
+                    let routing_option = if routing.is_empty() { String::new() } else { format!("&routing={routing}") };
+                    let put = |value: &str| RestRequest::new(RestMethod::Put,
+                        format!("/delete-identity/_doc/one?refresh=true{routing_option}"))
+                        .with_json_body(serde_json::json!({"value": value}));
+                    let delete = || RestRequest::new(RestMethod::Delete,
+                        if routing.is_empty() { "/delete-identity/_doc/one".to_string() }
+                        else { format!("/delete-identity/_doc/one?routing={routing}") });
+                    assert_eq!(node.handle_rest_request(put("old")).status, 201);
+                    assert_eq!(node.handle_rest_request(delete()).status, 200);
+                    let key = format!("delete-identity:one:{routing}");
+                    let captured = node.pending_native_deletes.lock().unwrap()["delete-identity"][&key].clone();
+                    if mutation == "index-recreate" {
+                        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Delete,
+                            "/delete-identity")).status, 200);
+                        assert_eq!(node.handle_rest_request(create).status, 200);
+                    }
+                    assert_eq!(node.handle_rest_request(put("new")).status, 201);
+                    let replacement = if mutation != "new-document" {
+                        assert_eq!(node.handle_rest_request(delete()).status, 200);
+                        Some(node.pending_native_deletes.lock().unwrap()["delete-identity"][&key].clone())
+                    } else { None };
+                    if mutation == "index-recreate" {
+                        assert_eq!(captured.seq_no, replacement.as_ref().unwrap().seq_no,
+                            "recreated index must exercise reused sequence metadata");
+                    }
+                    let native_before = node.native_engine.get_document(os_engine::GetDocumentRequest {
+                        index: "delete-identity".to_string(), id: "one".to_string(),
+                    }).unwrap();
+                    node.replay_pending_native_delete("delete-identity", &key, &captured).unwrap();
+                    if routing.is_empty() {
+                        let native = node.native_engine.get_document(os_engine::GetDocumentRequest {
+                            index: "delete-identity".to_string(), id: "one".to_string(),
+                        }).unwrap();
+                        assert_eq!(native, native_before, "old replay changed native state: {mutation}, {shards}");
+                    }
+                    if let Some(replacement) = replacement {
+                        assert!(Arc::ptr_eq(&node.pending_native_deletes.lock().unwrap()
+                            ["delete-identity"][&key].identity, &replacement.identity));
+                    }
+                    let search = || RestRequest::new(RestMethod::Post, "/delete-identity/_search")
+                        .with_json_body(serde_json::json!({"query": {"match_all": {}}}));
+                    let visible = node.handle_rest_request(search());
+                    assert_eq!(visible.status, 200);
+                    assert_eq!(visible.body["hits"]["total"]["value"], 1,
+                        "old deletion changed the new native document: {mutation}, {shards}, {routing}");
+                    assert_eq!(visible.body["hits"]["hits"][0]["_source"]["value"], "new");
+                    refresh_test_index(&node, "delete-identity");
+                    for suffix in ["", "?ignore_unavailable=false"] {
+                        let visible = node.handle_rest_request(RestRequest::new(RestMethod::Post,
+                            format!("/delete-identity/_search{suffix}"))
+                            .with_json_body(serde_json::json!({"query": {"match_all": {}}})));
+                        assert_eq!(visible.status, 200);
+                        assert_eq!(visible.body["hits"]["total"]["value"],
+                            if mutation == "new-document" { 1 } else { 0 },
+                            "mutation={mutation}, shards={shards}, routing={routing}, suffix={suffix}, body={}",
+                            visible.body);
+                    }
+                    assert!(!node.pending_native_deletes.lock().unwrap().contains_key("delete-identity"));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn refresh_delete_replay_accepts_an_already_applied_deletion() {
+        let node = SteelNode::new(NodeInfo {
+            name: "delete-idempotent".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put,
+            "/delete-idempotent")).status, 200);
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put,
+            "/delete-idempotent/_doc/one?refresh=true")
+            .with_json_body(serde_json::json!({"value": "old"}))).status, 201);
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Delete,
+            "/delete-idempotent/_doc/one")).status, 200);
+        node.native_engine.delete_document_with_routing(DeleteDocumentRequest {
+            index: "delete-idempotent".to_string(), id: "one".to_string(),
+        }, None).unwrap();
+        refresh_test_index(&node, "delete-idempotent");
+        assert!(!node.pending_native_deletes.lock().unwrap().contains_key("delete-idempotent"));
+        for suffix in ["", "?ignore_unavailable=false"] {
+            let visible = node.handle_rest_request(RestRequest::new(RestMethod::Post,
+                format!("/delete-idempotent/_search{suffix}"))
+                .with_json_body(serde_json::json!({"query": {"match_all": {}}})));
+            assert_eq!(visible.status, 200);
+            assert_eq!(visible.body["hits"]["total"]["value"], 0);
+        }
+    }
+
+    #[test]
+    fn refresh_delete_replay_preserves_later_deletes_and_staged_writes() {
+        let node = SteelNode::new(NodeInfo {
+            name: "delete-boundary".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put,
+            "/delete-boundary")).status, 200);
+        for id in ["one", "later"] {
+            assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put,
+                format!("/delete-boundary/_doc/{id}?refresh=true"))
+                .with_json_body(serde_json::json!({"value": id}))).status, 201);
+        }
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Delete,
+            "/delete-boundary/_doc/one")).status, 200);
+        let key = "delete-boundary:one:";
+        let captured = node.pending_native_deletes.lock().unwrap()["delete-boundary"][key].clone();
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Delete,
+            "/delete-boundary/_doc/later")).status, 200);
+        let later = node.pending_native_deletes.lock().unwrap()["delete-boundary"]
+            ["delete-boundary:later:"].clone();
+
+        // Model a write staged in runtime before its pending-delete cleanup and native sync.
+        let mut staged = captured.document.clone();
+        staged.source = serde_json::json!({"value": "staged"});
+        node.documents_state.lock().unwrap().insert(key.to_string(), Arc::new(staged));
+        node.replay_pending_native_delete("delete-boundary", key, &captured).unwrap();
+        assert!(Arc::ptr_eq(&node.pending_native_deletes.lock().unwrap()
+            ["delete-boundary"][key].identity, &captured.identity));
+        assert_eq!(node.native_engine.get_document(os_engine::GetDocumentRequest {
+            index: "delete-boundary".to_string(), id: "one".to_string(),
+        }).unwrap().unwrap().source["value"], "one");
+        node.documents_state.lock().unwrap().remove(key);
+
+        node.replay_pending_native_delete("delete-boundary", key, &captured).unwrap();
+        {
+            let pending = node.pending_native_deletes.lock().unwrap();
+            assert!(!pending["delete-boundary"].contains_key(key));
+            assert!(Arc::ptr_eq(&pending["delete-boundary"]["delete-boundary:later:"].identity,
+                &later.identity));
+        }
+        refresh_test_index(&node, "delete-boundary");
+        assert!(!node.pending_native_deletes.lock().unwrap().contains_key("delete-boundary"));
+    }
+
+    #[test]
+    fn refresh_completion_keeps_later_runtime_writes_pending() {
+        for shards in [1, 3] {
+            let node = SteelNode::new(NodeInfo {
+                name: "refresh-boundary".to_string(),
+                version: OPENSEARCH_3_7_0_TRANSPORT,
+            });
+            assert_eq!(node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/refresh-boundary").with_json_body(
+                    serde_json::json!({"settings": {"number_of_shards": shards}})),
+            ).status, 200);
+            assert_eq!(node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/refresh-boundary/_doc/before")
+                    .with_json_body(serde_json::json!({"value": "before"})),
+            ).status, 201);
+            let indices = vec!["refresh-boundary".to_string()];
+            let captured = node.capture_runtime_refresh_documents(&indices);
+            node.replay_deferred_native_writes_before_refresh(&indices).unwrap();
+            node.native_engine.refresh(RefreshRequest { indices: indices.clone() }).unwrap();
+
+            // This write arrives after engine publication but before REST completion.
+            assert_eq!(node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, "/refresh-boundary/_doc/after")
+                    .with_json_body(serde_json::json!({"value": "after"})),
+            ).status, 201);
+            node.mark_runtime_documents_refreshed(captured);
+            {
+                let docs = node.documents_state.lock().unwrap();
+                assert!(docs["refresh-boundary:before:"].refreshed);
+                assert!(!docs["refresh-boundary:after:"].refreshed,
+                    "a write after engine publication must remain pending; shards={shards}");
+            }
+            assert!(node.unrefreshed_document_keys.lock().unwrap()["refresh-boundary"]
+                .contains("refresh-boundary:after:"));
+            for suffix in ["", "?ignore_unavailable=false"] {
+                let result = node.handle_rest_request(RestRequest::new(RestMethod::Post,
+                    format!("/refresh-boundary/_search{suffix}"))
+                    .with_json_body(serde_json::json!({"query": {"match_all": {}}})));
+                assert_eq!(result.status, 200);
+                assert_eq!(result.body["hits"]["total"]["value"], 1,
+                    "later write is not published: shards={shards}, suffix={suffix}");
+            }
+            refresh_test_index(&node, "refresh-boundary");
+            assert!(node.documents_state.lock().unwrap()["refresh-boundary:after:"].refreshed);
+            for suffix in ["", "?ignore_unavailable=false"] {
+                let result = node.handle_rest_request(RestRequest::new(RestMethod::Post,
+                    format!("/refresh-boundary/_search{suffix}"))
+                    .with_json_body(serde_json::json!({"query": {"match_all": {}}})));
+                assert_eq!(result.status, 200);
+                assert_eq!(result.body["hits"]["total"]["value"], 2);
+            }
+        }
+    }
+
+    #[test]
+    fn refresh_completion_does_not_clear_replaced_runtime_generations() {
+        for mutation in ["update", "delete-recreate", "index-recreate"] {
+            let node = SteelNode::new(NodeInfo {
+                name: "refresh-generation".to_string(),
+                version: OPENSEARCH_3_7_0_TRANSPORT,
+            });
+            assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put,
+                "/refresh-generation")).status, 200);
+            assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put,
+                "/refresh-generation/_doc/one")
+                .with_json_body(serde_json::json!({"value": "old"}))).status, 201);
+            let indices = vec!["refresh-generation".to_string()];
+            let captured = node.capture_runtime_refresh_documents(&indices);
+            node.replay_deferred_native_writes_before_refresh(&indices).unwrap();
+            node.native_engine.refresh(RefreshRequest { indices }).unwrap();
+            if mutation == "delete-recreate" {
+                assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Delete,
+                    "/refresh-generation/_doc/one")).status, 200);
+            } else if mutation == "index-recreate" {
+                assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Delete,
+                    "/refresh-generation")).status, 200);
+                assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put,
+                    "/refresh-generation")).status, 200);
+            }
+            assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put,
+                "/refresh-generation/_doc/one")
+                .with_json_body(serde_json::json!({"value": "new"}))).status,
+                if mutation == "update" { 200 } else { 201 });
+            node.mark_runtime_documents_refreshed(captured);
+            let key = "refresh-generation:one:";
+            assert!(!node.documents_state.lock().unwrap()[key].refreshed, "{mutation}");
+            assert!(node.unrefreshed_document_keys.lock().unwrap()["refresh-generation"].contains(key));
+            assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Post, "/_refresh")).status, 200);
+            assert!(node.documents_state.lock().unwrap()[key].refreshed);
+            for suffix in ["", "?ignore_unavailable=false"] {
+                let result = node.handle_rest_request(RestRequest::new(RestMethod::Post,
+                    format!("/refresh-generation/_search{suffix}"))
+                    .with_json_body(serde_json::json!({"query": {"match_all": {}}})));
+                assert_eq!(result.status, 200);
+                assert_eq!(result.body["hits"]["total"]["value"], 1);
+                assert_eq!(result.body["hits"]["hits"][0]["_source"]["value"], "new");
+            }
+        }
+    }
+
+    #[test]
+    fn refresh_completion_uses_copy_on_write_only_for_shared_documents() {
+        for keep_reader in [false, true] {
+            let node = SteelNode::new(NodeInfo {
+                name: "refresh-cow".to_string(),
+                version: OPENSEARCH_3_7_0_TRANSPORT,
+            });
+            assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put,
+                "/refresh-cow")).status, 200);
+            let source = serde_json::json!({"value": "unchanged", "numbers": vec![42; 384]});
+            assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put,
+                "/refresh-cow/_doc/one").with_json_body(source.clone())).status, 201);
+            let key = "refresh-cow:one:";
+            let (original_address, reader) = {
+                let docs = node.documents_state.lock().unwrap();
+                let document = &docs[key];
+                (Arc::as_ptr(document), keep_reader.then(|| Arc::clone(document)))
+            };
+            refresh_test_index(&node, "refresh-cow");
+            let docs = node.documents_state.lock().unwrap();
+            let current = &docs[key];
+            assert!(current.refreshed);
+            assert_eq!(current.source, source);
+            if let Some(reader) = reader {
+                assert!(!Arc::ptr_eq(current, &reader));
+                assert!(!reader.refreshed, "an existing reader must retain its snapshot");
+                assert_eq!(reader.source, source);
+            } else {
+                assert_eq!(Arc::as_ptr(current), original_address,
+                    "the refresh capture must not force a full copy of an otherwise unique document");
+            }
+        }
+    }
+
+    #[test]
     fn refresh_routes_only_rewrite_unrefreshed_runtime_documents() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
@@ -103859,6 +107918,141 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
     }
 
     #[test]
+    fn put_external_versions_reach_the_native_published_snapshot() {
+        fn assert_http(node: &SteelNode, expected: Option<&os_engine::GetDocumentResponse>) {
+            let single = node.handle_rest_request(RestRequest::new(RestMethod::Post,
+                "/native-version-contract/_termvectors/one?routing=tenant&realtime=false"
+            ).with_json_body(serde_json::json!({"fields": ["body"]})));
+            let multi = node.handle_rest_request(RestRequest::new(RestMethod::Post,
+                "/native-version-contract/_mtermvectors?realtime=false"
+            ).with_json_body(serde_json::json!({"docs": [{"_id": "one", "routing": "tenant"}]})));
+            assert_eq!(single.status, 200);
+            assert_eq!(multi.status, 200);
+            for body in [&single.body, &multi.body["docs"][0]] {
+                assert_eq!(body["found"], expected.is_some());
+                assert_eq!(body["_version"], expected.map_or(0, |doc| doc.metadata.version));
+                assert!(body["took"].as_u64().is_some());
+                if let Some(document) = expected {
+                    assert!(body["term_vectors"]["body"]["terms"]
+                        .get(document.source["body"].as_str().unwrap()).is_some());
+                }
+            }
+        }
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".to_string(), version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        assert_eq!(node.handle_rest_request(
+            RestRequest::new(RestMethod::Put, "/native-version-contract")
+                .with_json_body(serde_json::json!({"settings": {"number_of_shards": 3}})),
+        ).status, 200);
+        let invalid = node.handle_rest_request(RestRequest::new(RestMethod::Put,
+            "/native-version-contract/_doc/one?routing=tenant&version=-1&version_type=external"
+        ).with_json_body(serde_json::json!({"body": "invalid"})));
+        assert_eq!(invalid.status, 400);
+        for (version, text, expected_status) in [(0, "zero", 201), (7, "first", 200), (42, "replacement", 200)] {
+            let before = node.native_engine.get_refreshed_document_with_routing(
+                os_engine::GetDocumentRequest { index: "native-version-contract".into(), id: "one".into() },
+                Some("tenant"),
+            ).unwrap();
+            let response = node.handle_rest_request(
+                RestRequest::new(RestMethod::Put, format!(
+                    "/native-version-contract/_doc/one?routing=tenant&version={version}&version_type=external&refresh=false"
+                )).with_json_body(serde_json::json!({"body": text})),
+            );
+            assert_eq!(response.status, expected_status);
+            assert_eq!(node.native_engine.get_refreshed_document_with_routing(
+                os_engine::GetDocumentRequest { index: "native-version-contract".into(), id: "one".into() },
+                Some("tenant"),
+            ).unwrap(), before);
+            assert_http(&node, before.as_ref());
+            assert_eq!(node.handle_rest_request(RestRequest::new(
+                RestMethod::Post, "/native-version-contract/_refresh",
+            )).status, 200);
+            let published = node.native_engine.get_refreshed_document_with_routing(
+                os_engine::GetDocumentRequest { index: "native-version-contract".into(), id: "one".into() },
+                Some("tenant"),
+            ).unwrap().unwrap();
+            assert_eq!(published.metadata.version, version);
+            assert_eq!(published.metadata.seq_no, response.body["_seq_no"].as_i64().unwrap());
+            assert_eq!(published.metadata.primary_term, response.body["_primary_term"].as_u64().unwrap());
+            assert_eq!(published.source, serde_json::json!({"body": text}));
+            assert_http(&node, Some(&published));
+        }
+        let before = node.native_engine.get_refreshed_document_with_routing(
+            os_engine::GetDocumentRequest { index: "native-version-contract".into(), id: "one".into() },
+            Some("tenant"),
+        ).unwrap();
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Delete,
+            "/native-version-contract/_doc/one?routing=tenant&refresh=false"
+        )).status, 200);
+        assert_http(&node, before.as_ref());
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Post,
+            "/native-version-contract/_refresh"
+        )).status, 200);
+        assert_http(&node, None);
+    }
+
+    #[test]
+    fn mixed_writes_preserve_native_published_metadata() {
+        let node = SteelNode::new(NodeInfo {
+            name: "steel-node".into(), version: OPENSEARCH_3_7_0_TRANSPORT,
+        });
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put, "/mixed-native-version")
+            .with_json_body(serde_json::json!({"settings": {"number_of_shards": 3}}))).status, 200);
+        let check = |expected_version: u64| {
+            assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Post,
+                "/mixed-native-version/_refresh")).status, 200);
+            let current = node.handle_rest_request(RestRequest::new(RestMethod::Get,
+                "/mixed-native-version/_doc/one?routing=tenant"));
+            assert_eq!(current.status, 200);
+            let published = node.native_engine.get_refreshed_document_with_routing(
+                os_engine::GetDocumentRequest { index: "mixed-native-version".into(), id: "one".into() },
+                Some("tenant"),
+            ).unwrap().unwrap();
+            assert_eq!(published.metadata.version, expected_version);
+            assert_eq!(published.metadata.version, current.body["_version"].as_u64().unwrap());
+            assert_eq!(published.metadata.seq_no, current.body["_seq_no"].as_i64().unwrap());
+            assert_eq!(published.source, current.body["_source"]);
+        };
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put,
+            "/mixed-native-version/_doc/one?routing=tenant&version=7&version_type=external"
+        ).with_json_body(serde_json::json!({"body": "first"}))).status, 201);
+        check(7);
+        let bulk = |metadata: Value, source: Value| {
+            node.handle_rest_request(RestRequest::new(RestMethod::Post, "/mixed-native-version/_bulk")
+                .with_body(format!("{}\n{}\n", metadata, source).into_bytes()))
+        };
+        let indexed = bulk(serde_json::json!({"index": {"_id": "one", "routing": "tenant",
+            "version": 42, "version_type": "external"}}), serde_json::json!({"body": "bulk"}));
+        assert_eq!(indexed.body["errors"], false);
+        check(42);
+        let updated = bulk(serde_json::json!({"update": {"_id": "one", "routing": "tenant"}}),
+            serde_json::json!({"doc": {"body": "bulk-update"}}));
+        assert_eq!(updated.body["errors"], false);
+        check(43);
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Post,
+            "/mixed-native-version/_update/one?routing=tenant"
+        ).with_json_body(serde_json::json!({"doc": {"body": "single-update"}}))).status, 200);
+        check(44);
+        let updated = node.handle_rest_request(RestRequest::new(RestMethod::Post,
+            "/mixed-native-version/_update_by_query"
+        ).with_json_body(serde_json::json!({"query": {"match_all": {}},
+            "script": {"source": "ctx._source.processed = true"}})));
+        assert_eq!(updated.status, 200);
+        assert_eq!(updated.body["updated"], 1);
+        check(45);
+        assert_eq!(node.handle_rest_request(RestRequest::new(RestMethod::Put,
+            "/mixed-native-version/_doc/one?routing=tenant"
+        ).with_json_body(serde_json::json!({"body": "final"}))).status, 200);
+        check(46);
+        let rejected = bulk(serde_json::json!({"index": {"_id": "invalid", "routing": "tenant",
+            "version": -1, "version_type": "external"}}), serde_json::json!({"body": "invalid"}));
+        assert_eq!(rejected.body["errors"], true);
+        assert_eq!(rejected.body["items"][0]["index"]["status"], 400);
+        check(46);
+    }
+
+    #[test]
     fn bulk_routes_support_put_and_stream_aliases() {
         let node = SteelNode::new(NodeInfo {
             name: "steel-node".to_string(),
@@ -104186,6 +108380,7 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             .try_native_engine_search_response(
                 &["logs-native-zero-000001".to_string()],
                 &BTreeMap::new(),
+                &BTreeMap::new(),
                 &body,
                 false,
                 false,
@@ -104309,12 +108504,13 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
         let shard_scope = search_shard_scope_for_routing_values(
             &["logs-native-routing-000001".to_string()],
             &[routing_a.clone()],
-            |_| 3,
+            |index| node.index_routing(index),
         );
         let response = node
             .try_native_engine_search_response(
                 &["logs-native-routing-000001".to_string()],
                 &shard_scope,
+                &BTreeMap::new(),
                 &serde_json::json!({
                     "query": { "match_all": {} },
                     "size": 10
@@ -106212,10 +110408,8 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             targeted_flat.body["logs-settings-000001"]["settings"]["index.replication.type"],
             Value::String("DOCUMENT".to_string())
         );
-        assert_eq!(
-            targeted_flat.body["logs-settings-000001"]["settings"]["index.uuid"],
-            Value::String("logs-settings-000001-uuid".to_string())
-        );
+        assert_eq!(targeted_flat.body["logs-settings-000001"]["settings"]["index.uuid"],
+            node.native_engine.shard_manifest("logs-settings-000001").unwrap().index_uuid);
         assert_eq!(
             targeted_flat.body["logs-settings-000001"]["settings"]["index.version.created"],
             Value::String("137287827".to_string())
@@ -110515,25 +114709,14 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
 
         let stats =
             restarted.handle_rest_request(RestRequest::new(RestMethod::Get, "/_nodes/stats"));
-        assert_eq!(stats.status, 200);
-        let first_node = stats.body["nodes"]
-            .as_object()
-            .and_then(|nodes| nodes.values().next())
-            .expect("node stats body to contain one node");
-        assert_eq!(first_node["thread_pool"]["task_submission"]["active"], 0);
-        assert_eq!(first_node["thread_pool"]["task_submission"]["queue"], 0);
-        assert_eq!(first_node["thread_pool"]["task_submission"]["completed"], 0);
+        assert_eq!(stats.status, 503);
+        let documents_before = restarted.documents_state.lock().unwrap().clone();
 
         let doc = restarted.handle_rest_request(RestRequest::new(
             RestMethod::Get,
             "/queued-submit-partial-recovery/_doc/doc-1",
         ));
-        assert_eq!(doc.status, 200);
-        assert_eq!(doc.body["found"], Value::Bool(true));
-        assert_eq!(
-            doc.body["_source"]["message"],
-            "queued delete partial recovery"
-        );
+        assert_eq!(doc.status, 503);
 
         let refused_delete = restarted.handle_rest_request(
             RestRequest::new(
@@ -110553,8 +114736,17 @@ k5bqHEyzQ28TCTCG+zQBVfQmQb7yRrx85yHPHtkoOc3i88+fzumHJ5dGGaU+hprH
             RestMethod::Get,
             "/queued-submit-partial-recovery/_doc/doc-1",
         ));
-        assert_eq!(doc_after_refusal.status, 200);
-        assert_eq!(doc_after_refusal.body["found"], Value::Bool(true));
+        assert_eq!(doc_after_refusal.status, 503);
+        let documents_after = restarted.documents_state.lock().unwrap();
+        assert_eq!(documents_after.len(), documents_before.len());
+        for (key, before) in &documents_before {
+            let after = documents_after.get(key).unwrap();
+            assert_eq!(after.source, before.source);
+            assert_eq!(after.seq_no, before.seq_no);
+            assert_eq!(after.version, before.version);
+        }
+        drop(documents_after);
+        assert_eq!(std::fs::read(&shared_state_path).unwrap(), b"{\"created_indices\":[");
 
         release_runtime_thread_pool_active_slot(&node, "task_submission");
         let delete = queued_delete

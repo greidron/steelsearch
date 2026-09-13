@@ -26,6 +26,8 @@ pub enum EngineError {
     InvalidRequest { reason: String },
     #[error("engine backend failure: {reason}")]
     BackendFailure { reason: String },
+    #[error("Trying to create too many buckets. Must be less than or equal to: [{max_buckets}] but was [{bucket_count}]. This limit can be set by changing the [search.max_buckets] cluster level setting.")]
+    TooManyBuckets { max_buckets: u32, bucket_count: u64 },
 }
 
 impl EngineError {
@@ -35,6 +37,7 @@ impl EngineError {
             Self::IndexNotFound { .. } | Self::DocumentNotFound { .. } => 404,
             Self::VersionConflict { .. } => 409,
             Self::BackendFailure { .. } => 500,
+            Self::TooManyBuckets { .. } => 503,
         }
     }
 
@@ -46,11 +49,23 @@ impl EngineError {
             Self::VersionConflict { .. } => "version_conflict_engine_exception",
             Self::InvalidRequest { .. } => "illegal_argument_exception",
             Self::BackendFailure { .. } => "engine_exception",
+            Self::TooManyBuckets { .. } => "too_many_buckets_exception",
         }
     }
 
     pub fn opensearch_reason(&self) -> String {
         self.to_string()
+    }
+
+    pub fn opensearch_error_body(&self) -> Value {
+        let mut body = serde_json::json!({
+            "type": self.opensearch_error_type(),
+            "reason": self.opensearch_reason(),
+        });
+        if let Self::TooManyBuckets { max_buckets, .. } = self {
+            body["max_buckets"] = Value::from(*max_buckets);
+        }
+        body
     }
 }
 
@@ -2012,6 +2027,66 @@ mod tests {
     }
 
     #[test]
+    fn owned_search_response_preserves_shape_and_moves_source_buffers() {
+        for mask in 0_u8..32 {
+            let optional = |bit: u8| {
+                (mask & (1_u8 << bit) != 0_u8).then(|| serde_json::json!([{"value": [1, 2, 3]}]))
+            };
+            let source = serde_json::json!({
+                "vector": (0..384).map(|value| value as f64 / 384.0).collect::<Vec<_>>(),
+                "nested": [{"name": "original", "enabled": true}],
+                "missing": null
+            });
+            let source_buffer = source["vector"].as_array().unwrap().as_ptr();
+            let response = SearchResponse::new(
+                1,
+                vec![SearchHit {
+                    index: "owned-response".to_string(),
+                    metadata: DocumentMetadata {
+                        id: "1".to_string(),
+                        version: 3,
+                        seq_no: 2,
+                        primary_term: 1,
+                    },
+                    score: -0.0,
+                    source,
+                    sort: optional(0),
+                    fields: optional(1),
+                    highlight: optional(2),
+                    explanation: optional(3),
+                    inner_hits: optional(4),
+                }],
+                serde_json::json!({"groups": {"buckets": [{"key": "a", "doc_count": 1}]}}),
+            );
+            let bucket_buffer = response.aggregations["groups"]["buckets"]
+                .as_array()
+                .unwrap()
+                .as_ptr();
+            let expected = response.to_opensearch_body(7);
+            let actual = response.into_opensearch_body(7);
+            assert_eq!(actual, expected, "optional section mask {mask}");
+            assert_eq!(
+                actual["hits"]["hits"][0]["_source"]["vector"]
+                    .as_array()
+                    .unwrap()
+                    .as_ptr(),
+                source_buffer,
+                "owned response must move the source allocation"
+            );
+            assert_eq!(
+                actual["aggregations"]["groups"]["buckets"]
+                    .as_array()
+                    .unwrap()
+                    .as_ptr(),
+                bucket_buffer,
+                "owned response must move aggregation allocations"
+            );
+        }
+        let empty = SearchResponse::new(0, Vec::new(), serde_json::json!({}));
+        assert_eq!(empty.to_opensearch_body(0), empty.into_opensearch_body(0));
+    }
+
+    #[test]
     fn empty_search_response_uses_null_max_score() {
         let body = SearchResponse::new(0, Vec::new(), serde_json::json!({})).to_opensearch_body(0);
 
@@ -2199,6 +2274,37 @@ mod tests {
             missing_document.opensearch_error_type(),
             "document_missing_exception"
         );
+    }
+
+    #[test]
+    fn bucket_limit_error_preserves_status_reason_and_metadata() {
+        for (max_buckets, bucket_count) in [(0, 1), (65_535, 65_536), (65_535, u64::MAX)] {
+            let error = EngineError::TooManyBuckets { max_buckets, bucket_count };
+            assert_eq!(error.status_code(), 503);
+            assert_eq!(error.opensearch_error_type(), "too_many_buckets_exception");
+            assert_eq!(error.opensearch_error_body(), serde_json::json!({
+                "type": "too_many_buckets_exception",
+                "reason": format!("Trying to create too many buckets. Must be less than or equal to: [{max_buckets}] but was [{bucket_count}]. This limit can be set by changing the [search.max_buckets] cluster level setting."),
+                "max_buckets": max_buckets,
+            }));
+        }
+    }
+
+    #[test]
+    fn ordinary_engine_error_bodies_keep_existing_shape() {
+        for error in [
+            EngineError::IndexAlreadyExists { index: "logs".into() },
+            EngineError::IndexNotFound { index: "logs".into() },
+            EngineError::DocumentNotFound { index: "logs".into(), id: "1".into() },
+            EngineError::VersionConflict { reason: "conflict".into() },
+            EngineError::InvalidRequest { reason: "invalid".into() },
+            EngineError::BackendFailure { reason: "backend".into() },
+        ] {
+            assert_eq!(error.opensearch_error_body(), serde_json::json!({
+                "type": error.opensearch_error_type(),
+                "reason": error.opensearch_reason(),
+            }));
+        }
     }
 
     #[test]

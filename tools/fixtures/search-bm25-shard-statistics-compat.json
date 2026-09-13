@@ -1,0 +1,482 @@
+{
+  "indices": [
+    {
+      "name": "bm25-shard-statistics",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "title": {
+              "type": "text"
+            },
+            "order": {
+              "type": "long"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "bulk": [
+    {
+      "index": "bm25-shard-statistics",
+      "documents": [
+        {
+          "_id": "len-1",
+          "_source": {
+            "title": "alpha",
+            "order": 0
+          }
+        },
+        {
+          "_id": "len-40",
+          "_source": {
+            "title": "alpha other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other",
+            "order": 1
+          }
+        },
+        {
+          "_id": "len-41",
+          "_source": {
+            "title": "alpha other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other",
+            "order": 2
+          }
+        },
+        {
+          "_id": "len-42",
+          "_source": {
+            "title": "alpha other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other",
+            "order": 3
+          }
+        },
+        {
+          "_id": "len-1000",
+          "_source": {
+            "title": "alpha other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other other",
+            "order": 4
+          }
+        },
+        {
+          "_id": "missing",
+          "_source": {
+            "order": 5
+          }
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "shard-statistics-match-from-0",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "expected_status": 200,
+          "path": "/bm25-shard-statistics/_search",
+          "body": {
+            "from": 0,
+            "size": 10,
+            "sort": [
+              {
+                "_score": "desc"
+              },
+              {
+                "order": "asc"
+              }
+            ],
+            "track_scores": true,
+            "query": {
+              "match": {
+                "title": "alpha"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "shard-statistics-match-from-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "expected_status": 200,
+          "path": "/bm25-shard-statistics/_search",
+          "body": {
+            "from": 1,
+            "size": 2,
+            "sort": [
+              {
+                "_score": "desc"
+              },
+              {
+                "order": "asc"
+              }
+            ],
+            "track_scores": true,
+            "query": {
+              "match": {
+                "title": "alpha"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "shard-statistics-bool-match-from-0",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "expected_status": 200,
+          "path": "/bm25-shard-statistics/_search",
+          "body": {
+            "from": 0,
+            "size": 10,
+            "sort": [
+              {
+                "_score": "desc"
+              },
+              {
+                "order": "asc"
+              }
+            ],
+            "track_scores": true,
+            "query": {
+              "bool": {
+                "must": {
+                  "match": {
+                    "title": "alpha"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "shard-statistics-bool-match-from-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "expected_status": 200,
+          "path": "/bm25-shard-statistics/_search",
+          "body": {
+            "from": 1,
+            "size": 2,
+            "sort": [
+              {
+                "_score": "desc"
+              },
+              {
+                "order": "asc"
+              }
+            ],
+            "track_scores": true,
+            "query": {
+              "bool": {
+                "must": {
+                  "match": {
+                    "title": "alpha"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "shard-statistics-multi-match-from-0",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "expected_status": 200,
+          "path": "/bm25-shard-statistics/_search",
+          "body": {
+            "from": 0,
+            "size": 10,
+            "sort": [
+              {
+                "_score": "desc"
+              },
+              {
+                "order": "asc"
+              }
+            ],
+            "track_scores": true,
+            "query": {
+              "multi_match": {
+                "query": "alpha",
+                "fields": [
+                  "title^2"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "shard-statistics-multi-match-from-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "expected_status": 200,
+          "path": "/bm25-shard-statistics/_search",
+          "body": {
+            "from": 1,
+            "size": 2,
+            "sort": [
+              {
+                "_score": "desc"
+              },
+              {
+                "order": "asc"
+              }
+            ],
+            "track_scores": true,
+            "query": {
+              "multi_match": {
+                "query": "alpha",
+                "fields": [
+                  "title^2"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "shard-statistics-bool-multi-match-from-0",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "expected_status": 200,
+          "path": "/bm25-shard-statistics/_search",
+          "body": {
+            "from": 0,
+            "size": 10,
+            "sort": [
+              {
+                "_score": "desc"
+              },
+              {
+                "order": "asc"
+              }
+            ],
+            "track_scores": true,
+            "query": {
+              "bool": {
+                "must": {
+                  "multi_match": {
+                    "query": "alpha",
+                    "fields": [
+                      "title^2"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "shard-statistics-bool-multi-match-from-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "expected_status": 200,
+          "path": "/bm25-shard-statistics/_search",
+          "body": {
+            "from": 1,
+            "size": 2,
+            "sort": [
+              {
+                "_score": "desc"
+              },
+              {
+                "order": "asc"
+              }
+            ],
+            "track_scores": true,
+            "query": {
+              "bool": {
+                "must": {
+                  "multi_match": {
+                    "query": "alpha",
+                    "fields": [
+                      "title^2"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "shard-statistics-fallback-match-from-0",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "expected_status": 200,
+          "path": "/bm25-shard-statistics/_search?ignore_unavailable=false",
+          "body": {
+            "from": 0,
+            "size": 10,
+            "sort": [
+              {
+                "_score": "desc"
+              },
+              {
+                "order": "asc"
+              }
+            ],
+            "track_scores": true,
+            "query": {
+              "match": {
+                "title": "alpha"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "shard-statistics-fallback-match-from-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "expected_status": 200,
+          "path": "/bm25-shard-statistics/_search?ignore_unavailable=false",
+          "body": {
+            "from": 1,
+            "size": 2,
+            "sort": [
+              {
+                "_score": "desc"
+              },
+              {
+                "order": "asc"
+              }
+            ],
+            "track_scores": true,
+            "query": {
+              "match": {
+                "title": "alpha"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "shard-statistics-fallback-bool-match-from-0",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "expected_status": 200,
+          "path": "/bm25-shard-statistics/_search?ignore_unavailable=false",
+          "body": {
+            "from": 0,
+            "size": 10,
+            "sort": [
+              {
+                "_score": "desc"
+              },
+              {
+                "order": "asc"
+              }
+            ],
+            "track_scores": true,
+            "query": {
+              "bool": {
+                "must": {
+                  "match": {
+                    "title": "alpha"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "shard-statistics-fallback-bool-match-from-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "expected_status": 200,
+          "path": "/bm25-shard-statistics/_search?ignore_unavailable=false",
+          "body": {
+            "from": 1,
+            "size": 2,
+            "sort": [
+              {
+                "_score": "desc"
+              },
+              {
+                "order": "asc"
+              }
+            ],
+            "track_scores": true,
+            "query": {
+              "bool": {
+                "must": {
+                  "match": {
+                    "title": "alpha"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

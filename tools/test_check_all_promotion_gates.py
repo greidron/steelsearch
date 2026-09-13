@@ -6,6 +6,7 @@ import stat
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -38,6 +39,67 @@ class CheckAllPromotionGatesTests(unittest.TestCase):
     def setUp(self):
         self.check_all = load_check_all_module()
         self.inventory = load_inventory_module()
+
+    def test_core_profile_excludes_only_direct_plugin_gates(self):
+        selected, excluded = self.check_all.checks_for_profile("core-no-plugins")
+        self.assertEqual({row["name"] for row in excluded}, {"vector", "knn-plugin", "ml"})
+        retained = {name for name, _ in selected}
+        self.assertIn("security-row-reclassification", retained)
+        self.assertIn("peer-node", retained)
+        self.assertIn("snapshot", retained)
+        self.assertEqual(len(retained), 23)
+        rows = [{"name": name, "status": "ok"} for name, _ in selected] + excluded
+        summary = self.check_all.suite_summary(rows, "core-no-plugins")
+        self.assertEqual(summary["passed"], 23)
+        self.assertEqual(summary["excluded"], 3)
+        self.assertEqual(summary["status"], "ok")
+        for name in ("search", "security-row-reclassification", "snapshot"):
+            partial = [row for row in rows if row["name"] != name]
+            self.assertEqual(self.check_all.suite_summary(partial, "core-no-plugins")["status"], "failed")
+        bad = [dict(row, status="excluded") if row["name"] == "search" else row for row in rows]
+        self.assertEqual(self.check_all.suite_summary(bad, "core-no-plugins")["failed"], 1)
+        self.assertEqual(self.check_all.suite_summary(rows + [rows[0]], "core-no-plugins")["status"], "failed")
+
+    def test_unknown_empty_and_all_excluded_profiles_fail(self):
+        with self.assertRaises(ValueError):
+            self.check_all.checks_for_profile("unknown")
+        with self.assertRaises(ValueError):
+            self.check_all.suite_summary([], "unknown")
+        _, excluded = self.check_all.checks_for_profile("core-no-plugins")
+        for rows in ([], excluded):
+            self.assertEqual(self.check_all.suite_summary(rows, "core-no-plugins")["status"], "failed")
+        with patch.object(self.check_all, "CHECKS", [("ml", ["plugin.py"])]), self.assertRaises(ValueError):
+            self.check_all.checks_for_profile("core-no-plugins")
+
+    def test_core_output_does_not_overwrite_full_profile(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            full = root / "target/promotion-gate-suite-current.json"
+            full.parent.mkdir()
+            full.write_text("preserve full evidence")
+            argv = [str(CHECK_ALL), "--compatibility-profile", "core-no-plugins"]
+            seen = []
+            commands = {}
+
+            def run(name, command):
+                seen.append(name)
+                commands[name] = command
+                return {"name": name, "command": " ".join(command), "status": "ok", "returncode": 0}
+
+            with patch.object(self.check_all, "REPO_ROOT", root), \
+                    patch.object(self.check_all, "DEFAULT_PROMOTION_GATE_OUTPUT", full), \
+                    patch.object(self.check_all, "run_check", side_effect=run), \
+                    patch.object(sys, "argv", argv), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(self.check_all.main(), 0)
+            self.assertEqual(full.read_text(), "preserve full evidence")
+            self.assertTrue((root / "target/core-no-plugins-promotion-gate-suite-current.json").is_file())
+            self.assertFalse(set(seen) & {"ml", "knn-plugin", "vector"})
+            inventory_command = commands["release-evidence-inventory"]
+            self.assertEqual(inventory_command[inventory_command.index("--compatibility-profile") + 1], "core-no-plugins")
+            selected = root / "target/core-no-plugins-promotion-gate-suite-current.json"
+            self.assertEqual(Path(inventory_command[inventory_command.index("--promotion-gate-suite") + 1]), selected)
+            self.assertEqual(self.inventory.validate_promotion_gate_suite_json(
+                json.loads(selected.read_text()), "core-no-plugins"), [])
 
     def test_suite_check_names_are_complete_and_ordered(self):
         self.assertEqual(

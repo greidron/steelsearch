@@ -8,6 +8,7 @@ pub struct TransportError {
     pub message: Option<String>,
     pub cause: Option<Box<TransportError>>,
     pub search_context_id: Option<TransportErrorSearchContextId>,
+    pub max_buckets: Option<i32>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -287,6 +288,7 @@ fn read_jvm_exception(
         message,
         cause,
         search_context_id: None,
+        max_buckets: None,
     })
 }
 
@@ -301,6 +303,7 @@ fn read_unknown_transport_exception(
         message: Some(format!("unsupported transport exception key {key}")),
         cause: None,
         search_context_id: None,
+        max_buckets: None,
     };
 
     Ok(error)
@@ -318,6 +321,7 @@ fn read_opensearch_exception(
     skip_string_list_map(input)?;
 
     let mut search_context_id = None;
+    let mut max_buckets = None;
     match id {
         101 => {
             let _action = input.read_optional_string()?;
@@ -371,7 +375,7 @@ fn read_opensearch_exception(
             let _current_state = input.read_byte()?;
         }
         149 => {
-            let _max_buckets = input.read_i32()?;
+            max_buckets = Some(input.read_i32()?);
         }
         163 => {
             let _attribute_name = input.read_string()?;
@@ -427,6 +431,7 @@ fn read_opensearch_exception(
         message,
         cause,
         search_context_id,
+        max_buckets,
     })
 }
 
@@ -792,6 +797,20 @@ pub enum TransportErrorDecodeError {
 mod tests {
     use super::TransportError;
     use os_stream::StreamOutput;
+
+    #[test]
+    fn decodes_bucket_limit_extension_from_fixed_wire_bytes() {
+        // OpenSearch exception key 0, id 149, empty base fields, big-endian int limit.
+        let bytes = bytes::Bytes::from_static(&[
+            1, 0, 0x95, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff,
+        ]);
+        let error = TransportError::read(bytes.clone()).unwrap().unwrap();
+        assert_eq!(error.class_name, "org.opensearch.search.aggregations.MultiBucketConsumerService.TooManyBucketsException");
+        assert_eq!(error.max_buckets, Some(65_535));
+        assert!(error.message.is_none());
+        assert!(error.cause.is_none());
+        assert!(TransportError::read(bytes.slice(..bytes.len() - 1)).is_err());
+    }
 
     #[test]
     fn decodes_jvm_exception_message() {

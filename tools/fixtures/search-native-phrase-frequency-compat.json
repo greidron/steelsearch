@@ -1,0 +1,3426 @@
+{
+  "indices": [
+    {
+      "name": "native-phrase-frequency-1",
+      "body": {
+        "settings": {
+          "number_of_shards": 1,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "body": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "native-phrase-frequency-3",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "body": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "bulk": [
+    {
+      "index": "native-phrase-frequency-1",
+      "documents": [
+        {
+          "_id": "exact",
+          "_source": {
+            "body": "alpha beta"
+          }
+        },
+        {
+          "_id": "repeat",
+          "_source": {
+            "body": "alpha beta alpha beta"
+          }
+        },
+        {
+          "_id": "overlap",
+          "_source": {
+            "body": "alpha beta alpha beta alpha"
+          }
+        },
+        {
+          "_id": "adjacent-repeat",
+          "_source": {
+            "body": "alpha alpha"
+          }
+        },
+        {
+          "_id": "triple-repeat",
+          "_source": {
+            "body": "alpha alpha alpha"
+          }
+        },
+        {
+          "_id": "separated-repeat",
+          "_source": {
+            "body": "alpha gap alpha"
+          }
+        },
+        {
+          "_id": "two-gaps",
+          "_source": {
+            "body": "alpha gap beta gap alpha"
+          }
+        },
+        {
+          "_id": "reverse",
+          "_source": {
+            "body": "beta alpha"
+          }
+        },
+        {
+          "_id": "three",
+          "_source": {
+            "body": "alpha beta gamma"
+          }
+        },
+        {
+          "_id": "three-reverse",
+          "_source": {
+            "body": "gamma beta alpha"
+          }
+        },
+        {
+          "_id": "three-mixed",
+          "_source": {
+            "body": "alpha gamma beta"
+          }
+        },
+        {
+          "_id": "three-gap",
+          "_source": {
+            "body": "alpha gap beta gamma"
+          }
+        },
+        {
+          "_id": "three-repeat",
+          "_source": {
+            "body": "alpha beta gamma alpha beta gamma"
+          }
+        },
+        {
+          "_id": "interleaved",
+          "_source": {
+            "body": "alpha alpha beta beta gamma gamma"
+          }
+        },
+        {
+          "_id": "long-repeat",
+          "_source": {
+            "body": "alpha beta alpha beta alpha beta"
+          }
+        },
+        {
+          "_id": "duplicate-middle",
+          "_source": {
+            "body": "alpha beta beta alpha"
+          }
+        },
+        {
+          "_id": "array",
+          "_source": {
+            "body": [
+              "alpha",
+              "beta",
+              "alpha"
+            ]
+          }
+        },
+        {
+          "_id": "array-repeat",
+          "_source": {
+            "body": [
+              "alpha beta",
+              "alpha beta"
+            ]
+          }
+        },
+        {
+          "_id": "empty",
+          "_source": {
+            "body": ""
+          }
+        },
+        {
+          "_id": "null",
+          "_source": {
+            "body": null
+          }
+        }
+      ]
+    },
+    {
+      "index": "native-phrase-frequency-3",
+      "documents": [
+        {
+          "_id": "exact",
+          "_source": {
+            "body": "alpha beta"
+          }
+        },
+        {
+          "_id": "repeat",
+          "_source": {
+            "body": "alpha beta alpha beta"
+          }
+        },
+        {
+          "_id": "overlap",
+          "_source": {
+            "body": "alpha beta alpha beta alpha"
+          }
+        },
+        {
+          "_id": "adjacent-repeat",
+          "_source": {
+            "body": "alpha alpha"
+          }
+        },
+        {
+          "_id": "triple-repeat",
+          "_source": {
+            "body": "alpha alpha alpha"
+          }
+        },
+        {
+          "_id": "separated-repeat",
+          "_source": {
+            "body": "alpha gap alpha"
+          }
+        },
+        {
+          "_id": "two-gaps",
+          "_source": {
+            "body": "alpha gap beta gap alpha"
+          }
+        },
+        {
+          "_id": "reverse",
+          "_source": {
+            "body": "beta alpha"
+          }
+        },
+        {
+          "_id": "three",
+          "_source": {
+            "body": "alpha beta gamma"
+          }
+        },
+        {
+          "_id": "three-reverse",
+          "_source": {
+            "body": "gamma beta alpha"
+          }
+        },
+        {
+          "_id": "three-mixed",
+          "_source": {
+            "body": "alpha gamma beta"
+          }
+        },
+        {
+          "_id": "three-gap",
+          "_source": {
+            "body": "alpha gap beta gamma"
+          }
+        },
+        {
+          "_id": "three-repeat",
+          "_source": {
+            "body": "alpha beta gamma alpha beta gamma"
+          }
+        },
+        {
+          "_id": "interleaved",
+          "_source": {
+            "body": "alpha alpha beta beta gamma gamma"
+          }
+        },
+        {
+          "_id": "long-repeat",
+          "_source": {
+            "body": "alpha beta alpha beta alpha beta"
+          }
+        },
+        {
+          "_id": "duplicate-middle",
+          "_source": {
+            "body": "alpha beta beta alpha"
+          }
+        },
+        {
+          "_id": "array",
+          "_source": {
+            "body": [
+              "alpha",
+              "beta",
+              "alpha"
+            ]
+          }
+        },
+        {
+          "_id": "array-repeat",
+          "_source": {
+            "body": [
+              "alpha beta",
+              "alpha beta"
+            ]
+          }
+        },
+        {
+          "_id": "empty",
+          "_source": {
+            "body": ""
+          }
+        },
+        {
+          "_id": "null",
+          "_source": {
+            "body": null
+          }
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "1-pair-slop-0-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 0,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-pair-slop-0-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 0,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-pair-slop-1-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 1,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-pair-slop-1-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 1,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-pair-slop-2-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 2,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-pair-slop-2-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 2,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-pair-slop-3-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 3,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-pair-slop-3-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 3,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-pair-slop-5-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 5,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-pair-slop-5-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 5,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-pair-slop-100-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 100,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-pair-slop-100-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 100,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-same-slop-0-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha",
+                  "slop": 0,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-same-slop-0-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha",
+                  "slop": 0,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-same-slop-1-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha",
+                  "slop": 1,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-same-slop-1-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha",
+                  "slop": 1,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-same-slop-2-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha",
+                  "slop": 2,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-same-slop-2-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha",
+                  "slop": 2,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-same-slop-3-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha",
+                  "slop": 3,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-same-slop-3-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha",
+                  "slop": 3,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-same-slop-5-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha",
+                  "slop": 5,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-same-slop-5-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha",
+                  "slop": 5,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-same-slop-100-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha",
+                  "slop": 100,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-same-slop-100-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha",
+                  "slop": 100,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-three-slop-0-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta gamma",
+                  "slop": 0,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-three-slop-0-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta gamma",
+                  "slop": 0,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-three-slop-1-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta gamma",
+                  "slop": 1,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-three-slop-1-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta gamma",
+                  "slop": 1,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-three-slop-2-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta gamma",
+                  "slop": 2,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-three-slop-2-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta gamma",
+                  "slop": 2,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-three-slop-3-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta gamma",
+                  "slop": 3,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-three-slop-3-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta gamma",
+                  "slop": 3,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-three-slop-5-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta gamma",
+                  "slop": 5,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-three-slop-5-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta gamma",
+                  "slop": 5,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-three-slop-100-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta gamma",
+                  "slop": 100,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-three-slop-100-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta gamma",
+                  "slop": 100,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-aba-slop-0-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta alpha",
+                  "slop": 0,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-aba-slop-0-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta alpha",
+                  "slop": 0,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-aba-slop-1-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta alpha",
+                  "slop": 1,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-aba-slop-1-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta alpha",
+                  "slop": 1,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-aba-slop-2-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta alpha",
+                  "slop": 2,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-aba-slop-2-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta alpha",
+                  "slop": 2,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-aba-slop-3-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta alpha",
+                  "slop": 3,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-aba-slop-3-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta alpha",
+                  "slop": 3,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-aba-slop-5-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta alpha",
+                  "slop": 5,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-aba-slop-5-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta alpha",
+                  "slop": 5,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-aba-slop-100-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta alpha",
+                  "slop": 100,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-aba-slop-100-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta alpha",
+                  "slop": 100,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-aab-slop-0-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha beta",
+                  "slop": 0,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-aab-slop-0-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha beta",
+                  "slop": 0,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-aab-slop-1-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha beta",
+                  "slop": 1,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-aab-slop-1-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha beta",
+                  "slop": 1,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-aab-slop-2-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha beta",
+                  "slop": 2,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-aab-slop-2-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha beta",
+                  "slop": 2,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-aab-slop-3-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha beta",
+                  "slop": 3,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-aab-slop-3-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha beta",
+                  "slop": 3,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-aab-slop-5-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha beta",
+                  "slop": 5,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-aab-slop-5-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha beta",
+                  "slop": 5,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-aab-slop-100-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha beta",
+                  "slop": 100,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-aab-slop-100-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha beta",
+                  "slop": 100,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-pair-slop-0-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 0,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-pair-slop-0-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 0,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-pair-slop-1-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 1,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-pair-slop-1-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 1,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-pair-slop-2-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 2,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-pair-slop-2-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 2,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-pair-slop-3-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 3,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-pair-slop-3-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 3,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-pair-slop-5-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 5,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-pair-slop-5-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 5,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-pair-slop-100-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 100,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-pair-slop-100-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 100,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-same-slop-0-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha",
+                  "slop": 0,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-same-slop-0-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha",
+                  "slop": 0,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-same-slop-1-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha",
+                  "slop": 1,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-same-slop-1-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha",
+                  "slop": 1,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-same-slop-2-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha",
+                  "slop": 2,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-same-slop-2-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha",
+                  "slop": 2,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-same-slop-3-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha",
+                  "slop": 3,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-same-slop-3-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha",
+                  "slop": 3,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-same-slop-5-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha",
+                  "slop": 5,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-same-slop-5-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha",
+                  "slop": 5,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-same-slop-100-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha",
+                  "slop": 100,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-same-slop-100-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha",
+                  "slop": 100,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-three-slop-0-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta gamma",
+                  "slop": 0,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-three-slop-0-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta gamma",
+                  "slop": 0,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-three-slop-1-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta gamma",
+                  "slop": 1,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-three-slop-1-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta gamma",
+                  "slop": 1,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-three-slop-2-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta gamma",
+                  "slop": 2,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-three-slop-2-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta gamma",
+                  "slop": 2,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-three-slop-3-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta gamma",
+                  "slop": 3,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-three-slop-3-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta gamma",
+                  "slop": 3,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-three-slop-5-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta gamma",
+                  "slop": 5,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-three-slop-5-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta gamma",
+                  "slop": 5,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-three-slop-100-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta gamma",
+                  "slop": 100,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-three-slop-100-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta gamma",
+                  "slop": 100,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-aba-slop-0-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta alpha",
+                  "slop": 0,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-aba-slop-0-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta alpha",
+                  "slop": 0,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-aba-slop-1-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta alpha",
+                  "slop": 1,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-aba-slop-1-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta alpha",
+                  "slop": 1,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-aba-slop-2-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta alpha",
+                  "slop": 2,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-aba-slop-2-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta alpha",
+                  "slop": 2,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-aba-slop-3-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta alpha",
+                  "slop": 3,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-aba-slop-3-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta alpha",
+                  "slop": 3,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-aba-slop-5-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta alpha",
+                  "slop": 5,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-aba-slop-5-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta alpha",
+                  "slop": 5,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-aba-slop-100-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta alpha",
+                  "slop": 100,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-aba-slop-100-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta alpha",
+                  "slop": 100,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-aab-slop-0-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha beta",
+                  "slop": 0,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-aab-slop-0-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha beta",
+                  "slop": 0,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-aab-slop-1-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha beta",
+                  "slop": 1,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-aab-slop-1-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha beta",
+                  "slop": 1,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-aab-slop-2-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha beta",
+                  "slop": 2,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-aab-slop-2-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha beta",
+                  "slop": 2,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-aab-slop-3-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha beta",
+                  "slop": 3,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-aab-slop-3-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha beta",
+                  "slop": 3,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-aab-slop-5-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha beta",
+                  "slop": 5,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-aab-slop-5-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha beta",
+                  "slop": 5,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-aab-slop-100-boost-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha beta",
+                  "slop": 100,
+                  "boost": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-aab-slop-100-boost-2",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_default_score_ranking",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-frequency-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha alpha beta",
+                  "slop": 100,
+                  "boost": 2
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

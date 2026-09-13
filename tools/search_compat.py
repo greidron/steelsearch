@@ -14,6 +14,7 @@ import datetime
 import json
 import os
 import re
+import struct
 import sys
 import time
 import urllib.error
@@ -25,6 +26,11 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_FIXTURE = ROOT / "tools" / "fixtures" / "search-compat.json"
 DEFAULT_REPORT = ROOT / "target" / "search-compat-report.json"
+
+
+def api_score_f32(value: float) -> float:
+    """Normalizes a decoded JSON score to the OpenSearch/Lucene f32 contract."""
+    return struct.unpack("!f", struct.pack("!f", value))[0]
 COMPAT_INDICES = {
     "logs-compat",
     "vectors-compat",
@@ -944,6 +950,40 @@ def security_authz_bulk_extracts_match(steel_extract: dict[str, Any], expected_e
     )
 
 
+def default_score_ranking_extracts_match(steel: dict[str, Any], expected: dict[str, Any]) -> bool:
+    if not isinstance(steel, dict) or not isinstance(expected, dict):
+        return steel == expected
+    if any(steel.get(key) != expected.get(key) for key in ("status", "total", "ids")):
+        return False
+    steel_scores = steel.get("scores")
+    expected_scores = expected.get("scores")
+    if not isinstance(steel_scores, list) or not isinstance(expected_scores, list):
+        return steel_scores == expected_scores
+    if len(steel_scores) != len(expected_scores):
+        return False
+    for steel_score, expected_score in zip(steel_scores, expected_scores):
+        if not isinstance(steel_score, (int, float)) or not isinstance(expected_score, (int, float)):
+            return steel_score == expected_score
+        tolerance = max(1e-6, 1e-6 * max(abs(steel_score), abs(expected_score)))
+        if abs(steel_score - expected_score) > tolerance:
+            return False
+    return True
+
+
+def case_uses_default_score_ranking(case: dict[str, Any]) -> bool:
+    if case.get("extract") not in {"search_scores", "search_default_score_ranking"}:
+        return False
+    for step in case.get("steps") or []:
+        body = step.get("body") if isinstance(step, dict) else None
+        if not isinstance(body, dict):
+            continue
+        if any(control in body for control in ("sort", "min_score", "search_after", "pit", "scroll")):
+            return False
+        if body.get("from", 0) != 0:
+            return False
+    return True
+
+
 def run_case(
     case: dict[str, Any],
     fixture: dict[str, Any],
@@ -984,7 +1024,12 @@ def run_case(
             extracted = (
                 compare_step.get("extract")
                 if compare_step
-                else extract(case["extract"], response)
+                else extract(
+                    "search_default_score_ranking"
+                    if case_uses_default_score_ranking(case)
+                    else case["extract"],
+                    response,
+                )
             )
         target_results[name] = {
             "status": compare_step.get("status") if compare_step else response["status"],
@@ -1063,6 +1108,8 @@ def run_case(
         })
     if case.get("area") == "security-authz":
         matches = security_authz_extracts_match(steel, expected) and not step_failed
+    elif case_uses_default_score_ranking(case):
+        matches = default_score_ranking_extracts_match(steel["extract"], expected["extract"]) and not step_failed
     else:
         matches = (
             steel["status"] == expected["status"]
@@ -1435,7 +1482,15 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
     if kind == "status_only":
         return {"status": response["status"]}
     if kind == "source_body":
-        return {"status": response["status"], "source": body}
+        return {
+            "status": response["status"],
+            "source": {key: value for key, value in body.items() if key != "took"},
+        }
+    if kind == "term_vectors":
+        return {
+            "status": response["status"],
+            "source": {key: value for key, value in body.items() if key != "took"},
+        }
     if kind == "root_info":
         version = body.get("version") or {}
         return {
@@ -1891,6 +1946,22 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             if isinstance(task_response, dict)
             else None,
         }
+    if kind == "alias_single_index_error":
+        result = extract("document_write_error", response)
+        reason = result["reason"]
+        match = re.fullmatch(
+            r"alias \[([^\[\]]+)\] has more than one index associated with it "
+            r"\[([^\[\]]+)\], can't execute a single index op", reason
+        ) if isinstance(reason, str) else None
+        if match:
+            indices = match.group(2).split(", ")
+            if len(indices) > 1 and all(indices) and len(set(indices)) == len(indices):
+                # Index metadata iteration order is not an error-response contract.
+                result["reason"] = (
+                    f"alias [{match.group(1)}] has more than one index associated with it "
+                    f"[{', '.join(sorted(indices))}], can't execute a single index op"
+                )
+        return result
     if kind == "document_write_error":
         error = body.get("error") or {}
         if isinstance(error, dict):
@@ -2180,10 +2251,41 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "total": total_value,
             "ids": [hit.get("_id") for hit in hits if isinstance(hit, dict)],
             "scores": [
-                round(float(hit.get("_score")), 6)
+                round(api_score_f32(float(hit.get("_score"))), 6)
                 for hit in hits
                 if isinstance(hit, dict) and isinstance(hit.get("_score"), (int, float))
             ],
+        }
+    if kind == "search_default_score_ranking":
+        hits_section = body.get("hits") or {}
+        hits = hits_section.get("hits") or []
+        total = hits_section.get("total")
+        total_value = total.get("value") if isinstance(total, dict) else total
+        ranked_hits = [
+            (hit.get("_id"), float(hit.get("_score")))
+            for hit in hits
+            if isinstance(hit, dict) and isinstance(hit.get("_score"), (int, float))
+        ]
+
+        # Default score ties have no cross-engine ordering contract. Keep emitted
+        # score groups in ranking order, but compare their members canonically.
+        # Explicit-sort and pagination extractors do not use this.
+        normalized_hits = []
+        position = 0
+        while position < len(ranked_hits):
+            score = ranked_hits[position][1]
+            group_end = position + 1
+            while group_end < len(ranked_hits) and ranked_hits[group_end][1] == score:
+                group_end += 1
+            normalized_hits.extend(
+                sorted(ranked_hits[position:group_end], key=lambda item: str(item[0]))
+            )
+            position = group_end
+        return {
+            "status": response["status"],
+            "total": total_value,
+            "ids": [hit_id for hit_id, _score in normalized_hits],
+            "scores": [score for _hit_id, score in normalized_hits],
         }
     if kind == "search_hits_with_sort_values":
         result = extract("search_hits", response)
@@ -2436,6 +2538,18 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
                 if isinstance(hit, dict) and hit.get("_id") is not None
             },
         }
+    if kind == "search_fetch_projection":
+        hits = ((body.get("hits") or {}).get("hits") or [])
+        result = extract("search_fields", response)
+        result["sources"] = {
+            hit.get("_id"): {
+                "present": "_source" in hit,
+                "value": hit.get("_source"),
+            }
+            for hit in hits
+            if isinstance(hit, dict) and hit.get("_id") is not None
+        }
+        return result
     if kind == "highlight_hits":
         hits = ((body.get("hits") or {}).get("hits") or [])
         total = (body.get("hits") or {}).get("total")
@@ -2796,6 +2910,17 @@ def extract(kind: str, response: dict[str, Any]) -> Any:
             "status": response["status"],
             "fields": fields,
         }
+    if kind == "cat_snapshot_json_selected_columns":
+        expected_fields = {
+            "dur", "ete", "eti", "fs", "i", "r", "s", "snapshot", "ss", "ste", "sti", "ts",
+        }
+        if body == {}:
+            valid = True
+        elif isinstance(body, list):
+            valid = all(isinstance(row, dict) and set(row) == expected_fields for row in body)
+        else:
+            valid = False
+        return {"status": response["status"], "selected_columns_valid": valid}
     if kind == "cat_count":
         if isinstance(body, list):
             row = body[0] if body and isinstance(body[0], dict) else {}

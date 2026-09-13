@@ -1,0 +1,23 @@
+{
+  "indices": [{"name":"fallback-nested-paths","body":{"settings":{"number_of_shards":3,"number_of_replicas":0},"mappings":{"properties":{"rank":{"type":"long"},"status":{"type":"keyword"},"events":{"type":"nested","properties":{"status":{"type":"keyword"},"weight":{"type":"long"},"items":{"type":"nested","properties":{"code":{"type":"keyword"}}}}}}}}}],
+  "bulk": [{"index":"fallback-nested-paths","documents":[
+    {"_id":"array","_source":{"rank":1,"status":"parent","events":[{"status":"red","weight":1,"items":[{"code":"x"}]},{"status":"blue","weight":2,"items":[{"code":"y"}]}]}},
+    {"_id":"object","_source":{"rank":2,"events":{"status":"red","weight":2,"items":[{"code":"z"}]}}},
+    {"_id":"empty","_source":{"rank":3,"events":[]}},
+    {"_id":"null","_source":{"rank":4,"events":null}},
+    {"_id":"null-array","_source":{"rank":5,"events":[null]}},
+    {"_id":"missing","_source":{"rank":6}}
+  ]}],
+  "cases": [
+    {"name":"qualified-field","area":"search","family":"lexical","method":"POST","path":"/fallback-nested-paths/_search?ignore_unavailable=false","body":{"sort":["rank"],"query":{"nested":{"path":"events","query":{"term":{"events.status":"red"}}}}},"extract":"search_hits"},
+    {"name":"unqualified-field","area":"search","family":"lexical","method":"POST","path":"/fallback-nested-paths/_search?ignore_unavailable=false","body":{"sort":["rank"],"query":{"nested":{"path":"events","query":{"term":{"status":"red"}}}}},"extract":"search_hits"},
+    {"name":"parent-field-isolated","area":"search","family":"lexical","method":"POST","path":"/fallback-nested-paths/_search?ignore_unavailable=false","body":{"sort":["rank"],"query":{"nested":{"path":"events","query":{"term":{"status":"parent"}}}}},"extract":"search_hits"},
+    {"name":"unrelated-prefix","area":"search","family":"lexical","method":"POST","path":"/fallback-nested-paths/_search?ignore_unavailable=false","body":{"sort":["rank"],"query":{"nested":{"path":"events","query":{"term":{"other.status":"red"}}}}},"extract":"search_hits"},
+    {"name":"sibling-fields-isolated","area":"search","family":"lexical","method":"POST","path":"/fallback-nested-paths/_search?ignore_unavailable=false","body":{"sort":["rank"],"query":{"nested":{"path":"events","query":{"bool":{"must":[{"term":{"events.status":"red"}},{"term":{"events.weight":2}}]}}}}},"extract":"search_hits"},
+    {"name":"unqualified-negation","area":"search","family":"lexical","method":"POST","path":"/fallback-nested-paths/_search?ignore_unavailable=false","body":{"sort":["rank"],"query":{"nested":{"path":"events","query":{"bool":{"must_not":{"term":{"status":"red"}}}}}}},"extract":"search_hits"},
+    {"name":"empty-bool-null-children","area":"search","family":"lexical","method":"POST","path":"/fallback-nested-paths/_search?ignore_unavailable=false","body":{"sort":["rank"],"query":{"nested":{"path":"events","query":{"bool":{}}}}},"extract":"search_hits"},
+    {"name":"direct-deep-path","area":"search","family":"lexical","method":"POST","path":"/fallback-nested-paths/_search?ignore_unavailable=false","body":{"sort":["rank"],"query":{"nested":{"path":"events.items","query":{"term":{"events.items.code":"y"}}}}},"extract":"search_hits"},
+    {"name":"nested-deep-path","area":"search","family":"lexical","method":"POST","path":"/fallback-nested-paths/_search?ignore_unavailable=false","body":{"sort":["rank"],"query":{"nested":{"path":"events","query":{"nested":{"path":"events.items","query":{"term":{"events.items.code":"y"}}}}}}},"extract":"search_hits"},
+    {"name":"deep-sibling-isolation","area":"search","family":"lexical","method":"POST","path":"/fallback-nested-paths/_search?ignore_unavailable=false","body":{"sort":["rank"],"query":{"nested":{"path":"events","query":{"bool":{"must":[{"term":{"events.status":"red"}},{"nested":{"path":"events.items","query":{"term":{"events.items.code":"y"}}}}]}}}}},"extract":"search_hits"}
+  ]
+}

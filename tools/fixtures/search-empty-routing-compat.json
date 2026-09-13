@@ -1,0 +1,841 @@
+{
+  "bulk": [],
+  "indices": [
+    {
+      "name": "empty-routing-write-empty-native",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "empty-routing-write-empty-fallback",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "empty-routing-delete-empty-native",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "empty-routing-delete-empty-fallback",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "empty-routing-both-empty-native",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "empty-routing-both-empty-fallback",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "empty-routing-alias-empty-native",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "keyword"
+            }
+          }
+        },
+        "aliases": {
+          "empty-routing-alias-empty-native-alias": {
+            "routing": "tenant"
+          }
+        }
+      }
+    },
+    {
+      "name": "empty-routing-alias-empty-fallback",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "keyword"
+            }
+          }
+        },
+        "aliases": {
+          "empty-routing-alias-empty-fallback-alias": {
+            "routing": "tenant"
+          }
+        }
+      }
+    },
+    {
+      "name": "empty-routing-alias-default-native",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "keyword"
+            }
+          }
+        },
+        "aliases": {
+          "empty-routing-alias-default-native-alias": {
+            "routing": "tenant"
+          }
+        }
+      }
+    },
+    {
+      "name": "empty-routing-alias-default-fallback",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "keyword"
+            }
+          }
+        },
+        "aliases": {
+          "empty-routing-alias-default-fallback-alias": {
+            "routing": "tenant"
+          }
+        }
+      }
+    },
+    {
+      "name": "empty-routing-alias-tenant-native",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "keyword"
+            }
+          }
+        },
+        "aliases": {
+          "empty-routing-alias-tenant-native-alias": {
+            "routing": "tenant"
+          }
+        }
+      }
+    },
+    {
+      "name": "empty-routing-alias-tenant-fallback",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "value": {
+              "type": "keyword"
+            }
+          }
+        },
+        "aliases": {
+          "empty-routing-alias-tenant-fallback-alias": {
+            "routing": "tenant"
+          }
+        }
+      }
+    }
+  ],
+  "cases": [
+    {
+      "name": "empty-routing-write-empty-native",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "write",
+          "method": "PUT",
+          "path": "/empty-routing-write-empty-native/_doc/one?refresh=true&routing=",
+          "body": {
+            "value": "retained-until-delete"
+          },
+          "expected_status": 201
+        },
+        {
+          "name": "read-with-default-routing",
+          "method": "GET",
+          "path": "/empty-routing-write-empty-native/_doc/one",
+          "expected_status": 200
+        },
+        {
+          "name": "delete",
+          "method": "DELETE",
+          "path": "/empty-routing-write-empty-native/_doc/one",
+          "expected_status": 200
+        },
+        {
+          "name": "refresh",
+          "method": "POST",
+          "path": "/empty-routing-write-empty-native/_refresh",
+          "expected_status": 200
+        },
+        {
+          "name": "search-after-delete",
+          "method": "POST",
+          "path": "/empty-routing-write-empty-native/_search",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "size": 10
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "empty-routing-write-empty-fallback",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "write",
+          "method": "PUT",
+          "path": "/empty-routing-write-empty-fallback/_doc/one?refresh=true&routing=",
+          "body": {
+            "value": "retained-until-delete"
+          },
+          "expected_status": 201
+        },
+        {
+          "name": "read-with-default-routing",
+          "method": "GET",
+          "path": "/empty-routing-write-empty-fallback/_doc/one",
+          "expected_status": 200
+        },
+        {
+          "name": "delete",
+          "method": "DELETE",
+          "path": "/empty-routing-write-empty-fallback/_doc/one",
+          "expected_status": 200
+        },
+        {
+          "name": "refresh",
+          "method": "POST",
+          "path": "/empty-routing-write-empty-fallback/_refresh",
+          "expected_status": 200
+        },
+        {
+          "name": "search-after-delete",
+          "method": "POST",
+          "path": "/empty-routing-write-empty-fallback/_search?ignore_unavailable=false",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "size": 10
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "empty-routing-delete-empty-native",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "write",
+          "method": "PUT",
+          "path": "/empty-routing-delete-empty-native/_doc/one?refresh=true",
+          "body": {
+            "value": "retained-until-delete"
+          },
+          "expected_status": 201
+        },
+        {
+          "name": "read-with-default-routing",
+          "method": "GET",
+          "path": "/empty-routing-delete-empty-native/_doc/one",
+          "expected_status": 200
+        },
+        {
+          "name": "delete",
+          "method": "DELETE",
+          "path": "/empty-routing-delete-empty-native/_doc/one?routing=",
+          "expected_status": 200
+        },
+        {
+          "name": "refresh",
+          "method": "POST",
+          "path": "/empty-routing-delete-empty-native/_refresh",
+          "expected_status": 200
+        },
+        {
+          "name": "search-after-delete",
+          "method": "POST",
+          "path": "/empty-routing-delete-empty-native/_search",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "size": 10
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "empty-routing-delete-empty-fallback",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "write",
+          "method": "PUT",
+          "path": "/empty-routing-delete-empty-fallback/_doc/one?refresh=true",
+          "body": {
+            "value": "retained-until-delete"
+          },
+          "expected_status": 201
+        },
+        {
+          "name": "read-with-default-routing",
+          "method": "GET",
+          "path": "/empty-routing-delete-empty-fallback/_doc/one",
+          "expected_status": 200
+        },
+        {
+          "name": "delete",
+          "method": "DELETE",
+          "path": "/empty-routing-delete-empty-fallback/_doc/one?routing=",
+          "expected_status": 200
+        },
+        {
+          "name": "refresh",
+          "method": "POST",
+          "path": "/empty-routing-delete-empty-fallback/_refresh",
+          "expected_status": 200
+        },
+        {
+          "name": "search-after-delete",
+          "method": "POST",
+          "path": "/empty-routing-delete-empty-fallback/_search?ignore_unavailable=false",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "size": 10
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "empty-routing-both-empty-native",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "write",
+          "method": "PUT",
+          "path": "/empty-routing-both-empty-native/_doc/one?refresh=true&routing=",
+          "body": {
+            "value": "retained-until-delete"
+          },
+          "expected_status": 201
+        },
+        {
+          "name": "read-with-default-routing",
+          "method": "GET",
+          "path": "/empty-routing-both-empty-native/_doc/one",
+          "expected_status": 200
+        },
+        {
+          "name": "delete",
+          "method": "DELETE",
+          "path": "/empty-routing-both-empty-native/_doc/one?routing=",
+          "expected_status": 200
+        },
+        {
+          "name": "refresh",
+          "method": "POST",
+          "path": "/empty-routing-both-empty-native/_refresh",
+          "expected_status": 200
+        },
+        {
+          "name": "search-after-delete",
+          "method": "POST",
+          "path": "/empty-routing-both-empty-native/_search",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "size": 10
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "empty-routing-both-empty-fallback",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "write",
+          "method": "PUT",
+          "path": "/empty-routing-both-empty-fallback/_doc/one?refresh=true&routing=",
+          "body": {
+            "value": "retained-until-delete"
+          },
+          "expected_status": 201
+        },
+        {
+          "name": "read-with-default-routing",
+          "method": "GET",
+          "path": "/empty-routing-both-empty-fallback/_doc/one",
+          "expected_status": 200
+        },
+        {
+          "name": "delete",
+          "method": "DELETE",
+          "path": "/empty-routing-both-empty-fallback/_doc/one?routing=",
+          "expected_status": 200
+        },
+        {
+          "name": "refresh",
+          "method": "POST",
+          "path": "/empty-routing-both-empty-fallback/_refresh",
+          "expected_status": 200
+        },
+        {
+          "name": "search-after-delete",
+          "method": "POST",
+          "path": "/empty-routing-both-empty-fallback/_search?ignore_unavailable=false",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "size": 10
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "empty-routing-alias-empty-native",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "write",
+          "method": "PUT",
+          "path": "/empty-routing-alias-empty-native-alias/_doc/one?refresh=true&routing=",
+          "body": {
+            "value": "retained-until-delete"
+          },
+          "expected_status": 201
+        },
+        {
+          "name": "read-with-default-routing",
+          "method": "GET",
+          "path": "/empty-routing-alias-empty-native-alias/_doc/one",
+          "expected_status": 200
+        },
+        {
+          "name": "read-concrete-index-with-alias-routing",
+          "method": "GET",
+          "path": "/empty-routing-alias-empty-native/_doc/one?routing=tenant",
+          "expected_status": 200
+        },
+        {
+          "name": "delete",
+          "method": "DELETE",
+          "path": "/empty-routing-alias-empty-native-alias/_doc/one?routing=",
+          "expected_status": 200
+        },
+        {
+          "name": "refresh",
+          "method": "POST",
+          "path": "/empty-routing-alias-empty-native/_refresh",
+          "expected_status": 200
+        },
+        {
+          "name": "search-after-delete",
+          "method": "POST",
+          "path": "/empty-routing-alias-empty-native/_search",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "size": 10
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "empty-routing-alias-empty-fallback",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "write",
+          "method": "PUT",
+          "path": "/empty-routing-alias-empty-fallback-alias/_doc/one?refresh=true&routing=",
+          "body": {
+            "value": "retained-until-delete"
+          },
+          "expected_status": 201
+        },
+        {
+          "name": "read-with-default-routing",
+          "method": "GET",
+          "path": "/empty-routing-alias-empty-fallback-alias/_doc/one",
+          "expected_status": 200
+        },
+        {
+          "name": "read-concrete-index-with-alias-routing",
+          "method": "GET",
+          "path": "/empty-routing-alias-empty-fallback/_doc/one?routing=tenant",
+          "expected_status": 200
+        },
+        {
+          "name": "delete",
+          "method": "DELETE",
+          "path": "/empty-routing-alias-empty-fallback-alias/_doc/one?routing=",
+          "expected_status": 200
+        },
+        {
+          "name": "refresh",
+          "method": "POST",
+          "path": "/empty-routing-alias-empty-fallback/_refresh",
+          "expected_status": 200
+        },
+        {
+          "name": "search-after-delete",
+          "method": "POST",
+          "path": "/empty-routing-alias-empty-fallback/_search?ignore_unavailable=false",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "size": 10
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "empty-routing-alias-default-native",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "write",
+          "method": "PUT",
+          "path": "/empty-routing-alias-default-native-alias/_doc/one?refresh=true",
+          "body": {
+            "value": "retained-until-delete"
+          },
+          "expected_status": 201
+        },
+        {
+          "name": "read-with-default-routing",
+          "method": "GET",
+          "path": "/empty-routing-alias-default-native-alias/_doc/one",
+          "expected_status": 200
+        },
+        {
+          "name": "read-concrete-index-with-alias-routing",
+          "method": "GET",
+          "path": "/empty-routing-alias-default-native/_doc/one?routing=tenant",
+          "expected_status": 200
+        },
+        {
+          "name": "delete",
+          "method": "DELETE",
+          "path": "/empty-routing-alias-default-native-alias/_doc/one",
+          "expected_status": 200
+        },
+        {
+          "name": "refresh",
+          "method": "POST",
+          "path": "/empty-routing-alias-default-native/_refresh",
+          "expected_status": 200
+        },
+        {
+          "name": "search-after-delete",
+          "method": "POST",
+          "path": "/empty-routing-alias-default-native/_search",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "size": 10
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "empty-routing-alias-default-fallback",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "write",
+          "method": "PUT",
+          "path": "/empty-routing-alias-default-fallback-alias/_doc/one?refresh=true",
+          "body": {
+            "value": "retained-until-delete"
+          },
+          "expected_status": 201
+        },
+        {
+          "name": "read-with-default-routing",
+          "method": "GET",
+          "path": "/empty-routing-alias-default-fallback-alias/_doc/one",
+          "expected_status": 200
+        },
+        {
+          "name": "read-concrete-index-with-alias-routing",
+          "method": "GET",
+          "path": "/empty-routing-alias-default-fallback/_doc/one?routing=tenant",
+          "expected_status": 200
+        },
+        {
+          "name": "delete",
+          "method": "DELETE",
+          "path": "/empty-routing-alias-default-fallback-alias/_doc/one",
+          "expected_status": 200
+        },
+        {
+          "name": "refresh",
+          "method": "POST",
+          "path": "/empty-routing-alias-default-fallback/_refresh",
+          "expected_status": 200
+        },
+        {
+          "name": "search-after-delete",
+          "method": "POST",
+          "path": "/empty-routing-alias-default-fallback/_search?ignore_unavailable=false",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "size": 10
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "empty-routing-alias-tenant-native",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "write",
+          "method": "PUT",
+          "path": "/empty-routing-alias-tenant-native-alias/_doc/one?refresh=true&routing=tenant",
+          "body": {
+            "value": "retained-until-delete"
+          },
+          "expected_status": 201
+        },
+        {
+          "name": "read-with-default-routing",
+          "method": "GET",
+          "path": "/empty-routing-alias-tenant-native-alias/_doc/one",
+          "expected_status": 200
+        },
+        {
+          "name": "read-concrete-index-with-alias-routing",
+          "method": "GET",
+          "path": "/empty-routing-alias-tenant-native/_doc/one?routing=tenant",
+          "expected_status": 200
+        },
+        {
+          "name": "delete",
+          "method": "DELETE",
+          "path": "/empty-routing-alias-tenant-native-alias/_doc/one?routing=tenant",
+          "expected_status": 200
+        },
+        {
+          "name": "refresh",
+          "method": "POST",
+          "path": "/empty-routing-alias-tenant-native/_refresh",
+          "expected_status": 200
+        },
+        {
+          "name": "search-after-delete",
+          "method": "POST",
+          "path": "/empty-routing-alias-tenant-native/_search",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "size": 10
+          },
+          "expected_status": 200
+        }
+      ]
+    },
+    {
+      "name": "empty-routing-alias-tenant-fallback",
+      "area": "document",
+      "family": "document-routing",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "name": "write",
+          "method": "PUT",
+          "path": "/empty-routing-alias-tenant-fallback-alias/_doc/one?refresh=true&routing=tenant",
+          "body": {
+            "value": "retained-until-delete"
+          },
+          "expected_status": 201
+        },
+        {
+          "name": "read-with-default-routing",
+          "method": "GET",
+          "path": "/empty-routing-alias-tenant-fallback-alias/_doc/one",
+          "expected_status": 200
+        },
+        {
+          "name": "read-concrete-index-with-alias-routing",
+          "method": "GET",
+          "path": "/empty-routing-alias-tenant-fallback/_doc/one?routing=tenant",
+          "expected_status": 200
+        },
+        {
+          "name": "delete",
+          "method": "DELETE",
+          "path": "/empty-routing-alias-tenant-fallback-alias/_doc/one?routing=tenant",
+          "expected_status": 200
+        },
+        {
+          "name": "refresh",
+          "method": "POST",
+          "path": "/empty-routing-alias-tenant-fallback/_refresh",
+          "expected_status": 200
+        },
+        {
+          "name": "search-after-delete",
+          "method": "POST",
+          "path": "/empty-routing-alias-tenant-fallback/_search?ignore_unavailable=false",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "size": 10
+          },
+          "expected_status": 200
+        }
+      ]
+    }
+  ]
+}

@@ -226,6 +226,10 @@ REQUIRED_PIT_CASES = {
 }
 
 
+COMPATIBILITY_PROFILES = ("legacy-full", "core-no-plugins")
+CORE_PLUGIN_CHECKS = frozenset({"vector", "knn-plugin", "ml"})
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path("target"))
@@ -234,7 +238,11 @@ def main() -> int:
     parser.add_argument("--require-clean-worktree", action="store_true")
     parser.add_argument("--expected-git-head")
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--compatibility-profile", choices=COMPATIBILITY_PROFILES, default="legacy-full")
+    parser.add_argument("--promotion-gate-suite", type=Path)
     args = parser.parse_args()
+    if args.compatibility_profile == "core-no-plugins" and args.promotion_gate_suite is None:
+        parser.error("core profile requires an explicit --promotion-gate-suite")
 
     report = build_inventory(
         args.root,
@@ -242,6 +250,8 @@ def main() -> int:
         require_complete=args.require_complete,
         require_clean_worktree=args.require_clean_worktree,
         expected_git_head=args.expected_git_head,
+        compatibility_profile=args.compatibility_profile,
+        promotion_gate_suite=args.promotion_gate_suite,
     )
     rendered = json.dumps(report, indent=2, sort_keys=True) + "\n"
     if args.output:
@@ -259,11 +269,19 @@ def build_inventory(
     require_clean_worktree: bool = False,
     expected_git_head: str | None = None,
     now: float | None = None,
+    compatibility_profile: str = "legacy-full",
+    promotion_gate_suite: Path | None = None,
 ) -> dict[str, Any]:
+    if compatibility_profile not in COMPATIBILITY_PROFILES:
+        raise ValueError("unknown compatibility profile")
+    if compatibility_profile == "core-no-plugins" and promotion_gate_suite is None:
+        raise ValueError("core profile requires an explicit promotion gate suite")
     now = time.time() if now is None else now
     root = root.resolve()
     items = {
-        name: inspect_item(root, name, spec, max_age_seconds=max_age_seconds, now=now)
+        name: inspect_item(root, name, spec, max_age_seconds=max_age_seconds, now=now,
+                           compatibility_profile=compatibility_profile,
+                           explicit_path=promotion_gate_suite if name == "promotion_gate_suite" else None)
         for name, spec in ALL_ITEMS.items()
     }
     missing_startup = [
@@ -294,6 +312,7 @@ def build_inventory(
     passed = (complete if require_complete else True) and not metadata_errors
     return {
         "metadata": metadata,
+        "compatibility_profile": compatibility_profile,
         "summary": {
             "passed": passed,
             "complete": complete,
@@ -373,6 +392,8 @@ def inspect_item(
     *,
     max_age_seconds: float,
     now: float,
+    compatibility_profile: str = "legacy-full",
+    explicit_path: Path | None = None,
 ) -> dict[str, Any]:
     candidates = sorted(
         unique_paths(
@@ -384,6 +405,8 @@ def inspect_item(
         key=lambda path: path.stat().st_mtime,
         reverse=True,
     )
+    if explicit_path is not None:
+        candidates = [explicit_path.resolve()] if explicit_path.is_file() else []
     latest = candidates[0] if candidates else None
     blockers: list[str] = []
     if latest is None:
@@ -395,7 +418,7 @@ def inspect_item(
             blockers.append(
                 f"latest artifact is stale: age_seconds={age_seconds:.0f} max_age_seconds={max_age_seconds:.0f}"
             )
-        blockers.extend(validate_artifact_shape(name, latest))
+        blockers.extend(validate_artifact_shape(name, latest, compatibility_profile))
     diagnostics = artifact_diagnostics(name, latest, root) if latest is not None else {}
     blockers.extend(validate_artifact_diagnostics(name, diagnostics))
     item = {
@@ -428,7 +451,7 @@ def excluded_candidate(path: Path, spec: dict[str, Any]) -> bool:
     return any(part in internal_parts for part in path.parts)
 
 
-def validate_artifact_shape(name: str, path: Path) -> list[str]:
+def validate_artifact_shape(name: str, path: Path, compatibility_profile: str = "legacy-full") -> list[str]:
     if name == "benchmark_coverage":
         return validate_benchmark_jsonl(path)
     try:
@@ -450,7 +473,7 @@ def validate_artifact_shape(name: str, path: Path) -> list[str]:
     if name == "pit_e2e_coverage":
         return validate_pit_e2e_json(payload)
     if name == "promotion_gate_suite":
-        return validate_promotion_gate_suite_json(payload)
+        return validate_promotion_gate_suite_json(payload, compatibility_profile)
     return validate_generic_json_evidence(payload)
 
 
@@ -1029,18 +1052,57 @@ def broad_skip_resolution(payload: dict[str, Any]) -> dict[tuple[str, str], list
     return mapping
 
 
-def validate_promotion_gate_suite_json(payload: dict[str, Any]) -> list[str]:
+def validate_promotion_gate_suite_json(payload: dict[str, Any], expected_profile: str = "legacy-full") -> list[str]:
     errors: list[str] = []
+    if expected_profile not in COMPATIBILITY_PROFILES:
+        return ["unknown expected compatibility profile"]
+    if payload.get("compatibility_profile", "legacy-full") != expected_profile:
+        return ["promotion gate suite compatibility profile mismatch"]
     checks = payload.get("checks")
     if not isinstance(checks, list) or not checks:
         errors.append("promotion gate suite checks are missing")
         return errors
+    if any(not isinstance(check, dict) for check in checks):
+        return ["promotion gate suite contains non-object checks"]
+    names = [check.get("name") for check in checks]
+    if any(not isinstance(name, str) or not name for name in names):
+        return ["promotion gate suite check names are invalid"]
+    if len(names) != len(set(names)):
+        errors.append("promotion gate suite contains duplicate checks")
+    required_checks = REQUIRED_PROMOTION_GATE_CHECKS
+    excluded = []
+    if expected_profile == "core-no-plugins":
+        for check in checks:
+            if check["name"] in CORE_PLUGIN_CHECKS:
+                if (check.get("status") != "excluded" or "returncode" in check
+                        or not isinstance(check.get("reason"), str) or not check["reason"].strip()):
+                    errors.append(f"invalid plugin exclusion: {check['name']}")
+                excluded.append(check)
+            elif check.get("status") == "excluded":
+                errors.append(f"required core check cannot be excluded: {check['name']}")
+        if {check["name"] for check in excluded} != CORE_PLUGIN_CHECKS:
+            errors.append("exactly three explicit plugin exclusions required")
+        if type(payload.get("excluded")) is not int or payload["excluded"] != len(excluded):
+            errors.append("promotion gate suite excluded count mismatch")
+        checks = [check for check in checks if check["name"] not in CORE_PLUGIN_CHECKS]
+        required_checks = REQUIRED_PROMOTION_GATE_CHECKS - CORE_PLUGIN_CHECKS
+        passed_count = sum(check.get("status") == "ok" and type(check.get("returncode")) is int
+                           and check["returncode"] == 0 for check in checks)
+        failed_count = len(checks) - passed_count
+        if payload.get("status") != ("failed" if failed_count else "ok"):
+            errors.append("promotion gate suite status/count mismatch")
+        if type(payload.get("passed")) is not int or payload["passed"] != passed_count:
+            errors.append("promotion gate suite passed count mismatch")
+        if type(payload.get("failed")) is not int or payload["failed"] != failed_count:
+            errors.append("promotion gate suite failed count mismatch")
+        if payload.get("validation_errors"):
+            errors.append("promotion gate suite reports validation errors")
     check_names = {
         str(check.get("name"))
         for check in checks
         if isinstance(check, dict) and check.get("name")
     }
-    missing_checks = sorted(REQUIRED_PROMOTION_GATE_CHECKS - check_names)
+    missing_checks = sorted(required_checks - check_names)
     if missing_checks:
         errors.append(
             "promotion gate suite missing required checks: "
@@ -1080,6 +1142,9 @@ def validate_promotion_gate_suite_json(payload: dict[str, Any]) -> list[str]:
         if isinstance(check, dict) and check.get("name")
     }
     for name, fragments in sorted(REQUIRED_PROMOTION_GATE_COMMAND_FRAGMENTS.items()):
+        if expected_profile == "core-no-plugins" and name == "broad-unified-e2e-sections":
+            fragments = tuple(fragment.replace("unified-opensearch-e2e-broad-current", "unified-opensearch-e2e-core-current")
+                              for fragment in fragments) + ("--compatibility-profile", "core-no-plugins")
         check = checks_by_name.get(name)
         if check is None:
             continue

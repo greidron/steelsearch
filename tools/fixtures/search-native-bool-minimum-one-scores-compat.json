@@ -1,0 +1,314 @@
+{
+  "bulk": [
+    {
+      "documents": [
+        {
+          "_id": "exact",
+          "_source": {
+            "body": "alpha beta",
+            "latency": 0,
+            "service": "yes",
+            "title": "alpha beta"
+          }
+        },
+        {
+          "_id": "gap",
+          "_source": {
+            "body": "alpha gap beta",
+            "latency": 100,
+            "service": "yes",
+            "title": "alpha"
+          }
+        },
+        {
+          "_id": "reverse",
+          "_source": {
+            "body": "beta alpha",
+            "latency": 200,
+            "service": "other",
+            "title": "beta"
+          }
+        },
+        {
+          "_id": "repeat",
+          "_source": {
+            "body": "alpha beta alpha beta",
+            "latency": 300,
+            "service": "yes",
+            "title": "alpha"
+          }
+        },
+        {
+          "_id": "null",
+          "_source": {
+            "body": null,
+            "latency": 400,
+            "service": "yes",
+            "title": "other"
+          }
+        },
+        {
+          "_id": "array",
+          "_source": {
+            "body": [
+              "alpha",
+              "beta"
+            ],
+            "latency": 500,
+            "service": "other",
+            "title": "alpha"
+          }
+        },
+        {
+          "_id": "sparse",
+          "_source": {
+            "body": "alpha beta",
+            "latency": 600,
+            "service": "other"
+          }
+        },
+        {
+          "_id": "wide-gap",
+          "_source": {
+            "body": "alpha gap gap beta",
+            "latency": 700,
+            "service": "other",
+            "title": "alpha"
+          }
+        }
+      ],
+      "index": "native-ranking-audit-1"
+    },
+    {
+      "documents": [
+        {
+          "_id": "exact",
+          "_source": {
+            "body": "alpha beta",
+            "latency": 0,
+            "service": "yes",
+            "title": "alpha beta"
+          }
+        },
+        {
+          "_id": "gap",
+          "_source": {
+            "body": "alpha gap beta",
+            "latency": 100,
+            "service": "yes",
+            "title": "alpha"
+          }
+        },
+        {
+          "_id": "reverse",
+          "_source": {
+            "body": "beta alpha",
+            "latency": 200,
+            "service": "other",
+            "title": "beta"
+          }
+        },
+        {
+          "_id": "repeat",
+          "_source": {
+            "body": "alpha beta alpha beta",
+            "latency": 300,
+            "service": "yes",
+            "title": "alpha"
+          }
+        },
+        {
+          "_id": "null",
+          "_source": {
+            "body": null,
+            "latency": 400,
+            "service": "yes",
+            "title": "other"
+          }
+        },
+        {
+          "_id": "array",
+          "_source": {
+            "body": [
+              "alpha",
+              "beta"
+            ],
+            "latency": 500,
+            "service": "other",
+            "title": "alpha"
+          }
+        },
+        {
+          "_id": "sparse",
+          "_source": {
+            "body": "alpha beta",
+            "latency": 600,
+            "service": "other"
+          }
+        },
+        {
+          "_id": "wide-gap",
+          "_source": {
+            "body": "alpha gap gap beta",
+            "latency": 700,
+            "service": "other",
+            "title": "alpha"
+          }
+        }
+      ],
+      "index": "native-ranking-audit-3"
+    }
+  ],
+  "cases": [
+    {
+      "area": "search",
+      "extract": "search_scores",
+      "family": "ranking",
+      "name": "1-bool-overlap-single-hit",
+      "steps": [
+        {
+          "body": {
+            "query": {
+              "bool": {
+                "minimum_should_match": 1,
+                "must": {
+                  "match_all": {}
+                },
+                "should": [
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  },
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 300
+                      }
+                    }
+                  }
+                ],
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "gte": 0,
+                        "lte": 0
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "size": 100
+          },
+          "expected_status": 200,
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search"
+        }
+      ]
+    },
+    {
+      "area": "search",
+      "extract": "search_scores",
+      "family": "ranking",
+      "name": "3-bool-overlap-single-hit",
+      "steps": [
+        {
+          "body": {
+            "query": {
+              "bool": {
+                "minimum_should_match": 1,
+                "must": {
+                  "match_all": {}
+                },
+                "should": [
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  },
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 300
+                      }
+                    }
+                  }
+                ],
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "gte": 0,
+                        "lte": 0
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "size": 100
+          },
+          "expected_status": 200,
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search"
+        }
+      ]
+    }
+  ],
+  "indices": [
+    {
+      "body": {
+        "mappings": {
+          "properties": {
+            "body": {
+              "type": "text"
+            },
+            "latency": {
+              "type": "long"
+            },
+            "service": {
+              "type": "keyword"
+            },
+            "title": {
+              "type": "text"
+            }
+          }
+        },
+        "settings": {
+          "number_of_replicas": 0,
+          "number_of_shards": 1,
+          "refresh_interval": "-1"
+        }
+      },
+      "name": "native-ranking-audit-1"
+    },
+    {
+      "body": {
+        "mappings": {
+          "properties": {
+            "body": {
+              "type": "text"
+            },
+            "latency": {
+              "type": "long"
+            },
+            "service": {
+              "type": "keyword"
+            },
+            "title": {
+              "type": "text"
+            }
+          }
+        },
+        "settings": {
+          "number_of_replicas": 0,
+          "number_of_shards": 3,
+          "refresh_interval": "-1"
+        }
+      },
+      "name": "native-ranking-audit-3"
+    }
+  ]
+}

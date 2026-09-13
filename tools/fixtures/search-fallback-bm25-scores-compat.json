@@ -1,0 +1,71 @@
+{
+  "indices": [{
+    "name": "fallback-bm25-scores",
+    "body": {
+      "settings": {"number_of_shards": 1, "number_of_replicas": 0, "refresh_interval": "-1"},
+      "aliases": {"fallback-bm25-filtered": {"filter": {"range": {"group": {"lte": 2}}}}},
+      "mappings": {"properties": {
+        "title": {"type": "text"}, "message": {"type": "text"}, "group": {"type": "long"}
+      }}
+    }
+  }],
+  "bulk": [{
+    "index": "fallback-bm25-scores",
+    "documents": [
+      {"_id": "a", "_source": {"title": "alpha other other other other", "message": "other", "group": 1}},
+      {"_id": "m", "_source": {"title": "alpha other", "message": "other", "group": 2}},
+      {"_id": "z", "_source": {"title": "alpha alpha alpha", "message": "other", "group": 3}}
+    ]
+  }],
+  "cases": [
+    {
+      "name": "fallback-bool-must-subunit-score", "area": "search", "family": "ranking", "extract": "search_scores",
+      "steps": [{"method": "POST", "expected_status": 200, "path": "/fallback-bm25-scores/_search?ignore_unavailable=false", "body": {
+        "query": {"bool": {"must": {"match": {"title": "alpha"}}}}
+      }}]
+    },
+    {
+      "name": "fallback-filter-only-zero-score", "area": "search", "family": "ranking", "extract": "search_scores",
+      "steps": [{"method": "POST", "expected_status": 200, "path": "/fallback-bm25-scores/_search?ignore_unavailable=false", "body": {
+        "sort": ["group"], "query": {"bool": {"filter": {"match": {"title": "alpha"}}}}, "track_scores": true
+      }}]
+    },
+    {
+      "name": "fallback-bool-boost", "area": "search", "family": "ranking", "extract": "search_scores",
+      "steps": [{"method": "POST", "expected_status": 200, "path": "/fallback-bm25-scores/_search?ignore_unavailable=false", "body": {
+        "query": {"bool": {"must": {"match": {"title": "alpha"}}, "boost": 0.5}}
+      }}]
+    },
+    {
+      "name": "fallback-zero-field-boost-still-matches", "area": "search", "family": "ranking", "extract": "search_scores",
+      "steps": [{"method": "POST", "expected_status": 200, "path": "/fallback-bm25-scores/_search?ignore_unavailable=false", "body": {
+        "sort": ["group"], "track_scores": true,
+        "query": {"bool": {"must": {"multi_match": {"query": "alpha", "fields": ["title^0"]}}}}
+      }}]
+    },
+    {
+      "name": "fallback-most-fields-sum", "area": "search", "family": "ranking", "extract": "search_scores",
+      "steps": [{"method": "POST", "expected_status": 200, "path": "/fallback-bm25-scores/_search?ignore_unavailable=false", "body": {
+        "query": {"multi_match": {"query": "alpha other", "fields": ["title^2", "message"], "type": "most_fields"}}
+      }}]
+    },
+    {
+      "name": "fallback-best-fields-tie-breaker", "area": "search", "family": "ranking", "extract": "search_scores",
+      "steps": [{"method": "POST", "expected_status": 200, "path": "/fallback-bm25-scores/_search?ignore_unavailable=false", "body": {
+        "query": {"multi_match": {"query": "alpha other", "fields": ["title^2", "message"], "tie_breaker": 0.3}}
+      }}]
+    },
+    {
+      "name": "fallback-page-after-scoring", "area": "search", "family": "ranking", "extract": "search_scores",
+      "steps": [{"method": "POST", "expected_status": 200, "path": "/fallback-bm25-scores/_search?ignore_unavailable=false", "body": {
+        "from": 1, "size": 1, "query": {"bool": {"must": {"match": {"title": "alpha"}}}}
+      }}]
+    },
+    {
+      "name": "fallback-alias-keeps-unfiltered-corpus", "area": "search", "family": "ranking", "extract": "search_scores",
+      "steps": [{"method": "POST", "expected_status": 200, "path": "/fallback-bm25-filtered/_search?ignore_unavailable=false", "body": {
+        "query": {"match": {"title": "alpha"}}
+      }}]
+    }
+  ]
+}

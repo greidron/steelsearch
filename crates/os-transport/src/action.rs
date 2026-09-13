@@ -39181,6 +39181,7 @@ impl OpenSearchShardSearchFailureWire {
                 message: Some(reason),
                 cause: None,
                 search_context_id: None,
+                max_buckets: None,
             }),
         }
     }
@@ -43473,6 +43474,7 @@ impl FailedNodeExceptionWire {
                 message: Some(reason),
                 cause: None,
                 search_context_id: None,
+                max_buckets: None,
             }),
         }
     }
@@ -43486,6 +43488,7 @@ impl FailedNodeExceptionWire {
                 message: Some(reason),
                 cause: None,
                 search_context_id: None,
+                max_buckets: None,
             }),
         }
     }
@@ -43674,6 +43677,16 @@ fn write_supported_exception(
     };
     output.write_bool(true);
     match error.class_name.as_str() {
+        "org.opensearch.search.aggregations.MultiBucketConsumerService.TooManyBucketsException" => {
+            output.write_vint(0);
+            output.write_vint(149);
+            output.write_optional_string(error.message.as_deref());
+            write_supported_exception(output, error.cause.as_deref())?;
+            write_empty_stack_trace(output);
+            write_empty_string_list_map(output);
+            write_empty_string_list_map(output);
+            output.write_i32(error.max_buckets.expect("validated bucket limit"));
+        }
         "org.opensearch.ResourceNotFoundException" => {
             output.write_vint(0);
             output.write_vint(19);
@@ -43709,7 +43722,7 @@ fn write_supported_exception(
         _ => {
             return Err(TransportActionWireError::UnsupportedWireShape {
                 shape: "failed node exception cause",
-                reason: "only ResourceNotFoundException and IllegalArgumentException causes are encoded by this adapter",
+                reason: "exception class is not supported by this adapter",
             });
         }
     }
@@ -43724,6 +43737,15 @@ fn validate_supported_exception(
         return Ok(());
     };
     match error.class_name.as_str() {
+        "org.opensearch.search.aggregations.MultiBucketConsumerService.TooManyBucketsException" => {
+            if !matches!(error.max_buckets, Some(limit) if limit >= 0) {
+                return Err(TransportActionWireError::UnsupportedWireShape {
+                    shape,
+                    reason: "TooManyBucketsException requires a nonnegative max_buckets payload",
+                });
+            }
+            validate_supported_exception(error.cause.as_deref(), shape)
+        }
         "org.opensearch.ResourceNotFoundException" | "java.lang.IllegalArgumentException" => {
             validate_supported_exception(error.cause.as_deref(), shape)
         }
@@ -43738,7 +43760,7 @@ fn validate_supported_exception(
         }
         _ => Err(TransportActionWireError::UnsupportedWireShape {
             shape,
-            reason: "only ResourceNotFoundException and IllegalArgumentException causes are encoded by this adapter",
+            reason: "exception class is not supported by this adapter",
         }),
     }
 }
@@ -51530,6 +51552,84 @@ mod tests {
     };
     use serde::Deserialize;
     use serde_json::json;
+
+    #[test]
+    fn bucket_limit_exception_roundtrips_nested_causes_and_shard_failures() {
+        for limit in [0, 65_535, i32::MAX] {
+            let bucket_error = TransportError {
+                class_name: "org.opensearch.search.aggregations.MultiBucketConsumerService.TooManyBucketsException".into(),
+                message: Some("bucket limit exceeded".into()),
+                cause: None,
+                search_context_id: None,
+                max_buckets: Some(limit),
+            };
+            for nested in [false, true] {
+                let error = if nested {
+                    TransportError {
+                        class_name: "java.lang.IllegalArgumentException".into(),
+                        message: Some("outer error".into()),
+                        cause: Some(Box::new(bucket_error.clone())),
+                        search_context_id: None,
+                        max_buckets: None,
+                    }
+                } else {
+                    bucket_error.clone()
+                };
+                let mut output = StreamOutput::new();
+                write_supported_exception(&mut output, Some(&error)).unwrap();
+                assert_eq!(TransportError::read(output.freeze()).unwrap(), Some(error.clone()));
+
+                let failures = vec![OpenSearchShardSearchFailureWire {
+                    shard_target: None,
+                    reason: "bucket limit exceeded".into(),
+                    status: "SERVICE_UNAVAILABLE".into(),
+                    cause: Some(error.clone()),
+                }];
+                let mut output = StreamOutput::new();
+                write_shard_search_failures(&mut output, &failures).unwrap();
+                let mut input = StreamInput::new(output.freeze());
+                assert_eq!(read_shard_search_failures(&mut input).unwrap(), failures);
+                assert_eq!(input.remaining(), 0);
+
+                let response = OpenSearchSearchResponseWire {
+                    total_shards: 2,
+                    successful_shards: 1,
+                    shard_failures: failures,
+                    ..OpenSearchSearchResponseWire::empty_with_total_hits(0)
+                };
+                let mut output = StreamOutput::new();
+                response.write(&mut output, OPENSEARCH_3_7_0_TRANSPORT).unwrap();
+                let decoded = OpenSearchSearchResponseWire::read(
+                    output.freeze(), OPENSEARCH_3_7_0_TRANSPORT,
+                ).unwrap();
+                assert_eq!(decoded.shard_failures, response.shard_failures);
+                assert_eq!(decoded.total_shards, 2);
+                assert_eq!(decoded.successful_shards, 1);
+
+                let failure = FailedNodeExceptionWire {
+                    node_id: "node-a".into(), message: None, cause: Some(error),
+                };
+                let mut output = StreamOutput::new();
+                failure.write(&mut output).unwrap();
+                let mut input = StreamInput::new(output.freeze());
+                assert_eq!(FailedNodeExceptionWire::read(&mut input).unwrap(), failure);
+                assert_eq!(input.remaining(), 0);
+            }
+        }
+    }
+
+    #[test]
+    fn bucket_limit_exception_requires_valid_metadata_before_writing() {
+        for limit in [None, Some(-1), Some(i32::MIN)] {
+            let error = TransportError {
+                class_name: "org.opensearch.search.aggregations.MultiBucketConsumerService.TooManyBucketsException".into(),
+                message: None, cause: None, search_context_id: None, max_buckets: limit,
+            };
+            let mut output = StreamOutput::new();
+            assert!(write_supported_exception(&mut output, Some(&error)).is_err());
+            assert!(output.freeze().is_empty());
+        }
+    }
 
     fn test_discovery_node_wire() -> OpenSearchDiscoveryNodeWire {
         OpenSearchDiscoveryNodeWire {
@@ -82802,6 +82902,7 @@ mod tests {
                     message: Some("bad query".to_string()),
                     cause: None,
                     search_context_id: None,
+                    max_buckets: None,
                 }),
             }],
             skipped_shards: 0,
@@ -82863,6 +82964,7 @@ mod tests {
                         session_id: "partial-pit-session".to_string(),
                         id: 801,
                     }),
+                    max_buckets: None,
                 }),
             }],
             ..OpenSearchSearchResponseWire::empty_with_total_hits(0)

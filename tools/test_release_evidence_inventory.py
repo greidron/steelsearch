@@ -1,4 +1,5 @@
 import importlib.util
+import copy
 import json
 import os
 import subprocess
@@ -73,6 +74,84 @@ def promotion_gate_command(name: str) -> str:
 
 
 class ReleaseEvidenceInventoryTests(unittest.TestCase):
+    def core_suite(self, module):
+        checks = []
+        for name in sorted(module.REQUIRED_PROMOTION_GATE_CHECKS):
+            row = {"name": name, "command": promotion_gate_command(name)}
+            if name == "broad-unified-e2e-sections":
+                row["command"] = row["command"].replace("unified-opensearch-e2e-broad-current", "unified-opensearch-e2e-core-current") + " --compatibility-profile core-no-plugins"
+            if name in module.CORE_PLUGIN_CHECKS:
+                row.update(status="excluded", reason="plugins are unsupported")
+            else:
+                row.update(status="ok", returncode=0)
+            checks.append(row)
+        return {"compatibility_profile": "core-no-plugins", "checks": checks,
+                "status": "ok", "passed": len(checks) - 3, "excluded": 3, "failed": 0}
+
+    def test_core_suite_requires_matching_explicit_profile(self):
+        module = load_inventory_module()
+        payload = self.core_suite(module)
+        self.assertEqual(module.validate_promotion_gate_suite_json(payload, "core-no-plugins"), [])
+        self.assertTrue(module.validate_promotion_gate_suite_json(payload))
+        self.assertTrue(module.validate_promotion_gate_suite_json(payload, "unknown"))
+        del payload["compatibility_profile"]
+        self.assertTrue(module.validate_promotion_gate_suite_json(payload, "core-no-plugins"))
+
+    def test_core_exclusions_cannot_hide_required_checks_or_inflate_counts(self):
+        module = load_inventory_module()
+        original = self.core_suite(module)
+        for mutation in ("missing", "security", "passed", "duplicate", "plugin_ok", "excluded", "returncode", "reason"):
+            payload = copy.deepcopy(original)
+            plugin = next(row for row in payload["checks"] if row["name"] == "ml")
+            if mutation == "missing":
+                payload["checks"] = [row for row in payload["checks"] if row["name"] != "search"]
+                payload["passed"] -= 1
+            elif mutation == "security":
+                next(row for row in payload["checks"] if row["name"] == "security-row-reclassification")["status"] = "excluded"
+            elif mutation == "passed":
+                payload["passed"] += 3
+            elif mutation == "excluded":
+                payload["excluded"] = True
+            elif mutation == "duplicate":
+                payload["checks"].append(plugin.copy())
+            elif mutation == "plugin_ok":
+                plugin.update(status="ok", returncode=0)
+            elif mutation == "returncode":
+                plugin["returncode"] = 0
+            else:
+                plugin["reason"] = ""
+            with self.subTest(mutation=mutation):
+                self.assertTrue(module.validate_promotion_gate_suite_json(payload, "core-no-plugins"))
+
+    def test_core_optional_self_failure_does_not_bypass_counts(self):
+        module = load_inventory_module()
+        payload = self.core_suite(module)
+        payload["checks"].append({"name": "release-evidence-inventory", "status": "failed", "returncode": 1})
+        payload.update(status="failed", failed=1)
+        self.assertEqual(module.validate_promotion_gate_suite_json(payload, "core-no-plugins"), [])
+        payload["passed"] = 999
+        self.assertTrue(module.validate_promotion_gate_suite_json(payload, "core-no-plugins"))
+
+    def test_explicit_core_report_does_not_fall_back_to_other_candidates(self):
+        module = load_inventory_module()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            selected = root / "selected.json"
+            selected.write_text(json.dumps(self.core_suite(module)))
+            other = root / "newer-promotion-gate-suite.json"
+            other.write_text("{}")
+            spec = module.ALL_ITEMS["promotion_gate_suite"]
+            item = module.inspect_item(root, "promotion_gate_suite", spec, max_age_seconds=100,
+                                       now=selected.stat().st_mtime, compatibility_profile="core-no-plugins", explicit_path=selected)
+            self.assertTrue(item["ready"], item["blockers"])
+            self.assertEqual(item["latest_artifact_path"], str(selected))
+            selected.unlink()
+            item = module.inspect_item(root, "promotion_gate_suite", spec, max_age_seconds=100,
+                                       now=other.stat().st_mtime, compatibility_profile="core-no-plugins", explicit_path=selected)
+            self.assertFalse(item["ready"])
+            with self.assertRaises(ValueError):
+                module.build_inventory(root, max_age_seconds=100, compatibility_profile="core-no-plugins")
+
     def setUp(self):
         self.inventory = load_inventory_module()
 

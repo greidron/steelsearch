@@ -1,0 +1,63 @@
+{
+  "indices": [
+    {
+      "name": "dynamic-string-routing-followup",
+      "body": {
+        "settings": {
+          "number_of_shards": 1,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        }
+      }
+    }
+  ],
+  "bulk": [],
+  "cases": [
+    {
+      "name": "dynamic-string-keyword-sort",
+      "area": "search",
+      "family": "mapping",
+      "extract": "search_hits",
+      "steps": [
+        {
+          "method": "PUT",
+          "path": "/dynamic-string-routing-followup/_doc/one",
+          "body": {
+            "value": "seed"
+          },
+          "expected_status": 201
+        },
+        {
+          "method": "PUT",
+          "path": "/dynamic-string-routing-followup/_doc/two",
+          "body": {
+            "value": "good"
+          },
+          "expected_status": 201
+        },
+        {
+          "method": "POST",
+          "path": "/dynamic-string-routing-followup/_refresh",
+          "body": {},
+          "expected_status": 200
+        },
+        {
+          "method": "POST",
+          "path": "/dynamic-string-routing-followup/_search",
+          "body": {
+            "query": {
+              "match_all": {}
+            },
+            "sort": [
+              {
+                "value.keyword": "asc"
+              }
+            ],
+            "size": 10
+          },
+          "expected_status": 200
+        }
+      ]
+    }
+  ]
+}

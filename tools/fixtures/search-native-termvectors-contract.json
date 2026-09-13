@@ -1,0 +1,643 @@
+{
+  "indices": [
+    {
+      "name": "native-tv-contract-stored",
+      "body": {
+        "settings": {
+          "number_of_shards": 1,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "body": {
+              "type": "text",
+              "term_vector": "with_positions_offsets"
+            },
+            "tag": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "native-tv-contract-generated",
+      "body": {
+        "settings": {
+          "number_of_shards": 1,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "body": {
+              "type": "text"
+            },
+            "tag": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "bulk": [
+    {
+      "index": "native-tv-contract-stored",
+      "documents": [
+        {
+          "_id": "accent",
+          "_source": {
+            "body": "caf\u00e9 beta",
+            "tag": "x"
+          }
+        },
+        {
+          "_id": "astral",
+          "_source": {
+            "body": "alpha \ud83d\ude00 beta",
+            "tag": "x"
+          }
+        },
+        {
+          "_id": "cjk",
+          "_source": {
+            "body": "\ud55c\uae00 beta",
+            "tag": "x"
+          }
+        },
+        {
+          "_id": "combining",
+          "_source": {
+            "body": "cafe\u0301 beta",
+            "tag": "x"
+          }
+        },
+        {
+          "_id": "array",
+          "_source": {
+            "body": [
+              "caf\u00e9",
+              "\ud83d\ude00 beta"
+            ],
+            "tag": "x"
+          }
+        },
+        {
+          "_id": "ascii",
+          "_source": {
+            "body": "alpha beta",
+            "tag": "x"
+          }
+        }
+      ]
+    },
+    {
+      "index": "native-tv-contract-generated",
+      "documents": [
+        {
+          "_id": "accent",
+          "_source": {
+            "body": "caf\u00e9 beta",
+            "tag": "x"
+          }
+        },
+        {
+          "_id": "astral",
+          "_source": {
+            "body": "alpha \ud83d\ude00 beta",
+            "tag": "x"
+          }
+        },
+        {
+          "_id": "cjk",
+          "_source": {
+            "body": "\ud55c\uae00 beta",
+            "tag": "x"
+          }
+        },
+        {
+          "_id": "combining",
+          "_source": {
+            "body": "cafe\u0301 beta",
+            "tag": "x"
+          }
+        },
+        {
+          "_id": "array",
+          "_source": {
+            "body": [
+              "caf\u00e9",
+              "\ud83d\ude00 beta"
+            ],
+            "tag": "x"
+          }
+        },
+        {
+          "_id": "ascii",
+          "_source": {
+            "body": "alpha beta",
+            "tag": "x"
+          }
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "native-tv-contract-stored-accent",
+      "area": "search",
+      "family": "termvectors-contract",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-tv-contract-stored/_termvectors/accent",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "term_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "native-tv-contract-stored-astral",
+      "area": "search",
+      "family": "termvectors-contract",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-tv-contract-stored/_termvectors/astral",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "term_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "native-tv-contract-stored-cjk",
+      "area": "search",
+      "family": "termvectors-contract",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-tv-contract-stored/_termvectors/cjk",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "term_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "native-tv-contract-stored-combining",
+      "area": "search",
+      "family": "termvectors-contract",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-tv-contract-stored/_termvectors/combining",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "term_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "native-tv-contract-stored-array",
+      "area": "search",
+      "family": "termvectors-contract",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-tv-contract-stored/_termvectors/array",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "term_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "native-tv-contract-stored-ascii",
+      "area": "search",
+      "family": "termvectors-contract",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-tv-contract-stored/_termvectors/ascii",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "term_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "native-tv-contract-stored-default-fields",
+      "area": "search",
+      "family": "termvectors-contract",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-tv-contract-stored/_termvectors/ascii",
+          "expected_status": 200,
+          "body": {}
+        }
+      ]
+    },
+    {
+      "name": "native-tv-contract-stored-flags-off",
+      "area": "search",
+      "family": "termvectors-contract",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-tv-contract-stored/_termvectors/ascii",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": false,
+            "offsets": false,
+            "term_statistics": false,
+            "field_statistics": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "native-tv-contract-stored-keyword-override",
+      "area": "search",
+      "family": "termvectors-contract",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-tv-contract-stored/_termvectors/ascii",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "per_field_analyzer": {
+              "body": "keyword"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "native-tv-contract-stored-realtime-false",
+      "area": "search",
+      "family": "termvectors-contract",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "PUT",
+          "path": "/native-tv-contract-stored/_doc/pending-false?refresh=false",
+          "expected_status": 201,
+          "body": {
+            "body": "pending alpha"
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/native-tv-contract-stored/_termvectors/pending-false?realtime=false",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "native-tv-contract-stored-realtime-true",
+      "area": "search",
+      "family": "termvectors-contract",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "PUT",
+          "path": "/native-tv-contract-stored/_doc/pending-true?refresh=false",
+          "expected_status": 201,
+          "body": {
+            "body": "pending alpha"
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/native-tv-contract-stored/_termvectors/pending-true?realtime=true",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "native-tv-contract-stored-refreshed",
+      "area": "search",
+      "family": "termvectors-contract",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-tv-contract-stored/_refresh",
+          "expected_status": 200,
+          "body": {}
+        },
+        {
+          "method": "POST",
+          "path": "/native-tv-contract-stored/_termvectors/ascii?realtime=false",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "native-tv-contract-generated-accent",
+      "area": "search",
+      "family": "termvectors-contract",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-tv-contract-generated/_termvectors/accent",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "term_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "native-tv-contract-generated-astral",
+      "area": "search",
+      "family": "termvectors-contract",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-tv-contract-generated/_termvectors/astral",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "term_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "native-tv-contract-generated-cjk",
+      "area": "search",
+      "family": "termvectors-contract",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-tv-contract-generated/_termvectors/cjk",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "term_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "native-tv-contract-generated-combining",
+      "area": "search",
+      "family": "termvectors-contract",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-tv-contract-generated/_termvectors/combining",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "term_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "native-tv-contract-generated-array",
+      "area": "search",
+      "family": "termvectors-contract",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-tv-contract-generated/_termvectors/array",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "term_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "native-tv-contract-generated-ascii",
+      "area": "search",
+      "family": "termvectors-contract",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-tv-contract-generated/_termvectors/ascii",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "term_statistics": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "native-tv-contract-generated-default-fields",
+      "area": "search",
+      "family": "termvectors-contract",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-tv-contract-generated/_termvectors/ascii",
+          "expected_status": 200,
+          "body": {}
+        }
+      ]
+    },
+    {
+      "name": "native-tv-contract-generated-flags-off",
+      "area": "search",
+      "family": "termvectors-contract",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-tv-contract-generated/_termvectors/ascii",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "positions": false,
+            "offsets": false,
+            "term_statistics": false,
+            "field_statistics": false
+          }
+        }
+      ]
+    },
+    {
+      "name": "native-tv-contract-generated-keyword-override",
+      "area": "search",
+      "family": "termvectors-contract",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-tv-contract-generated/_termvectors/ascii",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ],
+            "per_field_analyzer": {
+              "body": "keyword"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "native-tv-contract-generated-realtime-false",
+      "area": "search",
+      "family": "termvectors-contract",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "PUT",
+          "path": "/native-tv-contract-generated/_doc/pending-false?refresh=false",
+          "expected_status": 201,
+          "body": {
+            "body": "pending alpha"
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/native-tv-contract-generated/_termvectors/pending-false?realtime=false",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "native-tv-contract-generated-realtime-true",
+      "area": "search",
+      "family": "termvectors-contract",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "PUT",
+          "path": "/native-tv-contract-generated/_doc/pending-true?refresh=false",
+          "expected_status": 201,
+          "body": {
+            "body": "pending alpha"
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/native-tv-contract-generated/_termvectors/pending-true?realtime=true",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "native-tv-contract-generated-refreshed",
+      "area": "search",
+      "family": "termvectors-contract",
+      "extract": "term_vectors",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-tv-contract-generated/_refresh",
+          "expected_status": 200,
+          "body": {}
+        },
+        {
+          "method": "POST",
+          "path": "/native-tv-contract-generated/_termvectors/ascii?realtime=false",
+          "expected_status": 200,
+          "body": {
+            "fields": [
+              "body"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

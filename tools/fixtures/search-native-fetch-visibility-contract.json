@@ -1,0 +1,231 @@
+{
+  "indices": [
+    {
+      "name": "native-fetch-visibility",
+      "body": {
+        "settings": {
+          "index": {
+            "number_of_shards": 1,
+            "number_of_replicas": 0
+          }
+        },
+        "mappings": {
+          "properties": {
+            "rank": {
+              "type": "long",
+              "store": true
+            },
+            "label": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "bulk": [
+    {
+      "index": "native-fetch-visibility",
+      "documents": [
+        {
+          "_id": "a",
+          "_source": {
+            "rank": 7,
+            "label": "keep"
+          }
+        },
+        {
+          "_id": "b",
+          "_source": {
+            "rank": [
+              9,
+              2,
+              9
+            ],
+            "label": "array"
+          }
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "native-fetch-visibility-stored-default",
+      "area": "search",
+      "family": "native-fetch-visibility",
+      "method": "POST",
+      "path": "/native-fetch-visibility/_search",
+      "body": {
+        "size": 10,
+        "stored_fields": [
+          "rank"
+        ]
+      },
+      "extract": "search_fetch_projection"
+    },
+    {
+      "name": "native-fetch-visibility-stored-string-default",
+      "area": "search",
+      "family": "native-fetch-visibility",
+      "method": "POST",
+      "path": "/native-fetch-visibility/_search",
+      "body": {
+        "size": 10,
+        "stored_fields": "rank"
+      },
+      "extract": "search_fetch_projection"
+    },
+    {
+      "name": "native-fetch-visibility-stored-source-only",
+      "area": "search",
+      "family": "native-fetch-visibility",
+      "method": "POST",
+      "path": "/native-fetch-visibility/_search",
+      "body": {
+        "size": 10,
+        "stored_fields": [
+          "_source"
+        ]
+      },
+      "extract": "search_fetch_projection"
+    },
+    {
+      "name": "native-fetch-visibility-stored-source-and-rank",
+      "area": "search",
+      "family": "native-fetch-visibility",
+      "method": "POST",
+      "path": "/native-fetch-visibility/_search",
+      "body": {
+        "size": 10,
+        "stored_fields": [
+          "rank",
+          "_source"
+        ]
+      },
+      "extract": "search_fetch_projection"
+    },
+    {
+      "name": "native-fetch-visibility-stored-source-overrides-disabled",
+      "area": "search",
+      "family": "native-fetch-visibility",
+      "method": "POST",
+      "path": "/native-fetch-visibility/_search",
+      "body": {
+        "size": 10,
+        "stored_fields": [
+          "rank",
+          "_source"
+        ],
+        "_source": false
+      },
+      "extract": "search_fetch_projection"
+    },
+    {
+      "name": "native-fetch-visibility-stored-source-filter",
+      "area": "search",
+      "family": "native-fetch-visibility",
+      "method": "POST",
+      "path": "/native-fetch-visibility/_search",
+      "body": {
+        "size": 10,
+        "stored_fields": [
+          "rank",
+          "_source"
+        ],
+        "_source": {
+          "includes": [
+            "label"
+          ]
+        }
+      },
+      "extract": "search_fetch_projection"
+    },
+    {
+      "name": "native-fetch-visibility-stored-explicit-source",
+      "area": "search",
+      "family": "native-fetch-visibility",
+      "method": "POST",
+      "path": "/native-fetch-visibility/_search",
+      "body": {
+        "size": 10,
+        "stored_fields": [
+          "rank"
+        ],
+        "_source": true
+      },
+      "extract": "search_fetch_projection"
+    },
+    {
+      "name": "native-fetch-visibility-stored-explicit-hidden",
+      "area": "search",
+      "family": "native-fetch-visibility",
+      "method": "POST",
+      "path": "/native-fetch-visibility/_search",
+      "body": {
+        "size": 10,
+        "stored_fields": [
+          "rank"
+        ],
+        "_source": false
+      },
+      "extract": "search_fetch_projection"
+    },
+    {
+      "name": "native-fetch-visibility-docvalue-hidden",
+      "area": "search",
+      "family": "native-fetch-visibility",
+      "method": "POST",
+      "path": "/native-fetch-visibility/_search",
+      "body": {
+        "size": 10,
+        "docvalue_fields": [
+          "rank"
+        ],
+        "_source": false
+      },
+      "extract": "search_fetch_projection"
+    },
+    {
+      "name": "native-fetch-visibility-fields-includes",
+      "area": "search",
+      "family": "native-fetch-visibility",
+      "method": "POST",
+      "path": "/native-fetch-visibility/_search",
+      "body": {
+        "size": 10,
+        "fields": [
+          "rank"
+        ],
+        "_source": [
+          "label"
+        ]
+      },
+      "extract": "search_fetch_projection"
+    },
+    {
+      "name": "native-fetch-visibility-stored-empty",
+      "area": "search",
+      "family": "native-fetch-visibility",
+      "method": "POST",
+      "path": "/native-fetch-visibility/_search",
+      "body": {
+        "size": 10,
+        "stored_fields": []
+      },
+      "extract": "search_fetch_projection"
+    },
+    {
+      "name": "native-fetch-visibility-stored-empty-explicit-source",
+      "area": "search",
+      "family": "native-fetch-visibility",
+      "method": "POST",
+      "path": "/native-fetch-visibility/_search",
+      "body": {
+        "size": 10,
+        "stored_fields": [],
+        "_source": true
+      },
+      "extract": "search_fetch_projection"
+    }
+  ]
+}

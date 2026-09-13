@@ -1,0 +1,3351 @@
+{
+  "bulk": [
+    {
+      "documents": [
+        {
+          "_id": "exact",
+          "_source": {
+            "body": "alpha beta",
+            "latency": 0,
+            "service": "yes",
+            "title": "alpha beta"
+          }
+        },
+        {
+          "_id": "gap",
+          "_source": {
+            "body": "alpha gap beta",
+            "latency": 100,
+            "service": "yes",
+            "title": "alpha"
+          }
+        },
+        {
+          "_id": "reverse",
+          "_source": {
+            "body": "beta alpha",
+            "latency": 200,
+            "service": "other",
+            "title": "beta"
+          }
+        },
+        {
+          "_id": "repeat",
+          "_source": {
+            "body": "alpha beta alpha beta",
+            "latency": 300,
+            "service": "yes",
+            "title": "alpha"
+          }
+        },
+        {
+          "_id": "null",
+          "_source": {
+            "body": null,
+            "latency": 400,
+            "service": "yes",
+            "title": "other"
+          }
+        },
+        {
+          "_id": "array",
+          "_source": {
+            "body": [
+              "alpha",
+              "beta"
+            ],
+            "latency": 500,
+            "service": "other",
+            "title": "alpha"
+          }
+        },
+        {
+          "_id": "sparse",
+          "_source": {
+            "body": "alpha beta",
+            "latency": 600,
+            "service": "other"
+          }
+        },
+        {
+          "_id": "wide-gap",
+          "_source": {
+            "body": "alpha gap gap beta",
+            "latency": 700,
+            "service": "other",
+            "title": "alpha"
+          }
+        }
+      ],
+      "index": "native-ranking-audit-1"
+    },
+    {
+      "documents": [
+        {
+          "_id": "exact",
+          "_source": {
+            "body": "alpha beta",
+            "latency": 0,
+            "service": "yes",
+            "title": "alpha beta"
+          }
+        },
+        {
+          "_id": "gap",
+          "_source": {
+            "body": "alpha gap beta",
+            "latency": 100,
+            "service": "yes",
+            "title": "alpha"
+          }
+        },
+        {
+          "_id": "reverse",
+          "_source": {
+            "body": "beta alpha",
+            "latency": 200,
+            "service": "other",
+            "title": "beta"
+          }
+        },
+        {
+          "_id": "repeat",
+          "_source": {
+            "body": "alpha beta alpha beta",
+            "latency": 300,
+            "service": "yes",
+            "title": "alpha"
+          }
+        },
+        {
+          "_id": "null",
+          "_source": {
+            "body": null,
+            "latency": 400,
+            "service": "yes",
+            "title": "other"
+          }
+        },
+        {
+          "_id": "array",
+          "_source": {
+            "body": [
+              "alpha",
+              "beta"
+            ],
+            "latency": 500,
+            "service": "other",
+            "title": "alpha"
+          }
+        },
+        {
+          "_id": "sparse",
+          "_source": {
+            "body": "alpha beta",
+            "latency": 600,
+            "service": "other"
+          }
+        },
+        {
+          "_id": "wide-gap",
+          "_source": {
+            "body": "alpha gap gap beta",
+            "latency": 700,
+            "service": "other",
+            "title": "alpha"
+          }
+        }
+      ],
+      "index": "native-ranking-audit-3"
+    }
+  ],
+  "cases": [
+    {
+      "name": "1-keyword-term-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "term": {
+                "service": "yes"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-keyword-term-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "term": {
+                "service": "yes"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-multi-leaf-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "multi_match": {
+                "query": "alpha beta",
+                "fields": [
+                  "title^2",
+                  "body"
+                ],
+                "type": "best_fields"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-multi-leaf-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "multi_match": {
+                "query": "alpha beta",
+                "fields": [
+                  "title^2",
+                  "body"
+                ],
+                "type": "best_fields"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-multi-must-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-multi-must-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-multi-range-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-multi-range-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-multi-required-term-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-multi-required-term-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-multi-required-exact-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 0,
+                        "boost": 1
+                      }
+                    }
+                  }
+                ],
+                "minimum_should_match": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-multi-required-exact-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 0,
+                        "boost": 1
+                      }
+                    }
+                  }
+                ],
+                "minimum_should_match": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-multi-required-sloppy-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  }
+                ],
+                "minimum_should_match": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-multi-required-sloppy-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  }
+                ],
+                "minimum_should_match": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-full-exact-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 0,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-full-exact-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 0,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-full-sloppy-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-full-sloppy-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-full-optional-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 0,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-full-optional-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 0,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-full-both-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 2,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-full-both-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 2,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-full-no-array-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ],
+                "must_not": [
+                  {
+                    "term": {
+                      "_id": "array"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-full-no-array-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ],
+                "must_not": [
+                  {
+                    "term": {
+                      "_id": "array"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-full-two-of-three-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  },
+                  {
+                    "match": {
+                      "body": "alpha"
+                    }
+                  }
+                ],
+                "minimum_should_match": 2,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-full-two-of-three-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  },
+                  {
+                    "match": {
+                      "body": "alpha"
+                    }
+                  }
+                ],
+                "minimum_should_match": 2,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-full-phrase-boost-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 2
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-full-phrase-boost-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 2
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-full-min-score-page-0",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 2,
+            "from": 0,
+            "min_score": 1.42,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "1-full-min-score-page-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-1/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 2,
+            "from": 1,
+            "min_score": 1.42,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-keyword-term-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "term": {
+                "service": "yes"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-keyword-term-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "term": {
+                "service": "yes"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-multi-leaf-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "multi_match": {
+                "query": "alpha beta",
+                "fields": [
+                  "title^2",
+                  "body"
+                ],
+                "type": "best_fields"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-multi-leaf-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "multi_match": {
+                "query": "alpha beta",
+                "fields": [
+                  "title^2",
+                  "body"
+                ],
+                "type": "best_fields"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-multi-must-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-multi-must-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-multi-range-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-multi-range-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-multi-required-term-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-multi-required-term-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-multi-required-exact-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 0,
+                        "boost": 1
+                      }
+                    }
+                  }
+                ],
+                "minimum_should_match": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-multi-required-exact-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 0,
+                        "boost": 1
+                      }
+                    }
+                  }
+                ],
+                "minimum_should_match": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-multi-required-sloppy-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  }
+                ],
+                "minimum_should_match": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-multi-required-sloppy-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  }
+                ],
+                "minimum_should_match": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-full-exact-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 0,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-full-exact-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 0,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-full-sloppy-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-full-sloppy-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-full-optional-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 0,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-full-optional-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 0,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-full-both-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 2,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-full-both-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 2,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-full-no-array-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ],
+                "must_not": [
+                  {
+                    "term": {
+                      "_id": "array"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-full-no-array-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ],
+                "must_not": [
+                  {
+                    "term": {
+                      "_id": "array"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-full-two-of-three-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  },
+                  {
+                    "match": {
+                      "body": "alpha"
+                    }
+                  }
+                ],
+                "minimum_should_match": 2,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-full-two-of-three-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  },
+                  {
+                    "match": {
+                      "body": "alpha"
+                    }
+                  }
+                ],
+                "minimum_should_match": 2,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-full-phrase-boost-relevance",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 2
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-full-phrase-boost-field",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 100,
+            "explain": true,
+            "track_scores": true,
+            "sort": [
+              {
+                "latency": "asc"
+              }
+            ],
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 2
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-full-min-score-page-0",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 2,
+            "from": 0,
+            "min_score": 1.42,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3-full-min-score-page-1",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-ranking-audit-3/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 2,
+            "from": 1,
+            "min_score": 1.42,
+            "explain": true,
+            "query": {
+              "bool": {
+                "must": [
+                  {
+                    "multi_match": {
+                      "query": "alpha beta",
+                      "fields": [
+                        "title^2",
+                        "body"
+                      ],
+                      "type": "best_fields"
+                    }
+                  }
+                ],
+                "should": [
+                  {
+                    "match_phrase": {
+                      "body": {
+                        "query": "alpha beta",
+                        "slop": 1,
+                        "boost": 1
+                      }
+                    }
+                  },
+                  {
+                    "term": {
+                      "service": "yes"
+                    }
+                  }
+                ],
+                "minimum_should_match": 1,
+                "filter": [
+                  {
+                    "range": {
+                      "latency": {
+                        "lte": 600
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "indices": [
+    {
+      "body": {
+        "mappings": {
+          "properties": {
+            "body": {
+              "type": "text"
+            },
+            "latency": {
+              "type": "long"
+            },
+            "service": {
+              "type": "keyword"
+            },
+            "title": {
+              "type": "text"
+            }
+          }
+        },
+        "settings": {
+          "number_of_replicas": 0,
+          "number_of_shards": 1,
+          "refresh_interval": "-1"
+        }
+      },
+      "name": "native-ranking-audit-1"
+    },
+    {
+      "body": {
+        "mappings": {
+          "properties": {
+            "body": {
+              "type": "text"
+            },
+            "latency": {
+              "type": "long"
+            },
+            "service": {
+              "type": "keyword"
+            },
+            "title": {
+              "type": "text"
+            }
+          }
+        },
+        "settings": {
+          "number_of_replicas": 0,
+          "number_of_shards": 3,
+          "refresh_interval": "-1"
+        }
+      },
+      "name": "native-ranking-audit-3"
+    }
+  ]
+}
+
