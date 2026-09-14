@@ -641,7 +641,7 @@ impl StoredShard {
                     && self
                         .refreshed_documents_by_id
                         .get(&document.metadata.id)
-                        .is_none_or(|published| {
+                        .map_or(true, |published| {
                             published.metadata.seq_no != document.metadata.seq_no
                         })
             })
