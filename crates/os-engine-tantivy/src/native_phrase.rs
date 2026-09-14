@@ -50,6 +50,8 @@ impl NativePhraseQuery {
 
 impl Query for NativePhraseQuery {
     fn weight(&self, scoring: EnableScoring<'_>) -> tantivy::Result<Box<dyn Weight>> {
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _timer = super::diagnostic_search::start(&super::diagnostic_search::NATIVE_PHRASE_WEIGHT);
         let field = self.terms[0].field();
         let record = scoring
             .schema()
@@ -92,6 +94,8 @@ impl PhraseWeight {
         reader: &SegmentReader,
         boost: Score,
     ) -> tantivy::Result<Option<PhraseScorer>> {
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _timer = super::diagnostic_search::start(&super::diagnostic_search::NATIVE_PHRASE_SCORER);
         let field = self.query.terms[0].field();
         let inverted = reader.inverted_index(field)?;
         let mut postings = Vec::with_capacity(self.query.terms.len());
@@ -202,6 +206,10 @@ struct PhraseScorer {
 
 impl PhraseScorer {
     fn find_match(&mut self) -> DocId {
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _timer = super::diagnostic_search::start(
+            &super::diagnostic_search::NATIVE_PHRASE_FIND_MATCH,
+        );
         while self.candidate.doc() != TERMINATED {
             let doc = self.candidate.doc();
             for (postings, positions) in self.postings.iter_mut().zip(&mut self.positions) {

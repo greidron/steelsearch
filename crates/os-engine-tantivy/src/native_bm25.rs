@@ -153,10 +153,19 @@ impl Query for NormalizedBm25Query {
             .searcher()
             .expect("enabled scoring requires a searcher");
         #[cfg(feature = "diagnostic-search-timing")]
+        let generation_matches = {
+            let _generation_timer = super::diagnostic_search::start(
+                &super::diagnostic_search::NATIVE_BM25_GENERATION_CHECK,
+            );
+            searcher.generation() == &self.generation
+        };
+        #[cfg(not(feature = "diagnostic-search-timing"))]
+        let generation_matches = searcher.generation() == &self.generation;
+        #[cfg(feature = "diagnostic-search-timing")]
         let _statistics_timer = super::diagnostic_search::start(
             &super::diagnostic_search::NATIVE_BM25_FIELD_STATISTICS,
         );
-        let documents = if searcher.generation() == &self.generation {
+        let documents = if generation_matches {
             let mut cached = self
                 .cache
                 .0

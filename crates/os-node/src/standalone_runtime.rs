@@ -1179,10 +1179,20 @@ async fn handle_actix_rest_request(
     request: HttpRequest,
     body: web::Bytes,
 ) -> HttpResponse {
+    #[cfg(feature = "diagnostic-search-timing")]
+    let _http_total_timer = crate::diagnostic_search::start(&crate::diagnostic_search::HTTP_TOTAL);
     let rest_request = actix_request_to_rest_request(&request, body);
     // Keep the application state shared by cloning Actix's Arc wrapper, not SteelNode.
     let node = node.clone();
-    match web::block(move || encode_rest_response(node.handle_rest_request(rest_request))).await {
+    match web::block(move || {
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _blocking_timer = crate::diagnostic_search::start(
+            &crate::diagnostic_search::HTTP_BLOCKING_HANDLER_AND_ENCODE,
+        );
+        encode_rest_response(node.handle_rest_request(rest_request))
+    })
+    .await
+    {
         Ok(response) => rest_response_to_actix_response(response),
         Err(error) => rest_response_to_actix_response(encode_rest_response(RestResponse::json(
             500,
@@ -4770,11 +4780,23 @@ fn runtime_thread_pool_size(pool: &str) -> u64 {
 
 fn default_search_thread_pool_size() -> u64 {
     *DEFAULT_SEARCH_THREAD_POOL_SIZE.get_or_init(|| {
-        std::thread::available_parallelism()
+        let parallelism = std::thread::available_parallelism()
             .map(usize::from)
-            .unwrap_or(1)
-            .max(1) as u64
+            .unwrap_or(1);
+        default_search_thread_pool_size_for_parallelism(parallelism)
     })
+}
+
+fn default_search_thread_pool_size_for_parallelism(parallelism: usize) -> u64 {
+    u64::try_from(parallelism.max(1).saturating_mul(2)).unwrap_or(u64::MAX)
+}
+
+#[cfg(test)]
+#[test]
+fn default_search_thread_pool_size_allows_two_requests_per_cpu() {
+    assert_eq!(default_search_thread_pool_size_for_parallelism(0), 2);
+    assert_eq!(default_search_thread_pool_size_for_parallelism(1), 2);
+    assert_eq!(default_search_thread_pool_size_for_parallelism(3), 6);
 }
 
 fn runtime_thread_pool_entry_blocked(
@@ -14851,6 +14873,9 @@ impl SteelNode {
     }
 
     fn handle_index_search_route(&self, index: &str, request: &RestRequest) -> RestResponse {
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _route_timer =
+            crate::diagnostic_search::start(&crate::diagnostic_search::SEARCH_ROUTE_TOTAL);
         match self.require_security_permission(request, SecurityPermission::IndexRead, "search") {
             Ok(_) => {}
             Err(response) => return response,
@@ -15347,6 +15372,10 @@ impl SteelNode {
             && standalone_search_body_allows_native_engine(&body)
             && !self.search_sort_requires_fallback_for_array_values(&resolved_indices, &body)
         {
+            #[cfg(feature = "diagnostic-search-timing")]
+            let _native_dispatch_timer = crate::diagnostic_search::start(
+                &crate::diagnostic_search::SEARCH_NATIVE_DISPATCH,
+            );
             if let Some(response) = self.try_native_engine_search_response(
                 &resolved_indices,
                 &native_shard_scope,
@@ -16058,6 +16087,10 @@ impl SteelNode {
                     .sum::<usize>()
                     .max(1);
                 let response_build_started = std::time::Instant::now();
+                #[cfg(feature = "diagnostic-search-timing")]
+                let _response_build_timer = crate::diagnostic_search::start(
+                    &crate::diagnostic_search::NATIVE_RESPONSE_BUILD,
+                );
                 let index_mappings =
                     self.index_mappings_for_native_response(resolved_indices, body);
                 let mut rest_response = native_search_response_to_rest_response(

@@ -9,15 +9,15 @@ It covers the non-plugin core replacement profile only. It is not release
 approval, a substitute for the fixed v0.6.0 gate, or evidence that a proposed
 cause has been eliminated.
 
-The latest completed, execution-verified gate is
-`target/native-phrase-shard-authority-full-gate-rerun-20260914/result.json`
-(SHA-256
-`607c18c3c166a6cb4034beae27a948bcfbf94efac2d0a0dc27654b4f336c5172`). Its
+The latest completed, execution-verified gate for the currently retained
+candidate is `target/v071-search-pool-full-gate-20260914/result.json`. Its
 candidate executable SHA-256 is
-`b38f4c5d10bf1c4917b24957f38afc113f1e4f836e1ec96dd31687692cb25d9a`; 26 of
-44 conservative measurements are below `0.950x` versus v0.6.0. Neither count
-permits acceptance: the fixed
-published v0.6.0 budget remains the release-blocking criterion.
+`25f39d6a7e422e10c0679bd64f51ce1d929dd8123125d8f42b7095540326829e`. Its two
+published-v0.6.0 comparisons have 27 and 25 of 44 measurements below `0.950x`;
+the corresponding paired fresh-baseline comparisons have 21 and 14 failures.
+The later deferred-replay experiment was rejected and removed; its gate is
+retained only as rejection evidence. Neither result permits acceptance: the
+fixed published v0.6.0 budget remains the release-blocking criterion.
 
 ## Required Use for Every Core Change
 
@@ -254,6 +254,78 @@ another.
   admission, seek/reuse, or shard scheduling only after an isolated latency
   measurement; never replace it with the vendor scorer under the current pin.
 
+### PP-009: Nested Timing Spans Include Their Child Logging Cost
+
+- Tags: `measurement`, `native-query`, `response`.
+- Level: `demonstrated` instrumentation risk.
+- Pattern: a sampled outer span writes after sampled inner spans, while each
+  span synchronously emits to stderr. The outer duration then includes child
+  diagnostic I/O and cannot be interpreted as product execution time minus the
+  child durations.
+- Evidence: with the ranking-only, three-node, one-client diagnostic at
+  `target/v070-bm25-generation-clients1-diagnostic-20260914/`, the same sampled
+  `NormalizedBm25Query::weight` call reported 44.88us p50 while the explicitly
+  timed generation comparison, field-statistics lookup, and inner Tantivy
+  weight were 2.08us, 0.28us, and 3.04us. The missing time is the nested
+  sample writes, not a demonstrated BM25 cost. The focused measurement also
+  establishes the generation comparison itself is not a hot-path bottleneck.
+- Required prevention: use leaf spans for attribution, or collect samples in
+  memory and flush after the request. Never optimize an outer timing span until
+  child instrumentation cost is excluded. Preserve raw diagnostic logs and
+  distinguish them from acceptance benchmarks.
+
+### PP-010: Request Admission Limit Can Underutilize Native Search
+
+- Tags: `response`, `native-query`, `measurement`.
+- Level: `measured symptom`; this is not an attribution for the remaining
+  fixed-gate regression.
+- Pattern: cap REST search admission at the logical CPU count even when each
+  admitted request fan-outs into bounded native shard work. Under a small
+  multi-client workload, the cap can add queueing delay while server CPU is not
+  saturated.
+- Evidence: identical 45-second, 5,000-document, three-node ranking-only
+  diagnostics using v0.7.0 executable SHA-256
+  `40830af495aadde1b922acd01ec2cb19a6ce0a9584c30b868a43e0982e807454`
+  measured 1,031.48 ops/s and 3.866ms mean with pool size 3, versus 1,067.21
+  ops/s and 3.737ms with size 6. Size 12 reached only 1,063.95 ops/s and
+  worsened p95/p99 relative to size 6. The artifacts are
+  `target/v070-ranking-cpu-compare-20260914-r1/matrix/`,
+  `target/v070-ranking-pool6-diagnostic-20260914-r1/`, and
+  `target/v070-ranking-pool12-diagnostic-20260914-r1/`.
+- Required prevention: keep `STEELSEARCH_SEARCH_THREAD_POOL_SIZE` as an
+  explicit override, bound the default to a measured small multiple of logical
+  CPUs, and verify non-overridden behavior with focused and full workload
+  evidence. This request-admission policy is outside Tantivy; no Tantivy API or
+  source fallback is involved. Do not infer that higher concurrency improves
+  every topology or operation from this one ranking diagnostic. The full gate
+  still has 27 and 25 published-baseline failures in its two repetitions, so it
+  does not establish release acceptance.
+
+### PP-011: Same-Host Multi-Node CPU Competition Is Not a Product Improvement
+
+- Tags: `measurement`, `native-query`, `response`.
+- Level: `measured symptom`; not a candidate implementation or a benchmark
+  configuration change.
+- Pattern: a local three-node topology runs multiple Steelsearch processes on
+  the same small host. Rayon defaults independently in each process, so a
+  process-local native query worker configuration can compete for the same
+  CPUs even when each request's outer shard reduction is sequential.
+- Evidence: the isolated 45-second, four-client, three-node ranking diagnostic
+  at `target/v071-rayon-one-ranking-diagnostic-20260914-r1/` used the changed
+  executable SHA-256 `25f39d6a7e422e10c0679bd64f51ce1d929dd8123125d8f42b7095540326829e`
+  with `RAYON_NUM_THREADS=1` and measured 1,085.24 ops/s, 3.675ms mean,
+  6.174ms p95, and 7.587ms p99. The otherwise matching pool-size-6 diagnostic
+  measured 1,067.21 ops/s, 3.737ms mean, 6.311ms p95, and 7.801ms p99. The
+  small improvement establishes host-level contention as a contributor, not a
+  dominant cause.
+- Required prevention: do not change the published-baseline resource settings,
+  runtime environment, or Rayon worker count to make a candidate appear to
+  pass. A benchmark topology that colocates multiple nodes is valid for
+  regression diagnosis, but it cannot establish a production default. Any
+  product-level worker policy must be independently justified for both
+  colocated and one-node-per-host deployments, then measured against the same
+  fixed v0.6.0 settings.
+
 ## Change Reviews
 
 | Date | Change | Tags | Pattern comparison | Evidence and outcome |
@@ -271,6 +343,10 @@ another.
 | 2026-09-14 | Use Tantivy 0.21.1 `MinimumShouldMatchQuery` for native bool `minimum_should_match=1`, instead of a nested all-`Should` `BooleanQuery`. | `native-query`, `ranking`, `collector`, `measurement` | Matched PP-001 and PP-008. The pinned implementation is a native threshold union that admits documents with at least one matching child and sums each matching child once. Existing focused overlap, filter, score, and 1/3-shard audits exercise the benchmark query shape. | Focused `native_ranking_audit_tests` passed for the candidate path, including `native_minimum_one_preserves_matches_and_scores_across_overlapping_shoulds`, `native_minimum_should_match_overlap_audit`, and `native_compound_authority_covers_benchmark_ranking_shape`. Live OpenSearch HTTP comparison with executable SHA-256 `797f28b8131382785ab83674036567a3d035061d50480e12668f897bacba4f6c` passed every non-plugin case: `1180/1180`; report `target/native-msm-one-candidate-20260914/full-fixture-live/report.json`. The report's sole failure is `bad_knn_vector_dimension`, whose reference lacks the k-NN plugin and is outside the agreed plugin-excluded scope. No performance claim or gate result is made: the follow-up benchmark is blocked until disk capacity is restored (92MB free after candidate build and report generation). |
 | 2026-09-14 | Replace the exact phrase scorer's duplicate `TermQuery` candidate setup with an intersection of cloned native position postings. | `native-query`, `ranking`, `allocation`, `measurement` | Matched PP-008. Tantivy 0.21.1 `PhraseScorer` was reviewed: it intersects position postings directly. Steelsearch retains `NativePhraseQuery` and its exact frequency matcher; only its candidate enumeration now follows that native postings composition. | Focused native phrase tests and the vendor-divergence audit passed, followed by the preserved OpenSearch HTTP fixture `1180/1180` at `target/native-phrase-postings-candidate-20260914/full-fixture-live/report.json`; executable SHA-256 `d505badf514306733bce9e09c693831a2bb267177b6d1eb528505f748b697b97`. Two 30-second, one-client, three-node ranking samples averaged 1.212ms mean and 818.9 ops/s versus b38's 1.221ms and 813.2 ops/s, but p95 was effectively unchanged and p99 was 0.5% slower. Keep the correctness-preserving native cleanup, but do not claim it addresses the fixed gate or run a full acceptance gate on this signal alone. |
 | 2026-09-14 | Record the v0.7.0 candidate's repeated fixed-v0.6.0 gate before beginning the next optimization unit. | `measurement`, `write-conversion`, `refresh`, `native-query`, `ranking`, `collector` | Matched PP-002, PP-005, PP-007, and PP-008. No product path was changed from this result alone. | The execution-verified six-run gate at `target/v070-core-gate-20260914/result.json` used candidate SHA-256 `40830af495aadde1b922acd01ec2cb19a6ce0a9584c30b868a43e0982e807454` and reports 26/44 conservative fixed-baseline values below 0.950x. Three-node throughput is 0.882x; worst write, lexical, ranking, sort, nested, and refresh latency ratios are 0.822x, 0.846x, 0.791x, 0.858x, 0.820x, and 0.698x. OpenSearch remains faster only in the inverse comparison: SteelSearch is 2.727x single-node and 7.156x three-node throughput relative to OpenSearch. This establishes symptoms, not cause attribution; next work must isolate mixed refresh/search interference before modifying an exact scorer or fallback. |
+| 2026-09-14 | Raise the default REST search admission size from one logical CPU slot to two slots per logical CPU. | `response`, `native-query`, `measurement` | Added PP-010; no Tantivy API applies because this is REST request admission. Existing `STEELSEARCH_SEARCH_THREAD_POOL_SIZE` remains an override. | The focused pure-policy test `default_search_thread_pool_size_allows_two_requests_per_cpu` passed. Under the preserved v0.7.0 ranking-only diagnostic, pool size 6 was the local optimum: 1,067.21 ops/s, 3.737ms mean, 6.311ms p95, 7.801ms p99, versus 1,031.48 ops/s, 3.866ms, 6.599ms, 8.225ms at the former default 3. Pool 12 gave no further throughput gain. The changed executable SHA-256 `25f39d6a7e422e10c0679bd64f51ce1d929dd8123125d8f42b7095540326829e` passed the isolated preserved non-plugin HTTP fixture `1180/1180` at `target/v071-search-pool-candidate-20260914/full-fixture-isolated/search-compat-report.json`. The fixed v0.6.0 gate `target/v071-search-pool-full-gate-20260914/result.json` remains blocked: its two published-baseline repetitions have 27 and 25 failures, while the paired fresh-baseline comparisons have 21 and 14. Three-node throughput is 0.932x and ranking mean/p95/p99 are 0.829x/0.841x/0.796x in the first published comparison. Retain the bounded default as a demonstrated local improvement, not release acceptance; investigate distributed coordination and mixed-operation interference next. |
+| 2026-09-14 | Diagnose the Rayon worker count under colocated three-node ranking load. | `measurement`, `native-query`, `response` | Added PP-011. No source, workload, or release runtime setting changed. | `RAYON_NUM_THREADS=1` improved the isolated ranking diagnostic modestly, from 1,067.21 to 1,085.24 ops/s and from 3.737ms to 3.675ms mean. This does not qualify for the fixed gate because it changes the historical resource setting; it is evidence of host-level CPU competition only. |
+| 2026-09-14 | Replay consecutive deferred index writes under one engine store write lock before refresh. | `replay`, `refresh`, `allocation`, `measurement` | Matched PP-002, PP-007, PP-010, and PP-011. Tantivy 0.21.1 writer source was reviewed: native documents are still batched and committed only by the existing refresh path. This change does not introduce a source fallback, query scorer, or separate writer batch; it preserves seq_no order while avoiding per-document engine lock reacquisition. | Rejected. Focused engine replay ordering/metadata test and node admission test passed. Candidate SHA-256 `694ed25252064ba637fc101d1ead440a06d750308d52a497acac3323cb7afad1` passed the isolated core HTTP fixture `1180/1180`, failed `0`, skipped `0`, at `target/v071-deferred-replay-batch-fixture-20260914/search-compat-report.json`. The execution-verified full gate `target/v071-deferred-replay-batch-full-gate-20260914/result.json` finished all six runs with matching executable identities, but published v0.6.0 comparison failed 23 and 25 metrics in its two candidate repetitions. The same-run paired comparison still failed 9 and 16 metrics, concentrated in write and three-node ranking. It does not demonstrate a refresh bottleneck improvement; remove this implementation rather than retain unproven lock batching. |
+| 2026-09-14 | Recheck sequential sharded-page reduction under the actual four-client, colocated three-node ranking condition. | `native-query`, `collector`, `measurement` | Matched PP-008, PP-010, and PP-011, plus the earlier rejected sharded-page threshold change. No scorer, result, or fallback behavior changed; only the 2,048-document Rayon threshold was raised to 10,000 for the candidate. | Rejected. Candidate SHA-256 `f1c9be0682174377f7209877ff311c8177ea3783e0508217e1388167d157a2ad` completed the identical 45-second, 5,000-document, four-client, three-node ranking diagnostic with 0 errors at `target/v071-sharded-sequential-ranking-diagnostic-20260914/summary.json`: 1,068.17 ops/s, 3.733ms mean, 6.252ms p95, 7.765ms p99. This is within measurement noise of the retained parallel policy's 1,067.21 ops/s, 3.737ms, 6.311ms, and 7.801ms. Do not retain or retry this threshold change without a workload with materially different shard count, corpus size, or verified CPU allocation. |
 
 ## Review Queries
 

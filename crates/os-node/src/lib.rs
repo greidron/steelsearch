@@ -35,6 +35,9 @@ pub mod tasks_route_registration;
 pub mod template_route_registration;
 pub mod write_path_invariants;
 
+#[cfg(feature = "diagnostic-search-timing")]
+mod diagnostic_search;
+
 use os_core::Version;
 pub use os_node_rest_core::{
     bind_rest_http_listener, validate_production_mode_request, ReleaseReadinessChecklist,

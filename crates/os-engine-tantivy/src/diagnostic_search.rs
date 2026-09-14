@@ -39,6 +39,8 @@ pub(crate) static SHARDED_CANDIDATE_REDUCE: Site = Site::new("sharded_candidate_
 pub(crate) static NATIVE_BM25_WEIGHT: Site = Site::new("native_bm25_weight");
 pub(crate) static NATIVE_BM25_FIELD_STATISTICS: Site =
     Site::new("native_bm25_field_statistics");
+pub(crate) static NATIVE_BM25_GENERATION_CHECK: Site =
+    Site::new("native_bm25_generation_check");
 pub(crate) static NATIVE_BM25_TANTIVY_WEIGHT: Site =
     Site::new("native_bm25_tantivy_weight");
 pub(crate) static ENGINE_SEARCH: Site = Site::new("engine_search");
@@ -46,6 +48,9 @@ pub(crate) static ENGINE_PLAIN_SNAPSHOT: Site = Site::new("engine_plain_snapshot
 pub(crate) static ENGINE_PLAIN_EXECUTE: Site = Site::new("engine_plain_execute");
 pub(crate) static NATIVE_PHRASE_POSITION_MATCH: Site =
     Site::new("native_phrase_position_match");
+pub(crate) static NATIVE_PHRASE_WEIGHT: Site = Site::new("native_phrase_weight");
+pub(crate) static NATIVE_PHRASE_SCORER: Site = Site::new("native_phrase_scorer");
+pub(crate) static NATIVE_PHRASE_FIND_MATCH: Site = Site::new("native_phrase_find_match");
 
 pub(crate) struct Span {
     site: &'static str,
