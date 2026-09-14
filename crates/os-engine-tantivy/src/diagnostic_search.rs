@@ -51,6 +51,10 @@ pub(crate) static NATIVE_PHRASE_POSITION_MATCH: Site =
 pub(crate) static NATIVE_PHRASE_WEIGHT: Site = Site::new("native_phrase_weight");
 pub(crate) static NATIVE_PHRASE_SCORER: Site = Site::new("native_phrase_scorer");
 pub(crate) static NATIVE_PHRASE_FIND_MATCH: Site = Site::new("native_phrase_find_match");
+pub(crate) static REFRESH_TEXT_COMPATIBILITY: Site = Site::new("refresh_text_compatibility");
+pub(crate) static REFRESH_DOCUMENT_BUILD: Site = Site::new("refresh_document_build");
+pub(crate) static REFRESH_WRITER_ADD: Site = Site::new("refresh_writer_add");
+pub(crate) static REFRESH_TANTIVY_COMMIT: Site = Site::new("refresh_tantivy_commit");
 
 pub(crate) struct Span {
     site: &'static str,

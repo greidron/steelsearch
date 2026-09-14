@@ -4801,6 +4801,9 @@ impl TantivySearchState {
     ) -> EngineResult<TantivyRefreshTimings> {
         self.retain_bm25_searcher_if_fully_replaced(deleted_document_ids)?;
         let mut timings = TantivyRefreshTimings::default();
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _text_compatibility_timer =
+            diagnostic_search::start(&diagnostic_search::REFRESH_TEXT_COMPATIBILITY);
         let native_text_compatibility = replacement_text_compatibility.unwrap_or_else(|| {
             let mut compatibility = self.native_text_compatibility.clone();
             for document in documents {
@@ -4808,6 +4811,8 @@ impl TantivySearchState {
             }
             compatibility
         });
+        #[cfg(feature = "diagnostic-search-timing")]
+        drop(_text_compatibility_timer);
         let mut writer = self
             .writer
             .lock()
@@ -4822,6 +4827,9 @@ impl TantivySearchState {
             writer.delete_term(Term::from_field_text(id_field, id));
         }
         for document in documents {
+            #[cfg(feature = "diagnostic-search-timing")]
+            let _document_build_timer =
+                diagnostic_search::start(&diagnostic_search::REFRESH_DOCUMENT_BUILD);
             let tantivy_document =
                 match build_tantivy_document(&self.index, &self.fields, document) {
                     Ok(document) => document,
@@ -4830,15 +4838,25 @@ impl TantivySearchState {
                         return Err(error);
                     }
                 };
+            #[cfg(feature = "diagnostic-search-timing")]
+            drop(_document_build_timer);
+            #[cfg(feature = "diagnostic-search-timing")]
+            let _writer_add_timer = diagnostic_search::start(&diagnostic_search::REFRESH_WRITER_ADD);
             if let Err(error) = writer.add_document(tantivy_document) {
                 writer.rollback().map_err(tantivy_error)?;
                 return Err(tantivy_error(error));
             }
+            #[cfg(feature = "diagnostic-search-timing")]
+            drop(_writer_add_timer);
         }
         timings.document_add_nanos = elapsed_nanos_u64(document_add_started.elapsed());
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _commit_timer = diagnostic_search::start(&diagnostic_search::REFRESH_TANTIVY_COMMIT);
         let commit_started = std::time::Instant::now();
         writer.commit().map_err(tantivy_error)?;
         timings.commit_nanos = elapsed_nanos_u64(commit_started.elapsed());
+        #[cfg(feature = "diagnostic-search-timing")]
+        drop(_commit_timer);
         drop(writer);
         let reload_started = std::time::Instant::now();
         self.reader.reload().map_err(tantivy_error)?;
