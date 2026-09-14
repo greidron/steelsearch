@@ -30,6 +30,18 @@ pub(crate) static HTTP_BLOCKING_HANDLER_AND_ENCODE: Site =
 pub(crate) static SEARCH_ROUTE_TOTAL: Site = Site::new("search_route_total");
 pub(crate) static SEARCH_NATIVE_DISPATCH: Site = Site::new("search_native_dispatch");
 pub(crate) static NATIVE_RESPONSE_BUILD: Site = Site::new("native_response_build");
+pub(crate) static REFRESH_ROUTE_TOTAL: Site = Site::new("refresh_route_total");
+pub(crate) static REFRESH_ADMISSION: Site = Site::new("refresh_admission");
+pub(crate) static REFRESH_EXECUTION: Site = Site::new("refresh_execution");
+pub(crate) static REFRESH_VISIBILITY_CAPTURE: Site = Site::new("refresh_visibility_capture");
+pub(crate) static REFRESH_DIRTY_SHARDS: Site = Site::new("refresh_dirty_shards");
+pub(crate) static REFRESH_DEFERRED_REPLAY: Site = Site::new("refresh_deferred_replay");
+pub(crate) static REFRESH_REPLAY_CAPTURE: Site = Site::new("refresh_replay_capture");
+pub(crate) static REFRESH_REPLAY_SORT: Site = Site::new("refresh_replay_sort");
+pub(crate) static REFRESH_REPLAY_EXECUTE: Site = Site::new("refresh_replay_execute");
+pub(crate) static REFRESH_NATIVE_ENGINE: Site = Site::new("refresh_native_engine");
+pub(crate) static REFRESH_VISIBILITY_PUBLISH: Site = Site::new("refresh_visibility_publish");
+pub(crate) static REFRESH_PERSISTENCE: Site = Site::new("refresh_persistence");
 
 pub(crate) struct Span {
     site: &'static str,

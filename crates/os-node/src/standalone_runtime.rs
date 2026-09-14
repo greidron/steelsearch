@@ -12471,27 +12471,70 @@ impl SteelNode {
     }
 
     fn handle_global_refresh_route(&self) -> RestResponse {
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _route_timer =
+            crate::diagnostic_search::start(&crate::diagnostic_search::REFRESH_ROUTE_TOTAL);
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _admission_timer =
+            crate::diagnostic_search::start(&crate::diagnostic_search::REFRESH_ADMISSION);
         let _thread_pool = match self.enter_runtime_thread_pool("maintenance", 1000) {
             Ok(execution) => execution,
             Err(response) => return response,
         };
+        #[cfg(feature = "diagnostic-search-timing")]
+        drop(_admission_timer);
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _execution_timer =
+            crate::diagnostic_search::start(&crate::diagnostic_search::REFRESH_EXECUTION);
         let open_indices = self.open_created_indices();
         let node_visibility_pending = self.refresh_visibility_state_pending(&open_indices);
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _visibility_timer = crate::diagnostic_search::start(
+            &crate::diagnostic_search::REFRESH_VISIBILITY_CAPTURE,
+        );
         let refresh_documents = self.capture_runtime_refresh_documents(&open_indices);
+        #[cfg(feature = "diagnostic-search-timing")]
+        drop(_visibility_timer);
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _dirty_timer =
+            crate::diagnostic_search::start(&crate::diagnostic_search::REFRESH_DIRTY_SHARDS);
         self.mark_refresh_visibility_development_shards_dirty(&open_indices);
+        #[cfg(feature = "diagnostic-search-timing")]
+        drop(_dirty_timer);
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _replay_timer =
+            crate::diagnostic_search::start(&crate::diagnostic_search::REFRESH_DEFERRED_REPLAY);
         if let Err(error) = self.replay_deferred_native_writes_before_refresh(&open_indices) {
             return engine_error_to_rest_response(error);
         }
+        #[cfg(feature = "diagnostic-search-timing")]
+        drop(_replay_timer);
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _native_timer =
+            crate::diagnostic_search::start(&crate::diagnostic_search::REFRESH_NATIVE_ENGINE);
         let refreshed = match self.native_engine.refresh(RefreshRequest {
             indices: open_indices.clone(),
         }) {
             Ok(response) => response.refreshed,
             Err(error) => return engine_error_to_rest_response(error),
         };
+        #[cfg(feature = "diagnostic-search-timing")]
+        drop(_native_timer);
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _publish_timer = crate::diagnostic_search::start(
+            &crate::diagnostic_search::REFRESH_VISIBILITY_PUBLISH,
+        );
         self.mark_runtime_documents_refreshed(refresh_documents);
+        #[cfg(feature = "diagnostic-search-timing")]
+        drop(_publish_timer);
         if refreshed || node_visibility_pending {
+            #[cfg(feature = "diagnostic-search-timing")]
+            let _persistence_timer =
+                crate::diagnostic_search::start(&crate::diagnostic_search::REFRESH_PERSISTENCE);
             self.persist_shared_runtime_state_after_refresh();
             self.persist_development_shard_state_after_refresh();
+            #[cfg(feature = "diagnostic-search-timing")]
+            drop(_persistence_timer);
         }
         let total = open_indices
             .iter()
@@ -12514,10 +12557,21 @@ impl SteelNode {
     }
 
     fn handle_index_refresh_route(&self, index: &str, request: &RestRequest) -> RestResponse {
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _route_timer =
+            crate::diagnostic_search::start(&crate::diagnostic_search::REFRESH_ROUTE_TOTAL);
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _admission_timer =
+            crate::diagnostic_search::start(&crate::diagnostic_search::REFRESH_ADMISSION);
         let _thread_pool = match self.enter_runtime_thread_pool("maintenance", 1000) {
             Ok(execution) => execution,
             Err(response) => return response,
         };
+        #[cfg(feature = "diagnostic-search-timing")]
+        drop(_admission_timer);
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _execution_timer =
+            crate::diagnostic_search::start(&crate::diagnostic_search::REFRESH_EXECUTION);
         let matched = match self.resolve_maintenance_targets(index, request) {
             Ok(matched) => matched,
             Err(response) => return response,
@@ -12526,21 +12580,53 @@ impl SteelNode {
             return maintenance_closed_index_response();
         }
         let node_visibility_pending = self.refresh_visibility_state_pending(&matched);
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _visibility_timer = crate::diagnostic_search::start(
+            &crate::diagnostic_search::REFRESH_VISIBILITY_CAPTURE,
+        );
         let refresh_documents = self.capture_runtime_refresh_documents(&matched);
+        #[cfg(feature = "diagnostic-search-timing")]
+        drop(_visibility_timer);
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _dirty_timer =
+            crate::diagnostic_search::start(&crate::diagnostic_search::REFRESH_DIRTY_SHARDS);
         self.mark_refresh_visibility_development_shards_dirty(&matched);
+        #[cfg(feature = "diagnostic-search-timing")]
+        drop(_dirty_timer);
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _replay_timer =
+            crate::diagnostic_search::start(&crate::diagnostic_search::REFRESH_DEFERRED_REPLAY);
         if let Err(error) = self.replay_deferred_native_writes_before_refresh(&matched) {
             return engine_error_to_rest_response(error);
         }
+        #[cfg(feature = "diagnostic-search-timing")]
+        drop(_replay_timer);
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _native_timer =
+            crate::diagnostic_search::start(&crate::diagnostic_search::REFRESH_NATIVE_ENGINE);
         let refreshed = match self.native_engine.refresh(RefreshRequest {
             indices: matched.clone(),
         }) {
             Ok(response) => response.refreshed,
             Err(error) => return engine_error_to_rest_response(error),
         };
+        #[cfg(feature = "diagnostic-search-timing")]
+        drop(_native_timer);
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _publish_timer = crate::diagnostic_search::start(
+            &crate::diagnostic_search::REFRESH_VISIBILITY_PUBLISH,
+        );
         self.mark_runtime_documents_refreshed(refresh_documents);
+        #[cfg(feature = "diagnostic-search-timing")]
+        drop(_publish_timer);
         if refreshed || node_visibility_pending {
+            #[cfg(feature = "diagnostic-search-timing")]
+            let _persistence_timer =
+                crate::diagnostic_search::start(&crate::diagnostic_search::REFRESH_PERSISTENCE);
             self.persist_shared_runtime_state_after_refresh();
             self.persist_development_shard_state_after_refresh();
+            #[cfg(feature = "diagnostic-search-timing")]
+            drop(_persistence_timer);
         }
         RestResponse::json(
             200,
@@ -17801,6 +17887,9 @@ impl SteelNode {
             .ok()
             .as_deref()
             == Some("1");
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _capture_timer =
+            crate::diagnostic_search::start(&crate::diagnostic_search::REFRESH_REPLAY_CAPTURE);
         let mut pending = {
             let docs = self
                 .documents_state
@@ -17850,7 +17939,17 @@ impl SteelNode {
             }
             pending
         };
+        #[cfg(feature = "diagnostic-search-timing")]
+        drop(_capture_timer);
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _sort_timer =
+            crate::diagnostic_search::start(&crate::diagnostic_search::REFRESH_REPLAY_SORT);
         pending.sort_by_key(PendingNativeMutation::seq_no);
+        #[cfg(feature = "diagnostic-search-timing")]
+        drop(_sort_timer);
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _execute_timer =
+            crate::diagnostic_search::start(&crate::diagnostic_search::REFRESH_REPLAY_EXECUTE);
         for mutation in pending {
             match mutation {
                 PendingNativeMutation::Index {
@@ -17866,6 +17965,8 @@ impl SteelNode {
                 }
             }
         }
+        #[cfg(feature = "diagnostic-search-timing")]
+        drop(_execute_timer);
         Ok(())
     }
 
