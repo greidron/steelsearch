@@ -326,6 +326,32 @@ another.
   colocated and one-node-per-host deployments, then measured against the same
   fixed v0.6.0 settings.
 
+### PP-012: Semantically Divergent Benchmark Responses Distort End-to-End Attribution
+
+- Tags: `measurement`, `response`, `ranking`, `compatibility`.
+- Level: `demonstrated measurement constraint`; it does not waive the fixed
+  v0.6.0 gate or justify omitting any latency measurement.
+- Pattern: a baseline can return a materially smaller HTTP response because it
+  misses documents that the compatibility-correct implementation returns. An
+  end-to-end benchmark then includes real client read/decode work for the
+  candidate that the baseline never performs. Treating the whole difference as
+  native scorer, collector, or response-body generation cost is unsound.
+- Evidence: the preserved response-shape diagnostic in
+  `docs/rust-port/write-interference-investigation-2026-09-11.md` found that
+  the same ranking requests returned 0 hits and 160-byte average responses on
+  the v0.6.0 baseline, versus 230 hits and 10,637.75-byte average responses on
+  the compatibility-correct candidate. Its ABBA HTTP phase measurement found
+  candidate ranking client JSON decode at about 0.234ms per request versus
+  0.017ms for the baseline, while the candidate's `urlopen` phase was slightly
+  lower. The response-body build counter in the later native ranking diagnostic
+  was only about 4.8us per request.
+- Required prevention: before attributing a benchmark regression to a server
+  path, inspect returned hit counts, response bytes, and the client phases for
+  the exact workload. Keep fixed-baseline metrics reported and investigate
+  them, but separately report semantic-output differences. Never suppress hits,
+  alter a correct response, or weaken fixture contracts merely to match a
+  smaller historical response.
+
 ## Change Reviews
 
 | Date | Change | Tags | Pattern comparison | Evidence and outcome |
