@@ -33346,6 +33346,7 @@ fn standalone_native_search_request_with_alias_filters(
         .cloned()
         .unwrap_or_else(|| serde_json::json!({ "match_all": {} }));
     let has_shard_scope = shard_scope.is_some_and(|scope| !scope.is_empty());
+    let scores_required = search_response_should_render_scores(body);
     if has_shard_scope
         || !alias_filters.is_empty()
         || body.get("script_fields").is_some()
@@ -33358,6 +33359,7 @@ fn standalone_native_search_request_with_alias_filters(
         || body.get("slice").is_some()
         || body.get("search_after").is_some()
         || body.get("terminate_after").is_some()
+        || !scores_required
     {
         let mut envelope = serde_json::Map::new();
         envelope.insert("query".to_string(), query);
@@ -33404,6 +33406,9 @@ fn standalone_native_search_request_with_alias_filters(
         }
         if let Some(terminate_after) = body.get("terminate_after") {
             envelope.insert("terminate_after".to_string(), terminate_after.clone());
+        }
+        if !scores_required {
+            envelope.insert("_steelsearch_track_scores".to_string(), Value::Bool(false));
         }
         query = Value::Object(envelope);
     }

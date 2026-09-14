@@ -69,6 +69,10 @@ use std::sync::{
     atomic::{AtomicI64, AtomicU64, Ordering},
     Arc, Mutex, RwLock,
 };
+use tantivy::aggregation::agg_req::Aggregations as TantivyAggregations;
+use tantivy::aggregation::{
+    AggregationCollector, AggregationLimits, DistributedAggregationCollector,
+};
 use tantivy::collector::{Count, DocSetCollector, TopDocs};
 use tantivy::query::{
     AllQuery, BooleanQuery, BoostQuery, ConstScoreQuery, DisjunctionMaxQuery, EmptyQuery,
@@ -93,8 +97,8 @@ const MAX_KNN_CACHE_ENTRIES_PER_FIELD: usize = 16;
 const MAX_KNN_CACHE_BYTES_PER_FIELD: usize = 256 * 1024;
 const TANTIVY_WRITER_HEAP_BYTES: usize = 16 * 1024 * 1024;
 const TANTIVY_MERGE_MIN_LAYER_DOCS: u32 = 512;
-// Small shards complete faster sequentially than competing for the shared Rayon pool.
-const SHARDED_PAGE_PARALLEL_REDUCE_MIN_DOCUMENTS: usize = 10_000;
+// Keep the v0.6.0 proven threshold for bounded sharded native page reduction.
+const SHARDED_PAGE_PARALLEL_REDUCE_MIN_DOCUMENTS: usize = 2_048;
 
 type FetchSubphaseResult = SearchFetchSubphaseResult;
 type IndexedField = TantivyIndexedField;
@@ -103,6 +107,7 @@ type SearchShardScope = BTreeMap<String, BTreeSet<u32>>;
 
 const INTERNAL_SEARCH_SHARD_SCOPE_FIELD: &str = "_steelsearch_shard_scope";
 const INTERNAL_SEARCH_ALIAS_FILTERS_FIELD: &str = "_steelsearch_alias_filters";
+const INTERNAL_SEARCH_TRACK_SCORES_FIELD: &str = "_steelsearch_track_scores";
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct TantivyIndexSchema {
@@ -613,9 +618,31 @@ impl StoredShard {
         after_sequence_number: i64,
         until_sequence_number: i64,
     ) -> Vec<Arc<StoredDocument>> {
+        if after_sequence_number >= until_sequence_number {
+            return Vec::new();
+        }
         self.ids_by_seq_no
             .range((after_sequence_number.saturating_add(1))..=until_sequence_number)
             .filter_map(|(_seq_no, id)| self.documents.get(id).cloned())
+            .collect()
+    }
+
+    fn documents_changed_since_refresh_through(
+        &self,
+        sequence_number: i64,
+    ) -> Vec<Arc<StoredDocument>> {
+        self.documents
+            .values()
+            .filter(|document| {
+                document.metadata.seq_no <= sequence_number
+                    && self
+                        .refreshed_documents_by_id
+                        .get(&document.metadata.id)
+                        .is_none_or(|published| {
+                            published.metadata.seq_no != document.metadata.seq_no
+                        })
+            })
+            .cloned()
             .collect()
     }
 
@@ -2315,23 +2342,37 @@ impl IndexEngine for TantivyEngine {
                                 .values_mut()
                                 .next()
                                 .expect("single-shard index has a shard");
-                            let pending_documents = shard.documents_after_until(
-                                index.refreshed_seq_no,
-                                target_refreshed_seq_no,
-                            );
+                            let pending_documents = shard
+                                .documents_changed_since_refresh_through(target_refreshed_seq_no);
+                            let requires_full_rebuild = pending_documents.iter().any(|document| {
+                                document.metadata.seq_no <= index.refreshed_seq_no
+                            });
+                            let shard_id = shard.shard_id;
+                            let documents = shard.documents.clone();
                             shard.incremental_refresh_in_progress = true;
                             index.incremental_refresh_in_progress = true;
                             Some((
                                 target_refreshed_seq_no,
-                                vec![ShardRefreshPlan::Replace {
-                                    shard_id: shard.shard_id,
-                                    target_refreshed_seq_no,
-                                    schema: index.schema.clone(),
-                                    schema_hash: index.schema_hash,
-                                    documents: shard.documents.clone(),
-                                    pending_documents,
-                                    deleted_document_ids: shard.pending_deleted_ids.clone(),
-                                    search_state: search_state.clone(),
+                                vec![if requires_full_rebuild {
+                                    // A late replay predates this reader generation. Rebuild the
+                                    // shard rather than applying a delta against that generation.
+                                    ShardRefreshPlan::Full {
+                                        shard_id,
+                                        target_refreshed_seq_no,
+                                        schema: index.schema.clone(),
+                                        documents,
+                                    }
+                                } else {
+                                    ShardRefreshPlan::Replace {
+                                        shard_id,
+                                        target_refreshed_seq_no,
+                                        schema: index.schema.clone(),
+                                        schema_hash: index.schema_hash,
+                                        documents,
+                                        pending_documents,
+                                        deleted_document_ids: shard.pending_deleted_ids.clone(),
+                                        search_state: search_state.clone(),
+                                    }
                                 }],
                                 non_append_generations,
                             ))
@@ -2391,21 +2432,37 @@ impl IndexEngine for TantivyEngine {
                                 .as_ref()
                                 .filter(|_| shard.refreshed_seq_no >= 0)
                             {
-                                let pending_documents = shard.documents_after_until(
-                                    shard.refreshed_seq_no,
-                                    shard_target_refreshed_seq_no,
-                                );
+                                let pending_documents = shard
+                                    .documents_changed_since_refresh_through(shard_target_refreshed_seq_no);
+                                let requires_full_rebuild = pending_documents
+                                    .iter()
+                                    .any(|document| {
+                                        document.metadata.seq_no <= shard.refreshed_seq_no
+                                    });
+                                let shard_id = shard.shard_id;
+                                let documents = shard.documents.clone();
                                 shard.incremental_refresh_in_progress = true;
-                                plans.push(ShardRefreshPlan::Replace {
-                                    shard_id: shard.shard_id,
-                                    target_refreshed_seq_no: shard_target_refreshed_seq_no,
-                                    schema: schema.clone(),
-                                    schema_hash,
-                                    documents: shard.documents.clone(),
-                                    pending_documents,
-                                    deleted_document_ids: shard.pending_deleted_ids.clone(),
-                                    search_state: search_state.clone(),
-                                });
+                                if requires_full_rebuild {
+                                    // See the single-shard branch above. The rebuild is scoped to
+                                    // the shard containing the late replay.
+                                    plans.push(ShardRefreshPlan::Full {
+                                        shard_id,
+                                        target_refreshed_seq_no: shard_target_refreshed_seq_no,
+                                        schema: schema.clone(),
+                                        documents,
+                                    });
+                                } else {
+                                    plans.push(ShardRefreshPlan::Replace {
+                                        shard_id,
+                                        target_refreshed_seq_no: shard_target_refreshed_seq_no,
+                                        schema: schema.clone(),
+                                        schema_hash,
+                                        documents,
+                                        pending_documents,
+                                        deleted_document_ids: shard.pending_deleted_ids.clone(),
+                                        search_state: search_state.clone(),
+                                    });
+                                }
                             } else {
                                 shard.incremental_refresh_in_progress = true;
                                 plans.push(ShardRefreshPlan::Full {
@@ -3442,6 +3499,14 @@ impl IndexEngine for TantivyEngine {
         let aggregation_map = parse_search_aggregation_map(&request.aggregations)?;
         let shard_scope = parse_internal_search_shard_scope(&request.query);
         let alias_filters = parse_internal_search_alias_filters(&request.query)?;
+        // REST requests with an explicit non-score sort may omit scores entirely.
+        // Keep direct engine callers score-preserving unless they opt out explicitly.
+        let scores_required = request
+            .query
+            .get(INTERNAL_SEARCH_TRACK_SCORES_FIELD)
+            .and_then(Value::as_bool)
+            .unwrap_or(true)
+            || aggregation_map_contains_direct_top_hits(&aggregation_map);
         let request_result_cache_supported = vector_request_result_cache_supported(&query)
             && shard_scope.is_empty()
             && alias_filters.is_empty();
@@ -3783,6 +3848,7 @@ impl IndexEngine for TantivyEngine {
                         request.size,
                         fetch_subphases,
                         source_projection_fields.as_deref(),
+                        scores_required,
                     );
                 }
             }
@@ -3987,6 +4053,7 @@ impl TantivyEngine {
         size: usize,
         fetch_subphases: Vec<FetchSubphaseResult>,
         source_projection_fields: Option<&[String]>,
+        scores_required: bool,
     ) -> EngineResult<SearchResponse> {
         let (index_snapshot, search_execution_telemetry) = {
             #[cfg(not(feature = "diagnostic-lock-timing"))]
@@ -4021,7 +4088,7 @@ impl TantivyEngine {
             search_execution_telemetry,
         };
         Ok(store
-            .search_response_index_aware_with_optional_reusable(
+            .search_response_index_aware_with_optional_reusable_with_score_requirement(
                 &[index_name.to_string()],
                 Some(index_name),
                 &SearchShardScope::default(),
@@ -4032,6 +4099,7 @@ impl TantivyEngine {
                 size,
                 fetch_subphases,
                 source_projection_fields,
+                scores_required,
             )?
             .0)
     }
@@ -8499,6 +8567,35 @@ impl EngineStore {
         fetch_subphases: Vec<FetchSubphaseResult>,
         source_projection_fields: Option<&[String]>,
     ) -> EngineResult<(SearchResponse, Option<ReusableQueryContext<'_>>)> {
+        self.search_response_index_aware_with_optional_reusable_with_score_requirement(
+            index_names,
+            single_index_name,
+            shard_scope,
+            query,
+            sort_specs,
+            aggregation_map,
+            from,
+            size,
+            fetch_subphases,
+            source_projection_fields,
+            true,
+        )
+    }
+
+    fn search_response_index_aware_with_optional_reusable_with_score_requirement(
+        &self,
+        index_names: &[String],
+        single_index_name: Option<&str>,
+        shard_scope: &SearchShardScope,
+        query: &Query,
+        sort_specs: &[SortSpec],
+        aggregation_map: &AggregationMap,
+        from: usize,
+        size: usize,
+        fetch_subphases: Vec<FetchSubphaseResult>,
+        source_projection_fields: Option<&[String]>,
+        scores_required: bool,
+    ) -> EngineResult<(SearchResponse, Option<ReusableQueryContext<'_>>)> {
         let mapped_sort = MappedEngineSort::new(self, index_names, sort_specs)?;
         if size == 0 {
             if let Some((total_hits, aggregations)) = self
@@ -8641,13 +8738,14 @@ impl EngineStore {
                 }
             }
             if let Some((total_hits, page_hits)) = index
-                .search_hits_page_for_query_index_aware_scoped(
+                .search_hits_page_for_query_index_aware_scoped_with_score_requirement(
                     index_name,
                     shard_scope.get(index_name),
                     query,
                     sort_specs,
                     from,
                     size,
+                    scores_required,
                 )?
             {
                 let aggregations = index.collect_aggregations_scoped(
@@ -11864,6 +11962,7 @@ impl StoredIndex {
         sort: &[SortSpec],
         from: usize,
         size: usize,
+        scores_required: bool,
     ) -> EngineResult<Option<(u64, Vec<SearchHit>)>> {
         if sort_uses_default_relevance_order(sort) {
             let Some((total_hits, mut hits)) = self.collect_sharded_page_candidates(
@@ -11872,6 +11971,7 @@ impl StoredIndex {
                 sort,
                 from,
                 size,
+                scores_required,
                 |document, score| (document, score),
             )?
             else {
@@ -11901,6 +12001,7 @@ impl StoredIndex {
             sort,
             from,
             size,
+            scores_required,
             |document, score| (document, score),
         )?
         else {
@@ -11951,6 +12052,7 @@ impl StoredIndex {
         sort: &[SortSpec],
         from: usize,
         size: usize,
+        scores_required: bool,
         materialize: Materialize,
     ) -> EngineResult<Option<(u64, Vec<Hit>)>>
     where
@@ -11972,9 +12074,11 @@ impl StoredIndex {
             return Ok(None);
         }
         let first_pass_limit = from.saturating_add(size);
-        let native_query_score =
-            self.native_query_score_is_authoritative_for_sort(query, selected_shards, sort);
-        let exact_source_score = query_needs_exact_source_score(query) && !native_query_score;
+        let native_query_score = scores_required
+            && self.native_query_score_is_authoritative_for_sort(query, selected_shards, sort);
+        let exact_source_score = scores_required
+            && query_needs_exact_source_score(query)
+            && !native_query_score;
         let search_shard =
             |(shard, search_state): &(
                 &'a StoredShard,
@@ -12042,12 +12146,14 @@ impl StoredIndex {
                     } else {
                         score
                     };
-                    if !native_query_score {
+                    if scores_required && !native_query_score {
                         if let Some(opensearch_score) = self.opensearch_text_bm25_score(query, document) {
                             hit_score = opensearch_score;
                         }
                     }
-                    if !exact_source_score && !native_query_score && hit_score == 0.0 {
+                    if (!scores_required || (!exact_source_score && !native_query_score))
+                        && hit_score == 0.0
+                    {
                         hit_score = 1.0;
                     }
                     hits.push(materialize(document, hit_score));
@@ -12241,6 +12347,27 @@ impl StoredIndex {
         from: usize,
         size: usize,
     ) -> EngineResult<Option<(u64, Vec<SearchHit>)>> {
+        self.search_hits_page_for_query_native_scoped_with_score_requirement(
+            index_name,
+            selected_shards,
+            query,
+            sort,
+            from,
+            size,
+            true,
+        )
+    }
+
+    fn search_hits_page_for_query_native_scoped_with_score_requirement(
+        &self,
+        index_name: &str,
+        selected_shards: Option<&BTreeSet<u32>>,
+        query: &Query,
+        sort: &[SortSpec],
+        from: usize,
+        size: usize,
+        scores_required: bool,
+    ) -> EngineResult<Option<(u64, Vec<SearchHit>)>> {
         if selected_shards
             .is_some_and(|selected| !self.documents.shards.keys().any(|id| selected.contains(id)))
         {
@@ -12260,6 +12387,7 @@ impl StoredIndex {
                 sort,
                 from,
                 size,
+                scores_required,
             )? {
                 return Ok(Some(page));
             }
@@ -12352,7 +12480,7 @@ impl StoredIndex {
         {
             if self.search_state.is_none() && self.documents.shard_count > 1 {
                 if let Some(page) = self.search_hits_page_for_query_native_sharded_tantivy(
-                    index_name, None, query, sort, from, size,
+                    index_name, None, query, sort, from, size, scores_required,
                 )? {
                     return Ok(Some(page));
                 }
@@ -12408,9 +12536,11 @@ impl StoredIndex {
             } else {
                 from.saturating_add(size)
             };
-            let native_query_score = self
-                .native_query_score_is_authoritative_for_sort(query, selected_shards, sort);
-            let exact_source_score = query_needs_exact_source_score(query) && !native_query_score;
+            let native_query_score = scores_required
+                && self.native_query_score_is_authoritative_for_sort(query, selected_shards, sort);
+            let exact_source_score = scores_required
+                && query_needs_exact_source_score(query)
+                && !native_query_score;
             let Some((total_hits, mut scored_addresses)) =
                 search_tantivy_count_and_top_docs_with_scores(
                     search_state,
@@ -12474,7 +12604,7 @@ impl StoredIndex {
                 } else {
                     score
                 };
-                if !native_query_score {
+                if scores_required && !native_query_score {
                     if let Some(opensearch_score) = self
                         .opensearch_text_bm25_score_with_prepared_context(
                             query,
@@ -12489,7 +12619,7 @@ impl StoredIndex {
                     index_name,
                     document,
                     hit_score,
-                    !exact_source_score && !native_query_score,
+                    !scores_required || (!exact_source_score && !native_query_score),
                 ));
             }
             if sort_uses_default_relevance_order(sort) {
@@ -12740,6 +12870,27 @@ impl StoredIndex {
         from: usize,
         size: usize,
     ) -> EngineResult<Option<(u64, Vec<SearchHit>)>> {
+        self.search_hits_page_for_query_index_aware_scoped_with_score_requirement(
+            index_name,
+            selected_shards,
+            query,
+            sort,
+            from,
+            size,
+            true,
+        )
+    }
+
+    fn search_hits_page_for_query_index_aware_scoped_with_score_requirement(
+        &self,
+        index_name: &str,
+        selected_shards: Option<&BTreeSet<u32>>,
+        query: &Query,
+        sort: &[SortSpec],
+        from: usize,
+        size: usize,
+        scores_required: bool,
+    ) -> EngineResult<Option<(u64, Vec<SearchHit>)>> {
         if !self.has_native_search_artifacts() {
             return Ok(None);
         }
@@ -12770,13 +12921,14 @@ impl StoredIndex {
                     .search_hits_page_for_hybrid_bool_query(index_name, clauses, sort, from, size);
             }
         }
-        self.search_hits_page_for_query_native_scoped(
+        self.search_hits_page_for_query_native_scoped_with_score_requirement(
             index_name,
             selected_shards,
             query,
             sort,
             from,
             size,
+            scores_required,
         )
     }
 
@@ -14405,6 +14557,15 @@ impl StoredIndex {
         if aggregation_map.is_empty() {
             return Ok(Some(serde_json::json!({})));
         }
+        if let Some(mut aggregations) =
+            self.collect_simple_bucket_aggregations_with_tantivy(query, aggregation_map)?
+        {
+            if let Some(object) = aggregations.as_object_mut() {
+                finalize_checked_aggregation_response(object, aggregation_map)?;
+            }
+            strip_internal_merge_surfaces(&mut aggregations);
+            return Ok(Some(aggregations));
+        }
         let requires_hit_materialization =
             aggregation_map_requires_hit_materialization(aggregation_map);
         let documents = if let Some(documents) = if requires_hit_materialization {
@@ -14459,6 +14620,88 @@ impl StoredIndex {
         }
         strip_internal_merge_surfaces(&mut aggregations);
         Ok(Some(aggregations))
+    }
+
+    // Tantivy's collector is used only for the narrow subset whose request and response
+    // semantics have an exact adapter. All other aggregation requests retain the established
+    // document-backed implementation below.
+    fn collect_simple_bucket_aggregations_with_tantivy(
+        &self,
+        query: &Query,
+        aggregation_map: &AggregationMap,
+    ) -> EngineResult<Option<Value>> {
+        let Some(aggregation_request) =
+            tantivy_simple_bucket_aggregation_request(aggregation_map)
+        else {
+            return Ok(None);
+        };
+        let limits = AggregationLimits::default();
+        let native_result = if let Some(search_state) = self
+            .search_state
+            .as_ref()
+            .filter(|_| self.documents.shard_count <= 1)
+        {
+            if !tantivy_simple_bucket_aggregation_fields_supported(
+                &self.schema,
+                search_state,
+                aggregation_map,
+            ) {
+                return Ok(None);
+            }
+            let Some(tantivy_query) = build_tantivy_query(search_state, query)? else {
+                return Ok(None);
+            };
+            let collector = AggregationCollector::from_aggs(aggregation_request.clone(), limits.clone());
+            let result = search_state
+                .searcher
+                .search(tantivy_query.as_ref(), &collector)
+                .map_err(tantivy_error)?;
+            serde_json::to_value(result).map_err(tantivy_error)?
+        } else {
+            let shard_states = self.shard_search_states_for(None).collect::<Vec<_>>();
+            if shard_states.is_empty() || shard_states.len() != self.documents.shards.len() {
+                return Ok(None);
+            }
+            if !shard_states.iter().all(|(_, search_state)| {
+                tantivy_simple_bucket_aggregation_fields_supported(
+                    &self.schema,
+                    search_state,
+                    aggregation_map,
+                )
+            }) {
+                return Ok(None);
+            }
+            let shard_results = shard_states
+                .par_iter()
+                .map(|(_, search_state)| -> EngineResult<_> {
+                    let Some(tantivy_query) = build_tantivy_query(search_state, query)? else {
+                        return Err(invalid_request(
+                            "native aggregation query support changed between shards",
+                        ));
+                    };
+                    let collector = DistributedAggregationCollector::from_aggs(
+                        aggregation_request.clone(),
+                        limits.clone(),
+                    );
+                    search_state
+                        .searcher
+                        .search(tantivy_query.as_ref(), &collector)
+                        .map_err(tantivy_error)
+                })
+                .collect::<EngineResult<Vec<_>>>()?;
+            let mut results = shard_results.into_iter();
+            let Some(mut merged) = results.next() else {
+                return Ok(None);
+            };
+            for result in results {
+                merged.merge_fruits(result).map_err(tantivy_error)?;
+            }
+            let result = merged
+                .into_final_result(aggregation_request.clone(), &limits)
+                .map_err(tantivy_error)?;
+            serde_json::to_value(result).map_err(tantivy_error)?
+        };
+        tantivy_simple_bucket_aggregation_response(aggregation_map, native_result)
     }
 
     fn collect_aggregations_scoped(
@@ -36324,6 +36567,240 @@ fn collect_aggregations_with_plugin_top_hits_input_order_and_background_with_bud
     Ok(Value::Object(aggregations))
 }
 
+fn tantivy_simple_bucket_aggregation_request(
+    aggregation_map: &AggregationMap,
+) -> Option<TantivyAggregations> {
+    let mut request = serde_json::Map::new();
+    for (name, aggregation) in aggregation_map {
+        let aggregation = match aggregation {
+            Aggregation::Terms(terms)
+                if !terms.field.contains('.')
+                    && terms.size > 0
+                    && terms.size <= u32::MAX as usize
+                    && terms.missing.is_none()
+                    && terms.include.is_none()
+                    && terms.exclude.is_none() =>
+            {
+                serde_json::json!({
+                    "terms": {
+                        "field": terms.field,
+                        "size": terms.size as u32,
+                        "min_doc_count": terms.min_doc_count,
+                        "order": { "_count": "desc" }
+                    }
+                })
+            }
+            Aggregation::Range(range) if !range.field.contains('.') => {
+                let ranges = range
+                    .ranges
+                    .iter()
+                    .map(|bucket| {
+                        let mut value = serde_json::Map::new();
+                        if let Some(key) = &bucket.key {
+                            value.insert("key".to_string(), Value::String(key.clone()));
+                        }
+                        if let Some(from) = bucket.from {
+                            value.insert("from".to_string(), Value::from(from));
+                        }
+                        if let Some(to) = bucket.to {
+                            value.insert("to".to_string(), Value::from(to));
+                        }
+                        Value::Object(value)
+                    })
+                    .collect::<Vec<_>>();
+                serde_json::json!({
+                    "range": {
+                        "field": range.field,
+                        "ranges": ranges
+                    }
+                })
+            }
+            // Tantivy 0.21 only supports fixed intervals. UTC calendar days with no
+            // formatting, offsets, bounds, or missing value are exactly fixed 24-hour buckets.
+            Aggregation::DateHistogram(date_histogram)
+                if !date_histogram.field.contains('.')
+                    && matches!(date_histogram.interval.as_str(), "day" | "1d")
+                    && date_histogram.missing.is_none()
+                    && !date_histogram.keyed
+                    && date_histogram.offset_millis == 0
+                    && date_histogram.time_zone.is_none()
+                    && date_histogram.format.is_none()
+                    && date_histogram.min_doc_count == 0
+                    && date_histogram.extended_bounds.is_none()
+                    && date_histogram.hard_bounds.is_none() =>
+            {
+                serde_json::json!({
+                    "date_histogram": {
+                        "field": date_histogram.field,
+                        "fixed_interval": "1d",
+                        "min_doc_count": 0
+                    }
+                })
+            }
+            _ => return None,
+        };
+        request.insert(name.clone(), aggregation);
+    }
+    serde_json::from_value(Value::Object(request)).ok()
+}
+
+fn tantivy_simple_bucket_aggregation_fields_supported(
+    schema: &TantivyIndexSchema,
+    search_state: &TantivySearchState,
+    aggregation_map: &AggregationMap,
+) -> bool {
+    aggregation_map.values().all(|aggregation| {
+        let (field, expected_type) = match aggregation {
+            Aggregation::Terms(terms) => (&terms.field, TantivyFieldType::Keyword),
+            Aggregation::Range(range) => (&range.field, TantivyFieldType::F64),
+            Aggregation::DateHistogram(date_histogram) => {
+                let mapping_has_default_date_format = schema
+                    .fields
+                    .iter()
+                    .find(|mapping| mapping.name == date_histogram.field)
+                    .is_some_and(|mapping| mapping.date_format.is_none());
+                if !mapping_has_default_date_format {
+                    return false;
+                }
+                (&date_histogram.field, TantivyFieldType::Date)
+            }
+            _ => return false,
+        };
+        let Some(indexed_field) = search_state.fields.get(field) else {
+            return false;
+        };
+        (indexed_field.fast || indexed_field.field_type == TantivyFieldType::Keyword)
+            && (indexed_field.field_type == expected_type
+                || (expected_type == TantivyFieldType::F64
+                    && indexed_field.field_type == TantivyFieldType::I64))
+    })
+}
+
+fn tantivy_simple_bucket_aggregation_response(
+    aggregation_map: &AggregationMap,
+    native_response: Value,
+) -> EngineResult<Option<Value>> {
+    let Some(native_response) = native_response.as_object() else {
+        return Ok(None);
+    };
+    let mut response = serde_json::Map::new();
+    for (name, aggregation) in aggregation_map {
+        let Some(native_aggregation) = native_response.get(name).and_then(Value::as_object) else {
+            return Ok(None);
+        };
+        let Some(native_buckets) = native_aggregation.get("buckets").and_then(Value::as_array)
+        else {
+            return Ok(None);
+        };
+        let value = match aggregation {
+            Aggregation::Terms(terms) => {
+                if native_aggregation
+                    .get("sum_other_doc_count")
+                    .and_then(Value::as_u64)
+                    != Some(0)
+                {
+                    return Ok(None);
+                }
+                let mut buckets = native_buckets
+                    .iter()
+                    .map(|bucket| {
+                        let object = bucket.as_object()?;
+                        Some((
+                            object.get("key")?.as_str()?.to_string(),
+                            object.get("doc_count")?.as_u64()?,
+                        ))
+                    })
+                    .collect::<Option<Vec<_>>>();
+                let Some(mut buckets) = buckets.take() else {
+                    return Ok(None);
+                };
+                if buckets.len() > terms.size {
+                    return Ok(None);
+                }
+                buckets.sort_by(|(left_key, left_count), (right_key, right_count)| {
+                    right_count
+                        .cmp(left_count)
+                        .then_with(|| left_key.cmp(right_key))
+                });
+                bucket_array_visible_and_carrier_value(
+                    buckets
+                        .into_iter()
+                        .map(|(key, doc_count)| {
+                            serde_json::json!({ "key": key, "doc_count": doc_count })
+                        })
+                        .collect(),
+                )
+            }
+            Aggregation::Range(range) => {
+                if native_buckets.len() != range.ranges.len() {
+                    return Ok(None);
+                }
+                let mut buckets = Vec::with_capacity(range.ranges.len());
+                for (native_bucket, range_bucket) in native_buckets.iter().zip(&range.ranges) {
+                    let Some(doc_count) = native_bucket
+                        .as_object()
+                        .and_then(|object| object.get("doc_count"))
+                        .and_then(Value::as_u64)
+                    else {
+                        return Ok(None);
+                    };
+                    let mut bucket = serde_json::Map::new();
+                    bucket.insert("key".to_string(), Value::String(range_bucket_key(range_bucket)));
+                    if let Some(from) = range_bucket.from {
+                        bucket.insert("from".to_string(), Value::from(from));
+                    }
+                    if let Some(to) = range_bucket.to {
+                        bucket.insert("to".to_string(), Value::from(to));
+                    }
+                    bucket.insert("doc_count".to_string(), Value::from(doc_count));
+                    buckets.push(Value::Object(bucket));
+                }
+                bucket_array_visible_and_carrier_value(buckets)
+            }
+            Aggregation::DateHistogram(date_histogram) => {
+                let mut counts = BTreeMap::new();
+                for native_bucket in native_buckets {
+                    let Some(object) = native_bucket.as_object() else {
+                        return Ok(None);
+                    };
+                    let Some(key) = object.get("key").and_then(value_as_exact_i64) else {
+                        return Ok(None);
+                    };
+                    let Some(doc_count) = object.get("doc_count").and_then(Value::as_u64) else {
+                        return Ok(None);
+                    };
+                    let Some(key_as_string) =
+                        date_histogram_key_as_string_from_epoch_millis(key, 0, None)
+                    else {
+                        return Ok(None);
+                    };
+                    if counts.insert(key, (key_as_string, doc_count)).is_some() {
+                        return Ok(None);
+                    }
+                }
+                date_histogram_bucket_surface_value(
+                    date_histogram_bucket_values_from_counts(&counts, date_histogram)?,
+                    false,
+                )
+            }
+            _ => return Ok(None),
+        };
+        response.insert(name.clone(), value);
+    }
+    Ok(Some(Value::Object(response)))
+}
+
+fn value_as_exact_i64(value: &Value) -> Option<i64> {
+    value.as_i64().or_else(|| {
+        let value = value.as_f64()?;
+        (value.is_finite()
+            && value.fract() == 0.0
+            && value >= i64::MIN as f64
+            && value < -(i64::MIN as f64))
+            .then_some(value as i64)
+    })
+}
+
 fn collect_aggregations_from_documents(
     index_name: &str,
     documents: &[&StoredDocument],
@@ -54005,6 +54482,7 @@ mod tests {
                                         sort,
                                         from,
                                         size,
+                                        true,
                                     )
                                     .unwrap();
                                 assert_eq!(actual, expected,
@@ -169520,6 +169998,148 @@ mod tests {
                         "upper_sampling": 383.3030277982336,
                         "lower_sampling": 16.696972201766414
                     }
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn native_fast_field_bucket_aggregations_preserve_benchmark_shape() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "bench".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({
+                    "properties": {
+                        "message": { "type": "text" },
+                        "tenant": { "type": "keyword" },
+                        "service": { "type": "keyword" },
+                        "category": { "type": "keyword" },
+                        "latency": { "type": "long" },
+                        "event_time": { "type": "date" }
+                    }
+                }),
+            })
+            .unwrap();
+        for (id, service, category, latency, event_time) in [
+            ("1", "api", "commerce", 80, "2024-01-01T12:00:00Z"),
+            ("2", "api", "commerce", 180, "2024-01-03T08:00:00Z"),
+            ("3", "worker", "analytics", 320, "2024-01-03T20:00:00Z"),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "bench".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({
+                        "message": "service event",
+                        "tenant": "tenant-a",
+                        "service": service,
+                        "category": category,
+                        "latency": latency,
+                        "event_time": event_time
+                    }),
+                })
+                .unwrap();
+        }
+        engine
+            .index_document(IndexDocumentRequest {
+                index: "bench".to_string(),
+                id: "excluded".to_string(),
+                source: serde_json::json!({
+                    "message": "service event",
+                    "tenant": "tenant-b",
+                    "service": "excluded",
+                    "category": "excluded",
+                    "latency": 999,
+                    "event_time": "2024-01-04T00:00:00Z"
+                }),
+            })
+            .unwrap();
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["bench".to_string()],
+            })
+            .unwrap();
+
+        let query = parse_query(&serde_json::json!({
+            "bool": {
+                "must": [{ "match": { "message": "service" } }],
+                "filter": [{ "term": { "tenant": "tenant-a" } }]
+            }
+        }))
+        .unwrap();
+        let aggregations = parse_search_aggregation_map(&serde_json::json!({
+            "by_service": { "terms": { "field": "service", "size": 8 } },
+            "by_category": { "terms": { "field": "category", "size": 8 } },
+            "latency_ranges": {
+                "range": {
+                    "field": "latency",
+                    "ranges": [{ "to": 100 }, { "from": 100, "to": 300 }, { "from": 300 }]
+                }
+            },
+            "recent_events": {
+                "date_histogram": { "field": "event_time", "calendar_interval": "day" }
+            }
+        }))
+        .unwrap();
+
+        let store = engine.store.read().unwrap();
+        let index = store.indices.get("bench").unwrap();
+        let search_state = index.search_state.as_ref().expect("native search state");
+        assert!(tantivy_simple_bucket_aggregation_fields_supported(
+            &index.schema,
+            search_state,
+            &aggregations,
+        ));
+        assert!(index
+            .collect_simple_bucket_aggregations_with_tantivy(&query, &aggregations)
+            .unwrap()
+            .is_some());
+        let native = index
+            .collect_aggregations_native(&query, &aggregations)
+            .unwrap()
+            .expect("native fast-field aggregation");
+        assert_eq!(
+            native,
+            serde_json::json!({
+                "by_service": {
+                    "buckets": [
+                        { "key": "api", "doc_count": 2 },
+                        { "key": "worker", "doc_count": 1 }
+                    ]
+                },
+                "by_category": {
+                    "buckets": [
+                        { "key": "commerce", "doc_count": 2 },
+                        { "key": "analytics", "doc_count": 1 }
+                    ]
+                },
+                "latency_ranges": {
+                    "buckets": [
+                        { "key": "*-100", "to": 100.0, "doc_count": 1 },
+                        { "key": "100-300", "from": 100.0, "to": 300.0, "doc_count": 1 },
+                        { "key": "300-*", "from": 300.0, "doc_count": 1 }
+                    ]
+                },
+                "recent_events": {
+                    "buckets": [
+                        {
+                            "key": 1704067200000_i64,
+                            "key_as_string": "2024-01-01T00:00:00.000Z",
+                            "doc_count": 1
+                        },
+                        {
+                            "key": 1704153600000_i64,
+                            "key_as_string": "2024-01-02T00:00:00.000Z",
+                            "doc_count": 0
+                        },
+                        {
+                            "key": 1704240000000_i64,
+                            "key_as_string": "2024-01-03T00:00:00.000Z",
+                            "doc_count": 2
+                        }
+                    ]
                 }
             })
         );
