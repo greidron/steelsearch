@@ -4813,9 +4813,32 @@ fn runtime_thread_pool_entry_blocked(
     }
     if pool == "search" {
         let maintenance = counters.get("maintenance").cloned().unwrap_or_default();
-        return maintenance.active > 0 || maintenance.queue > 0;
+        // A refresh uses snapshot publication, so searches may continue against
+        // the prior reader while it is active. A queued refresh still takes
+        // admission priority over further searches.
+        return maintenance.queue > 0;
     }
     false
+}
+
+#[cfg(test)]
+#[test]
+fn runtime_search_admission_only_yields_to_queued_maintenance() {
+    let mut counters = BTreeMap::new();
+    counters.insert(
+        "maintenance".to_string(),
+        RuntimeThreadPoolCounters {
+            active: 1,
+            queue: 0,
+            rejected: 0,
+            completed: 0,
+        },
+    );
+
+    assert!(!runtime_thread_pool_entry_blocked("search", &counters, 1));
+
+    counters.get_mut("maintenance").unwrap().queue = 1;
+    assert!(runtime_thread_pool_entry_blocked("search", &counters, 1));
 }
 
 fn default_system_template_catalog() -> Vec<SystemTemplateCatalogEntry> {
