@@ -1,0 +1,4217 @@
+{
+  "generated_at_epoch_seconds": 1789399806,
+  "config": {
+    "corpus_size": 5000,
+    "vector_dimension": 384,
+    "vector_source": "default",
+    "vector_space_type": "default",
+    "duration_seconds": 60.0,
+    "clients": 4,
+    "number_of_shards": 3,
+    "number_of_replicas": 1,
+    "timeout_seconds": 10.0,
+    "query_mix": "write=15,lexical=15,ranking=15,facet=15,sort_filter=10,nested=10,refresh=5",
+    "seed": 13,
+    "profile": "minilm-knn",
+    "operation_resource_deltas": false,
+    "diagnostic_timeline": false,
+    "reuse_steelsearch_binary": true
+  },
+  "scenario_plan": [
+    {
+      "key": "steelsearch-single-node",
+      "label": "Steelsearch 1-node",
+      "engine": "steelsearch",
+      "topology": "single-node",
+      "node_count": 1
+    },
+    {
+      "key": "steelsearch-three-node",
+      "label": "Steelsearch 3-node",
+      "engine": "steelsearch",
+      "topology": "three-node",
+      "node_count": 3
+    }
+  ],
+  "scenarios": {
+    "steelsearch-single-node": {
+      "config": {
+        "base_url": "http://127.0.0.1:58733",
+        "base_urls": [
+          "http://127.0.0.1:58733"
+        ],
+        "clients": 4,
+        "corpus_size": 5000,
+        "diagnostic_timeline": false,
+        "duration_seconds": 60.0,
+        "expected_node_count": 1,
+        "index": "search-benchmark-steelsearch-single-node",
+        "number_of_replicas": 0,
+        "number_of_shards": 3,
+        "operation_resource_deltas": false,
+        "query_mix": {
+          "facet": 15,
+          "fallback_case_insensitive_wildcard": 0,
+          "fallback_distance_feature": 0,
+          "fallback_more_like_this": 0,
+          "fallback_query_string": 0,
+          "fallback_rank_feature": 0,
+          "fallback_terms_set": 0,
+          "hybrid": 0,
+          "lexical": 15,
+          "nested": 10,
+          "ranking": 15,
+          "refresh": 5,
+          "sort_filter": 10,
+          "vector": 0,
+          "write": 15
+        },
+        "reset": true,
+        "seed": 13,
+        "vector_dimension": 384,
+        "vector_source": "default",
+        "vector_space_type": "default"
+      },
+      "operations": {
+        "facet": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 7938,
+            "max": 103.05506293661892,
+            "mean": 5.615351962805091,
+            "min": 1.2163720093667507,
+            "p50": 4.985069506801665,
+            "p90": 8.899996010586621,
+            "p95": 10.763240850064903,
+            "p99": 15.208687100093814
+          },
+          "success_count": 7938
+        },
+        "lexical": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 7893,
+            "max": 96.94660198874772,
+            "mean": 4.5032678015650935,
+            "min": 0.7970081642270088,
+            "p50": 3.947438905015588,
+            "p90": 7.506379019469023,
+            "p95": 9.145170403644439,
+            "p99": 13.054127478972077
+          },
+          "success_count": 7893
+        },
+        "nested": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 5184,
+            "max": 61.91241508349776,
+            "mean": 6.554690079711792,
+            "min": 0.8896877989172935,
+            "p50": 6.213681539520621,
+            "p90": 10.490968637168406,
+            "p95": 12.139984278473998,
+            "p99": 16.407382204197347
+          },
+          "success_count": 5184
+        },
+        "ranking": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 7792,
+            "max": 98.4604568220675,
+            "mean": 6.4834522977014775,
+            "min": 1.6818558797240257,
+            "p50": 5.965419462881982,
+            "p90": 9.799701184965674,
+            "p95": 11.58199053024873,
+            "p99": 15.857861549593508
+          },
+          "success_count": 7792
+        },
+        "refresh": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 2692,
+            "max": 106.79182014428079,
+            "mean": 7.746281424993276,
+            "min": 0.48016500659286976,
+            "p50": 7.420253474265337,
+            "p90": 12.35394689720124,
+            "p95": 13.9871004386805,
+            "p99": 19.154913013335317
+          },
+          "success_count": 2692
+        },
+        "sort_filter": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 5334,
+            "max": 59.40246907994151,
+            "mean": 5.015600384253188,
+            "min": 1.0309298522770405,
+            "p50": 4.524845047853887,
+            "p90": 8.029775717295706,
+            "p95": 9.578830946702505,
+            "p99": 13.772981034126133
+          },
+          "success_count": 5334
+        },
+        "write": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 7976,
+            "max": 18.580943811684847,
+            "mean": 3.413513358938111,
+            "min": 0.9176889434456825,
+            "p50": 3.1591521110385656,
+            "p90": 5.616295384243131,
+            "p95": 6.416463991627097,
+            "p99": 8.357612998224795
+          },
+          "success_count": 7976
+        }
+      },
+      "resource_usage": {
+        "compatibility_materialized_response_fetches": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_capacity_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_hits": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_invalidated_entries": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_misses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_refresh_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_resets": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_stale_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "materialized_response_avoided_fetches": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "materialized_response_fetches": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "memory_rss_bytes": {
+          "after": 961228800,
+          "before": 25903104,
+          "delta": 935325696,
+          "peak": 961228800
+        },
+        "native_response_body_build_nanos": {
+          "after": 625034271,
+          "before": 0,
+          "delta": 625034271,
+          "peak": null
+        },
+        "operation_log_bytes": {
+          "after": 8937,
+          "before": 7333,
+          "delta": 1604,
+          "peak": null
+        },
+        "refresh_tantivy_commit_nanos": {
+          "after": 16920857423,
+          "before": 0,
+          "delta": 16920857423,
+          "peak": null
+        },
+        "refresh_tantivy_doc_id_lookup_nanos": {
+          "after": 343759288,
+          "before": 0,
+          "delta": 343759288,
+          "peak": null
+        },
+        "refresh_tantivy_document_add_nanos": {
+          "after": 694124111,
+          "before": 0,
+          "delta": 694124111,
+          "peak": null
+        },
+        "refresh_tantivy_reload_nanos": {
+          "after": 795287580,
+          "before": 0,
+          "delta": 795287580,
+          "peak": null
+        },
+        "request_result_cache_capacity_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_explain_bypasses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_highlight_bypasses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_hits": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_hybrid_vector_bypasses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_invalidated_entries": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_misses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_refresh_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_resets": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_stale_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_unsupported_vector_bypasses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_cache_bytes": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_candidate_scan_nanos": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_capacity_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_hits": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_invalidated_entries": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_misses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_refresh_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_resets": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_stale_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_hit_materialization_nanos": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        }
+      },
+      "summary": {
+        "elapsed_seconds": 60.00513005396351,
+        "error_count": 0,
+        "error_rate": 0.0,
+        "operation_count": 44809,
+        "success_count": 44809,
+        "throughput_ops_per_second": 746.7528186290505
+      },
+      "runtime_evidence": {
+        "before": {
+          "captured_at_epoch": 1789399807.1738565,
+          "engine": "steelsearch",
+          "nodes": [
+            {
+              "pid": 3259687,
+              "start_ticks": 192074849,
+              "sha256": "40830af495aadde1b922acd01ec2cb19a6ce0a9584c30b868a43e0982e807454",
+              "environment": {
+                "STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE": "0",
+                "STEELSEARCH_SYNC_SHARED_RUNTIME_STATE_PER_REQUEST": "0",
+                "STEELSEARCH_DEFER_DEVELOPMENT_SHARD_PERSIST_PER_WRITE": "1",
+                "STEELSEARCH_DEFER_NATIVE_WRITE_UNTIL_REFRESH": "1",
+                "STEELSEARCH_MODE": null,
+                "STEELSEARCH_SECURITY_ENABLED": null,
+                "STEELSEARCH_DEVELOPMENT_SECURITY_MODE": null,
+                "STEELSEARCH_ENABLE_KNN_PLUGIN": null,
+                "STEELSEARCH_ENABLE_ML_COMMONS": null
+              },
+              "selected_cli_options": {},
+              "affinity": {
+                "Cpus_allowed_list": "0-2",
+                "Mems_allowed_list": "0"
+              },
+              "limits": "Limit                     Soft Limit           Hard Limit           Units     \nMax cpu time              unlimited            unlimited            seconds   \nMax file size             unlimited            unlimited            bytes     \nMax data size             unlimited            unlimited            bytes     \nMax stack size            8388608              unlimited            bytes     \nMax core file size        0                    unlimited            bytes     \nMax resident set          unlimited            unlimited            bytes     \nMax processes             71386                71386                processes \nMax open files            1048576              1048576              files     \nMax locked memory         2351321088           2351321088           bytes     \nMax address space         unlimited            unlimited            bytes     \nMax file locks            unlimited            unlimited            locks     \nMax pending signals       71386                71386                signals   \nMax msgqueue size         819200               819200               bytes     \nMax nice priority         0                    0                    \nMax realtime priority     0                    0                    \nMax realtime timeout      unlimited            unlimited            us        \n",
+              "cgroup_membership": "0::/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope\n",
+              "cgroup": {
+                "coverage": "visible-v2-ancestors",
+                "membership": "0::/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope\n",
+                "levels": [
+                  {
+                    "path": "/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "21415"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  },
+                  {
+                    "path": "/user.slice/user-1001.slice/user@1001.service",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "max"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  },
+                  {
+                    "path": "/user.slice/user-1001.slice",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "47115"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  },
+                  {
+                    "path": "/user.slice",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "max"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": ""
+                      }
+                    }
+                  },
+                  {
+                    "path": "/",
+                    "settings": {
+                      "cpu.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpu.weight": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.high": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.swap.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "pids.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  }
+                ],
+                "scope": "visible constraints only; hidden namespace ancestors and effective resource availability unverified"
+              }
+            }
+          ],
+          "resource_counters": [
+            {
+              "pid": 3259687,
+              "levels": [
+                {
+                  "path": "/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 70500202083\nuser_usec 55608305131\nsystem_usec 14891896951\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "8984219648"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "55"
+                    },
+                    "io.stat": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=60.66 avg60=48.86 avg300=23.42 total=6871292560\nfull avg10=1.12 avg60=0.88 avg300=0.51 total=667512460"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.43 avg60=0.51 avg300=0.22 total=67654382\nfull avg10=0.27 avg60=0.36 avg300=0.16 total=57330688"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.02 avg300=0.17 total=631718943\nfull avg10=0.00 avg60=0.02 avg300=0.15 total=591047556"
+                    }
+                  }
+                },
+                {
+                  "path": "/user.slice/user-1001.slice/user@1001.service",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 70506682933\nuser_usec 55613471741\nsystem_usec 14893211191\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "8989986816"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "58"
+                    },
+                    "io.stat": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=60.78 avg60=48.76 avg300=23.37 total=6873223840\nfull avg10=1.12 avg60=0.88 avg300=0.52 total=667629552"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.44 avg60=0.53 avg300=0.23 total=67474893\nfull avg10=0.25 avg60=0.35 avg300=0.16 total=57164358"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.02 avg300=0.15 total=628686418\nfull avg10=0.00 avg60=0.02 avg300=0.14 total=587888203"
+                    }
+                  }
+                },
+                {
+                  "path": "/user.slice/user-1001.slice",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 71512052701\nuser_usec 56133390974\nsystem_usec 15378661726\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "9030512640"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "66"
+                    },
+                    "io.stat": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=60.79 avg60=48.77 avg300=23.41 total=6950603859\nfull avg10=0.30 avg60=0.13 avg300=0.08 total=589218904"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.44 avg60=0.53 avg300=0.23 total=68473913\nfull avg10=0.25 avg60=0.35 avg300=0.16 total=57960474"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.02 avg300=0.16 total=628284402\nfull avg10=0.00 avg60=0.02 avg300=0.15 total=585368974"
+                    }
+                  }
+                },
+                {
+                  "path": "/user.slice",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 935114691379\nuser_usec 833128459586\nsystem_usec 101986231792\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 55\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "9094266880"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "66"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=1549508390912 wbytes=2112824557568 rios=26057711 wios=12348402 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=60.56 avg60=48.75 avg300=23.41 total=78866466137\nfull avg10=0.30 avg60=0.13 avg300=0.08 total=6549170603"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.44 avg60=0.53 avg300=0.23 total=869768230\nfull avg10=0.25 avg60=0.35 avg300=0.16 total=837753927"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.02 avg300=0.16 total=71436581963\nfull avg10=0.00 avg60=0.02 avg300=0.14 total=70214604568"
+                    }
+                  }
+                },
+                {
+                  "path": "/",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 1261123569039\nuser_usec 1047860030549\nsystem_usec 213263538489\nnice_usec 136732223\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.events.local": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.swap.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "pids.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=3939044084224 wbytes=2867550909952 rios=33928674 wios=52067925 dbytes=2692695373824 dios=5451570\n7:7 \n7:6 rbytes=28672 wbytes=0 rios=22 wios=0 dbytes=0 dios=0\n7:5 rbytes=3320411136 wbytes=0 rios=77549 wios=0 dbytes=0 dios=0\n7:4 rbytes=25251840 wbytes=0 rios=758 wios=0 dbytes=0 dios=0\n7:3 rbytes=669726720 wbytes=0 rios=15603 wios=0 dbytes=0 dios=0\n7:2 rbytes=10001206272 wbytes=0 rios=249691 wios=0 dbytes=0 dios=0\n7:1 rbytes=750592 wbytes=0 rios=122 wios=0 dbytes=0 dios=0\n7:0 rbytes=696320 wbytes=0 rios=75 wios=0 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=60.91 avg60=49.25 avg300=23.79 total=128247943410\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.40 avg60=0.51 avg300=0.21 total=16272808970\nfull avg10=0.23 avg60=0.33 avg300=0.15 total=16115043929"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.10 avg300=0.70 total=90418428975\nfull avg10=0.00 avg60=0.08 avg300=0.55 total=67514113010"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "host_cpu": {
+            "started_at_epoch": 1789399807.1737208,
+            "scope": "visible host aggregate, not exclusive to benchmark; guest ticks overlap user/nice; iowait may decrease",
+            "cpu_ticks": {
+              "user": 104772329,
+              "nice": 13673,
+              "system": 20203979,
+              "idle": 427017339,
+              "iowait": 19609535,
+              "irq": 0,
+              "softirq": 1122374,
+              "steal": 1765513,
+              "guest": 0,
+              "guest_nice": 0
+            },
+            "clock_ticks_per_second": 100,
+            "boot_id": "dc654322-da37-4c6e-9a9d-be3db8949a5a",
+            "finished_at_epoch": 1789399807.173855
+          },
+          "scope": "observed settings and visible cgroup constraints; effective resource availability and application enforcement not verified"
+        },
+        "after": {
+          "captured_at_epoch": 1789399871.978018,
+          "engine": "steelsearch",
+          "nodes": [
+            {
+              "pid": 3259687,
+              "start_ticks": 192074849,
+              "sha256": "40830af495aadde1b922acd01ec2cb19a6ce0a9584c30b868a43e0982e807454",
+              "environment": {
+                "STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE": "0",
+                "STEELSEARCH_SYNC_SHARED_RUNTIME_STATE_PER_REQUEST": "0",
+                "STEELSEARCH_DEFER_DEVELOPMENT_SHARD_PERSIST_PER_WRITE": "1",
+                "STEELSEARCH_DEFER_NATIVE_WRITE_UNTIL_REFRESH": "1",
+                "STEELSEARCH_MODE": null,
+                "STEELSEARCH_SECURITY_ENABLED": null,
+                "STEELSEARCH_DEVELOPMENT_SECURITY_MODE": null,
+                "STEELSEARCH_ENABLE_KNN_PLUGIN": null,
+                "STEELSEARCH_ENABLE_ML_COMMONS": null
+              },
+              "selected_cli_options": {},
+              "affinity": {
+                "Cpus_allowed_list": "0-2",
+                "Mems_allowed_list": "0"
+              },
+              "limits": "Limit                     Soft Limit           Hard Limit           Units     \nMax cpu time              unlimited            unlimited            seconds   \nMax file size             unlimited            unlimited            bytes     \nMax data size             unlimited            unlimited            bytes     \nMax stack size            8388608              unlimited            bytes     \nMax core file size        0                    unlimited            bytes     \nMax resident set          unlimited            unlimited            bytes     \nMax processes             71386                71386                processes \nMax open files            1048576              1048576              files     \nMax locked memory         2351321088           2351321088           bytes     \nMax address space         unlimited            unlimited            bytes     \nMax file locks            unlimited            unlimited            locks     \nMax pending signals       71386                71386                signals   \nMax msgqueue size         819200               819200               bytes     \nMax nice priority         0                    0                    \nMax realtime priority     0                    0                    \nMax realtime timeout      unlimited            unlimited            us        \n",
+              "cgroup_membership": "0::/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope\n",
+              "cgroup": {
+                "coverage": "visible-v2-ancestors",
+                "membership": "0::/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope\n",
+                "levels": [
+                  {
+                    "path": "/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "21415"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  },
+                  {
+                    "path": "/user.slice/user-1001.slice/user@1001.service",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "max"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  },
+                  {
+                    "path": "/user.slice/user-1001.slice",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "47115"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  },
+                  {
+                    "path": "/user.slice",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "max"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": ""
+                      }
+                    }
+                  },
+                  {
+                    "path": "/",
+                    "settings": {
+                      "cpu.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpu.weight": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.high": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.swap.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "pids.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  }
+                ],
+                "scope": "visible constraints only; hidden namespace ancestors and effective resource availability unverified"
+              }
+            }
+          ],
+          "resource_counters": [
+            {
+              "pid": 3259687,
+              "levels": [
+                {
+                  "path": "/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 70631957404\nuser_usec 55711331649\nsystem_usec 14920625755\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "10032168960"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "79"
+                    },
+                    "io.stat": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=46.49 avg60=46.67 avg300=27.56 total=6900392126\nfull avg10=1.00 avg60=0.94 avg300=0.60 total=668272042"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.43 avg60=0.41 avg300=0.24 total=67978378\nfull avg10=0.41 avg60=0.34 avg300=0.19 total=57632107"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.13 total=631725204\nfull avg10=0.00 avg60=0.00 avg300=0.11 total=591050179"
+                    }
+                  }
+                },
+                {
+                  "path": "/user.slice/user-1001.slice/user@1001.service",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 70638437255\nuser_usec 55716497256\nsystem_usec 14921939998\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "10037923840"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "82"
+                    },
+                    "io.stat": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=46.76 avg60=46.70 avg300=27.66 total=6902316674\nfull avg10=1.09 avg60=0.95 avg300=0.61 total=668389665"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.40 avg60=0.41 avg300=0.25 total=67798042\nfull avg10=0.38 avg60=0.33 avg300=0.18 total=57464814"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.12 total=628692726\nfull avg10=0.00 avg60=0.00 avg300=0.11 total=587890836"
+                    }
+                  }
+                },
+                {
+                  "path": "/user.slice/user-1001.slice",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 71644764368\nuser_usec 56236905144\nsystem_usec 15407859223\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "10078711808"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "90"
+                    },
+                    "io.stat": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=46.77 avg60=46.78 avg300=27.72 total=6979734753\nfull avg10=0.22 avg60=0.11 avg300=0.07 total=589729019"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.40 avg60=0.41 avg300=0.25 total=68796964\nfull avg10=0.38 avg60=0.33 avg300=0.18 total=58260403"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.12 total=628290719\nfull avg10=0.00 avg60=0.00 avg300=0.11 total=585371608"
+                    }
+                  }
+                },
+                {
+                  "path": "/user.slice",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 935247403046\nuser_usec 833232304184\nsystem_usec 102015098862\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 55\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "10142466048"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "90"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=1549508395008 wbytes=2112826851328 rios=26057712 wios=12348539 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=46.83 avg60=46.81 avg300=27.74 total=78895597557\nfull avg10=0.22 avg60=0.11 avg300=0.07 total=6549680811"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.40 avg60=0.41 avg300=0.25 total=870091176\nfull avg10=0.38 avg60=0.33 avg300=0.18 total=838053694"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.12 total=71436588257\nfull avg10=0.00 avg60=0.00 avg300=0.11 total=70214607191"
+                    }
+                  }
+                },
+                {
+                  "path": "/",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 1261253493167\nuser_usec 1047961075663\nsystem_usec 213292417504\nnice_usec 136732223\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.events.local": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.swap.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "pids.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=3939044092416 wbytes=2867554006528 rios=33928676 wios=52068075 dbytes=2692697565184 dios=5451585\n7:7 \n7:6 rbytes=28672 wbytes=0 rios=22 wios=0 dbytes=0 dios=0\n7:5 rbytes=3320411136 wbytes=0 rios=77549 wios=0 dbytes=0 dios=0\n7:4 rbytes=25251840 wbytes=0 rios=758 wios=0 dbytes=0 dios=0\n7:3 rbytes=669726720 wbytes=0 rios=15603 wios=0 dbytes=0 dios=0\n7:2 rbytes=10001206272 wbytes=0 rios=249691 wios=0 dbytes=0 dios=0\n7:1 rbytes=750592 wbytes=0 rios=122 wios=0 dbytes=0 dios=0\n7:0 rbytes=696320 wbytes=0 rios=75 wios=0 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=47.05 avg60=47.10 avg300=27.94 total=128277381182\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.42 avg60=0.41 avg300=0.23 total=16273133505\nfull avg10=0.40 avg60=0.33 avg300=0.18 total=16115344009"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.02 avg300=0.55 total=90418446109\nfull avg10=0.00 avg60=0.02 avg300=0.43 total=67514117916"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "host_cpu": {
+            "started_at_epoch": 1789399871.9778864,
+            "scope": "visible host aggregate, not exclusive to benchmark; guest ticks overlap user/nice; iowait may decrease",
+            "cpu_ticks": {
+              "user": 104782434,
+              "nice": 13673,
+              "system": 20206441,
+              "idle": 427023122,
+              "iowait": 19609537,
+              "irq": 0,
+              "softirq": 1122800,
+              "steal": 1765565,
+              "guest": 0,
+              "guest_nice": 0
+            },
+            "clock_ticks_per_second": 100,
+            "boot_id": "dc654322-da37-4c6e-9a9d-be3db8949a5a",
+            "finished_at_epoch": 1789399871.9780166
+          },
+          "scope": "observed settings and visible cgroup constraints; effective resource availability and application enforcement not verified"
+        }
+      },
+      "target_identity": {
+        "cluster_name": "steelsearch-dev",
+        "cluster_uuid": "steelsearch-dev-cluster-uuid",
+        "name": "steelsearch-dev-node",
+        "tagline": "The OpenSearch Project: https://opensearch.org/",
+        "version": {
+          "build_date": "2026-05-02T00:00:00Z",
+          "build_hash": "steelsearch-dev",
+          "build_snapshot": true,
+          "build_type": "tar",
+          "distribution": "opensearch",
+          "lucene_version": "10.2.2",
+          "minimum_index_compatibility_version": "3.0.0",
+          "minimum_wire_compatibility_version": "3.7.0",
+          "number": "3.7.0"
+        }
+      },
+      "executable": {
+        "path": "/home/ubuntu/steelsearch/target/v070-candidate-build-20260914/release/steelsearch",
+        "sha256": "40830af495aadde1b922acd01ec2cb19a6ce0a9584c30b868a43e0982e807454"
+      },
+      "base_url": "http://127.0.0.1:58733",
+      "manifest_path": null,
+      "resource_process_pids": [
+        3259687
+      ],
+      "resource_container_names": []
+    },
+    "steelsearch-three-node": {
+      "config": {
+        "base_url": "http://127.0.0.1:39257",
+        "base_urls": [
+          "http://127.0.0.1:39257",
+          "http://127.0.0.1:49435",
+          "http://127.0.0.1:37183"
+        ],
+        "clients": 4,
+        "corpus_size": 5000,
+        "diagnostic_timeline": false,
+        "duration_seconds": 60.0,
+        "expected_node_count": 3,
+        "index": "search-benchmark-steelsearch-three-node",
+        "number_of_replicas": 1,
+        "number_of_shards": 3,
+        "operation_resource_deltas": false,
+        "query_mix": {
+          "facet": 15,
+          "fallback_case_insensitive_wildcard": 0,
+          "fallback_distance_feature": 0,
+          "fallback_more_like_this": 0,
+          "fallback_query_string": 0,
+          "fallback_rank_feature": 0,
+          "fallback_terms_set": 0,
+          "hybrid": 0,
+          "lexical": 15,
+          "nested": 10,
+          "ranking": 15,
+          "refresh": 5,
+          "sort_filter": 10,
+          "vector": 0,
+          "write": 15
+        },
+        "reset": true,
+        "seed": 13,
+        "vector_dimension": 384,
+        "vector_source": "default",
+        "vector_space_type": "default"
+      },
+      "operations": {
+        "facet": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 8714,
+            "max": 106.60493490286171,
+            "mean": 5.00463640078131,
+            "min": 1.0650509502738714,
+            "p50": 4.520024172961712,
+            "p90": 7.890369952656329,
+            "p95": 9.181606711354108,
+            "p99": 14.024501207750351
+          },
+          "success_count": 8714
+        },
+        "lexical": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 8681,
+            "max": 162.52856887876987,
+            "mean": 3.9337284214952986,
+            "min": 0.7377280853688717,
+            "p50": 3.5175548400729895,
+            "p90": 6.407582899555564,
+            "p95": 7.5013539753854275,
+            "p99": 11.978453863412152
+          },
+          "success_count": 8681
+        },
+        "nested": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 5731,
+            "max": 57.584610069170594,
+            "mean": 4.775065115435708,
+            "min": 0.725527061149478,
+            "p50": 4.366602981463075,
+            "p90": 7.533314870670438,
+            "p95": 8.918887935578823,
+            "p99": 13.865652936510742
+          },
+          "success_count": 5731
+        },
+        "ranking": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 8613,
+            "max": 39.29770807735622,
+            "mean": 5.550524667528231,
+            "min": 1.3855330180376768,
+            "p50": 5.104691023007035,
+            "p90": 8.367954939603806,
+            "p95": 9.73016791976988,
+            "p99": 14.287409894168329
+          },
+          "success_count": 8613
+        },
+        "refresh": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 2960,
+            "max": 162.73109102621675,
+            "mean": 10.277995221297937,
+            "min": 0.509405042976141,
+            "p50": 9.209171053953469,
+            "p90": 17.97000903170556,
+            "p95": 21.678883919958018,
+            "p99": 31.598939218092646
+          },
+          "success_count": 2960
+        },
+        "sort_filter": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 5816,
+            "max": 128.96743300370872,
+            "mean": 4.388983737771173,
+            "min": 0.838687876239419,
+            "p50": 3.976758918724954,
+            "p90": 6.863347487524152,
+            "p95": 8.188140927813947,
+            "p99": 12.774106871802369
+          },
+          "success_count": 5816
+        },
+        "write": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 8777,
+            "max": 18.886507023125887,
+            "mean": 3.475293480611084,
+            "min": 0.8906489238142967,
+            "p50": 3.186591900885105,
+            "p90": 5.637967912480239,
+            "p95": 6.627713935449715,
+            "p99": 8.847687710076565
+          },
+          "success_count": 8777
+        }
+      },
+      "resource_usage": {
+        "compatibility_materialized_response_fetches": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_capacity_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_hits": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_invalidated_entries": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_misses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_refresh_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_resets": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_stale_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "materialized_response_avoided_fetches": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "materialized_response_fetches": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "memory_rss_bytes": {
+          "after": 1344847872,
+          "before": 91394048,
+          "delta": 1253453824,
+          "peak": 1344819200
+        },
+        "native_response_body_build_nanos": {
+          "after": 361329199,
+          "before": 0,
+          "delta": 361329199,
+          "peak": null
+        },
+        "operation_log_bytes": {
+          "after": 88121,
+          "before": 86272,
+          "delta": 1849,
+          "peak": null
+        },
+        "refresh_tantivy_commit_nanos": {
+          "after": 13087699535,
+          "before": 0,
+          "delta": 13087699535,
+          "peak": null
+        },
+        "refresh_tantivy_doc_id_lookup_nanos": {
+          "after": 217618526,
+          "before": 0,
+          "delta": 217618526,
+          "peak": null
+        },
+        "refresh_tantivy_document_add_nanos": {
+          "after": 395845666,
+          "before": 0,
+          "delta": 395845666,
+          "peak": null
+        },
+        "refresh_tantivy_reload_nanos": {
+          "after": 372579955,
+          "before": 0,
+          "delta": 372579955,
+          "peak": null
+        },
+        "request_result_cache_capacity_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_explain_bypasses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_highlight_bypasses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_hits": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_hybrid_vector_bypasses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_invalidated_entries": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_misses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_refresh_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_resets": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_stale_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_unsupported_vector_bypasses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_cache_bytes": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_candidate_scan_nanos": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_capacity_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_hits": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_invalidated_entries": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_misses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_refresh_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_resets": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_stale_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_hit_materialization_nanos": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        }
+      },
+      "summary": {
+        "elapsed_seconds": 60.00266621215269,
+        "error_count": 0,
+        "error_rate": 0.0,
+        "operation_count": 49292,
+        "success_count": 49292,
+        "throughput_ops_per_second": 821.4968285862038
+      },
+      "runtime_evidence": {
+        "before": {
+          "captured_at_epoch": 1789399873.3973517,
+          "engine": "steelsearch",
+          "nodes": [
+            {
+              "pid": 3268552,
+              "start_ticks": 192081446,
+              "sha256": "40830af495aadde1b922acd01ec2cb19a6ce0a9584c30b868a43e0982e807454",
+              "environment": {
+                "STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE": "0",
+                "STEELSEARCH_SYNC_SHARED_RUNTIME_STATE_PER_REQUEST": "0",
+                "STEELSEARCH_DEFER_DEVELOPMENT_SHARD_PERSIST_PER_WRITE": "1",
+                "STEELSEARCH_DEFER_NATIVE_WRITE_UNTIL_REFRESH": "1",
+                "STEELSEARCH_MODE": null,
+                "STEELSEARCH_SECURITY_ENABLED": null,
+                "STEELSEARCH_DEVELOPMENT_SECURITY_MODE": null,
+                "STEELSEARCH_ENABLE_KNN_PLUGIN": null,
+                "STEELSEARCH_ENABLE_ML_COMMONS": null
+              },
+              "selected_cli_options": {},
+              "affinity": {
+                "Cpus_allowed_list": "0-2",
+                "Mems_allowed_list": "0"
+              },
+              "limits": "Limit                     Soft Limit           Hard Limit           Units     \nMax cpu time              unlimited            unlimited            seconds   \nMax file size             unlimited            unlimited            bytes     \nMax data size             unlimited            unlimited            bytes     \nMax stack size            8388608              unlimited            bytes     \nMax core file size        0                    unlimited            bytes     \nMax resident set          unlimited            unlimited            bytes     \nMax processes             71386                71386                processes \nMax open files            1048576              1048576              files     \nMax locked memory         2351321088           2351321088           bytes     \nMax address space         unlimited            unlimited            bytes     \nMax file locks            unlimited            unlimited            locks     \nMax pending signals       71386                71386                signals   \nMax msgqueue size         819200               819200               bytes     \nMax nice priority         0                    0                    \nMax realtime priority     0                    0                    \nMax realtime timeout      unlimited            unlimited            us        \n",
+              "cgroup_membership": "0::/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope\n",
+              "cgroup": {
+                "coverage": "visible-v2-ancestors",
+                "membership": "0::/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope\n",
+                "levels": [
+                  {
+                    "path": "/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "21415"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  },
+                  {
+                    "path": "/user.slice/user-1001.slice/user@1001.service",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "max"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  },
+                  {
+                    "path": "/user.slice/user-1001.slice",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "47115"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  },
+                  {
+                    "path": "/user.slice",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "max"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": ""
+                      }
+                    }
+                  },
+                  {
+                    "path": "/",
+                    "settings": {
+                      "cpu.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpu.weight": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.high": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.swap.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "pids.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  }
+                ],
+                "scope": "visible constraints only; hidden namespace ancestors and effective resource availability unverified"
+              }
+            },
+            {
+              "pid": 3268548,
+              "start_ticks": 192081446,
+              "sha256": "40830af495aadde1b922acd01ec2cb19a6ce0a9584c30b868a43e0982e807454",
+              "environment": {
+                "STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE": "0",
+                "STEELSEARCH_SYNC_SHARED_RUNTIME_STATE_PER_REQUEST": "0",
+                "STEELSEARCH_DEFER_DEVELOPMENT_SHARD_PERSIST_PER_WRITE": "1",
+                "STEELSEARCH_DEFER_NATIVE_WRITE_UNTIL_REFRESH": "1",
+                "STEELSEARCH_MODE": null,
+                "STEELSEARCH_SECURITY_ENABLED": null,
+                "STEELSEARCH_DEVELOPMENT_SECURITY_MODE": null,
+                "STEELSEARCH_ENABLE_KNN_PLUGIN": null,
+                "STEELSEARCH_ENABLE_ML_COMMONS": null
+              },
+              "selected_cli_options": {},
+              "affinity": {
+                "Cpus_allowed_list": "0-2",
+                "Mems_allowed_list": "0"
+              },
+              "limits": "Limit                     Soft Limit           Hard Limit           Units     \nMax cpu time              unlimited            unlimited            seconds   \nMax file size             unlimited            unlimited            bytes     \nMax data size             unlimited            unlimited            bytes     \nMax stack size            8388608              unlimited            bytes     \nMax core file size        0                    unlimited            bytes     \nMax resident set          unlimited            unlimited            bytes     \nMax processes             71386                71386                processes \nMax open files            1048576              1048576              files     \nMax locked memory         2351321088           2351321088           bytes     \nMax address space         unlimited            unlimited            bytes     \nMax file locks            unlimited            unlimited            locks     \nMax pending signals       71386                71386                signals   \nMax msgqueue size         819200               819200               bytes     \nMax nice priority         0                    0                    \nMax realtime priority     0                    0                    \nMax realtime timeout      unlimited            unlimited            us        \n",
+              "cgroup_membership": "0::/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope\n",
+              "cgroup": {
+                "coverage": "visible-v2-ancestors",
+                "membership": "0::/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope\n",
+                "levels": [
+                  {
+                    "path": "/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "21415"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  },
+                  {
+                    "path": "/user.slice/user-1001.slice/user@1001.service",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "max"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  },
+                  {
+                    "path": "/user.slice/user-1001.slice",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "47115"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  },
+                  {
+                    "path": "/user.slice",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "max"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": ""
+                      }
+                    }
+                  },
+                  {
+                    "path": "/",
+                    "settings": {
+                      "cpu.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpu.weight": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.high": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.swap.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "pids.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  }
+                ],
+                "scope": "visible constraints only; hidden namespace ancestors and effective resource availability unverified"
+              }
+            },
+            {
+              "pid": 3268546,
+              "start_ticks": 192081446,
+              "sha256": "40830af495aadde1b922acd01ec2cb19a6ce0a9584c30b868a43e0982e807454",
+              "environment": {
+                "STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE": "0",
+                "STEELSEARCH_SYNC_SHARED_RUNTIME_STATE_PER_REQUEST": "0",
+                "STEELSEARCH_DEFER_DEVELOPMENT_SHARD_PERSIST_PER_WRITE": "1",
+                "STEELSEARCH_DEFER_NATIVE_WRITE_UNTIL_REFRESH": "1",
+                "STEELSEARCH_MODE": null,
+                "STEELSEARCH_SECURITY_ENABLED": null,
+                "STEELSEARCH_DEVELOPMENT_SECURITY_MODE": null,
+                "STEELSEARCH_ENABLE_KNN_PLUGIN": null,
+                "STEELSEARCH_ENABLE_ML_COMMONS": null
+              },
+              "selected_cli_options": {},
+              "affinity": {
+                "Cpus_allowed_list": "0-2",
+                "Mems_allowed_list": "0"
+              },
+              "limits": "Limit                     Soft Limit           Hard Limit           Units     \nMax cpu time              unlimited            unlimited            seconds   \nMax file size             unlimited            unlimited            bytes     \nMax data size             unlimited            unlimited            bytes     \nMax stack size            8388608              unlimited            bytes     \nMax core file size        0                    unlimited            bytes     \nMax resident set          unlimited            unlimited            bytes     \nMax processes             71386                71386                processes \nMax open files            1048576              1048576              files     \nMax locked memory         2351321088           2351321088           bytes     \nMax address space         unlimited            unlimited            bytes     \nMax file locks            unlimited            unlimited            locks     \nMax pending signals       71386                71386                signals   \nMax msgqueue size         819200               819200               bytes     \nMax nice priority         0                    0                    \nMax realtime priority     0                    0                    \nMax realtime timeout      unlimited            unlimited            us        \n",
+              "cgroup_membership": "0::/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope\n",
+              "cgroup": {
+                "coverage": "visible-v2-ancestors",
+                "membership": "0::/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope\n",
+                "levels": [
+                  {
+                    "path": "/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "21415"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  },
+                  {
+                    "path": "/user.slice/user-1001.slice/user@1001.service",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "max"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  },
+                  {
+                    "path": "/user.slice/user-1001.slice",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "47115"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  },
+                  {
+                    "path": "/user.slice",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "max"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": ""
+                      }
+                    }
+                  },
+                  {
+                    "path": "/",
+                    "settings": {
+                      "cpu.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpu.weight": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.high": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.swap.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "pids.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  }
+                ],
+                "scope": "visible constraints only; hidden namespace ancestors and effective resource availability unverified"
+              }
+            }
+          ],
+          "resource_counters": [
+            {
+              "pid": 3268552,
+              "levels": [
+                {
+                  "path": "/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 70632768767\nuser_usec 55711863665\nsystem_usec 14920905101\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "9030373376"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "76"
+                    },
+                    "io.stat": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=45.68 avg60=46.51 avg300=27.66 total=6900411242\nfull avg10=1.00 avg60=0.94 avg300=0.60 total=668274424"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.35 avg60=0.40 avg300=0.23 total=67978378\nfull avg10=0.34 avg60=0.33 avg300=0.19 total=57632107"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.13 total=631727543\nfull avg10=0.00 avg60=0.00 avg300=0.11 total=591051797"
+                    }
+                  }
+                },
+                {
+                  "path": "/user.slice/user-1001.slice/user@1001.service",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 70639249615\nuser_usec 55717030273\nsystem_usec 14922219341\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "9036140544"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "79"
+                    },
+                    "io.stat": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=46.76 avg60=46.70 avg300=27.66 total=6902335957\nfull avg10=1.09 avg60=0.95 avg300=0.61 total=668391923"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.40 avg60=0.41 avg300=0.25 total=67798042\nfull avg10=0.38 avg60=0.33 avg300=0.18 total=57464814"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.12 total=628695227\nfull avg10=0.00 avg60=0.00 avg300=0.11 total=587892511"
+                    }
+                  }
+                },
+                {
+                  "path": "/user.slice/user-1001.slice",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 71645593421\nuser_usec 56237445439\nsystem_usec 15408147982\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "9076928512"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "87"
+                    },
+                    "io.stat": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=46.77 avg60=46.78 avg300=27.72 total=6979754343\nfull avg10=0.22 avg60=0.11 avg300=0.07 total=589730367"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.40 avg60=0.41 avg300=0.25 total=68796964\nfull avg10=0.38 avg60=0.33 avg300=0.18 total=58260403"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.12 total=628293226\nfull avg10=0.00 avg60=0.00 avg300=0.11 total=585373288"
+                    }
+                  }
+                },
+                {
+                  "path": "/user.slice",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 935248232107\nuser_usec 833232845501\nsystem_usec 102015386605\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 55\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "9140682752"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "87"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=1549508395008 wbytes=2112827146240 rios=26057712 wios=12348568 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=46.83 avg60=46.81 avg300=27.74 total=78895617148\nfull avg10=0.22 avg60=0.11 avg300=0.07 total=6549682161"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.40 avg60=0.41 avg300=0.25 total=870091176\nfull avg10=0.38 avg60=0.33 avg300=0.18 total=838053694"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.12 total=71436590758\nfull avg10=0.00 avg60=0.00 avg300=0.11 total=70214608869"
+                    }
+                  }
+                },
+                {
+                  "path": "/",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 1261254325165\nuser_usec 1047961615612\nsystem_usec 213292709552\nnice_usec 136732223\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.events.local": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.swap.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "pids.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=3939044092416 wbytes=2867554301440 rios=33928676 wios=52068104 dbytes=2692697565184 dios=5451585\n7:7 \n7:6 rbytes=28672 wbytes=0 rios=22 wios=0 dbytes=0 dios=0\n7:5 rbytes=3320411136 wbytes=0 rios=77549 wios=0 dbytes=0 dios=0\n7:4 rbytes=25251840 wbytes=0 rios=758 wios=0 dbytes=0 dios=0\n7:3 rbytes=669726720 wbytes=0 rios=15603 wios=0 dbytes=0 dios=0\n7:2 rbytes=10001206272 wbytes=0 rios=249691 wios=0 dbytes=0 dios=0\n7:1 rbytes=750592 wbytes=0 rios=122 wios=0 dbytes=0 dios=0\n7:0 rbytes=696320 wbytes=0 rios=75 wios=0 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=44.50 avg60=46.64 avg300=27.97 total=128277405168\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.34 avg60=0.39 avg300=0.23 total=16273133505\nfull avg10=0.33 avg60=0.32 avg300=0.17 total=16115344009"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.02 avg300=0.55 total=90418448885\nfull avg10=0.00 avg60=0.02 avg300=0.43 total=67514119654"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "pid": 3268548,
+              "levels": [
+                {
+                  "path": "/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 70632772795\nuser_usec 55711867693\nsystem_usec 14920905101\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "9030373376"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "76"
+                    },
+                    "io.stat": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=45.68 avg60=46.51 avg300=27.66 total=6900411242\nfull avg10=1.00 avg60=0.94 avg300=0.60 total=668274424"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.35 avg60=0.40 avg300=0.23 total=67978378\nfull avg10=0.34 avg60=0.33 avg300=0.19 total=57632107"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.13 total=631727543\nfull avg10=0.00 avg60=0.00 avg300=0.11 total=591051797"
+                    }
+                  }
+                },
+                {
+                  "path": "/user.slice/user-1001.slice/user@1001.service",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 70639252645\nuser_usec 55717033303\nsystem_usec 14922219341\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "9036140544"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "79"
+                    },
+                    "io.stat": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=46.76 avg60=46.70 avg300=27.66 total=6902335957\nfull avg10=1.09 avg60=0.95 avg300=0.61 total=668391923"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.40 avg60=0.41 avg300=0.25 total=67798042\nfull avg10=0.38 avg60=0.33 avg300=0.18 total=57464814"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.12 total=628695227\nfull avg10=0.00 avg60=0.00 avg300=0.11 total=587892511"
+                    }
+                  }
+                },
+                {
+                  "path": "/user.slice/user-1001.slice",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 71645596446\nuser_usec 56237448464\nsystem_usec 15408147982\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "9076928512"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "87"
+                    },
+                    "io.stat": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=46.77 avg60=46.78 avg300=27.72 total=6979754343\nfull avg10=0.22 avg60=0.11 avg300=0.07 total=589730367"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.40 avg60=0.41 avg300=0.25 total=68796964\nfull avg10=0.38 avg60=0.33 avg300=0.18 total=58260403"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.12 total=628293226\nfull avg10=0.00 avg60=0.00 avg300=0.11 total=585373288"
+                    }
+                  }
+                },
+                {
+                  "path": "/user.slice",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 935248236125\nuser_usec 833232848512\nsystem_usec 102015387613\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 55\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "9140682752"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "87"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=1549508395008 wbytes=2112827146240 rios=26057712 wios=12348568 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=46.83 avg60=46.81 avg300=27.74 total=78895617148\nfull avg10=0.22 avg60=0.11 avg300=0.07 total=6549682161"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.40 avg60=0.41 avg300=0.25 total=870091176\nfull avg10=0.38 avg60=0.33 avg300=0.18 total=838053694"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.12 total=71436590758\nfull avg10=0.00 avg60=0.00 avg300=0.11 total=70214608869"
+                    }
+                  }
+                },
+                {
+                  "path": "/",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 1261254328165\nuser_usec 1047961617612\nsystem_usec 213292710552\nnice_usec 136732223\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.events.local": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.swap.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "pids.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=3939044092416 wbytes=2867554301440 rios=33928676 wios=52068104 dbytes=2692697565184 dios=5451585\n7:7 \n7:6 rbytes=28672 wbytes=0 rios=22 wios=0 dbytes=0 dios=0\n7:5 rbytes=3320411136 wbytes=0 rios=77549 wios=0 dbytes=0 dios=0\n7:4 rbytes=25251840 wbytes=0 rios=758 wios=0 dbytes=0 dios=0\n7:3 rbytes=669726720 wbytes=0 rios=15603 wios=0 dbytes=0 dios=0\n7:2 rbytes=10001206272 wbytes=0 rios=249691 wios=0 dbytes=0 dios=0\n7:1 rbytes=750592 wbytes=0 rios=122 wios=0 dbytes=0 dios=0\n7:0 rbytes=696320 wbytes=0 rios=75 wios=0 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=44.50 avg60=46.64 avg300=27.97 total=128277405168\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.34 avg60=0.39 avg300=0.23 total=16273133505\nfull avg10=0.33 avg60=0.32 avg300=0.17 total=16115344009"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.02 avg300=0.55 total=90418448885\nfull avg10=0.00 avg60=0.02 avg300=0.43 total=67514119654"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "pid": 3268546,
+              "levels": [
+                {
+                  "path": "/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 70632775792\nuser_usec 55711868677\nsystem_usec 14920907115\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "9030373376"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "76"
+                    },
+                    "io.stat": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=45.68 avg60=46.51 avg300=27.66 total=6900411242\nfull avg10=1.00 avg60=0.94 avg300=0.60 total=668274424"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.35 avg60=0.40 avg300=0.23 total=67978378\nfull avg10=0.34 avg60=0.33 avg300=0.19 total=57632107"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.13 total=631727543\nfull avg10=0.00 avg60=0.00 avg300=0.11 total=591051797"
+                    }
+                  }
+                },
+                {
+                  "path": "/user.slice/user-1001.slice/user@1001.service",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 70639256641\nuser_usec 55717035286\nsystem_usec 14922221355\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "9036140544"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "79"
+                    },
+                    "io.stat": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=46.76 avg60=46.70 avg300=27.66 total=6902335957\nfull avg10=1.09 avg60=0.95 avg300=0.61 total=668391923"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.40 avg60=0.41 avg300=0.25 total=67798042\nfull avg10=0.38 avg60=0.33 avg300=0.18 total=57464814"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.12 total=628695227\nfull avg10=0.00 avg60=0.00 avg300=0.11 total=587892511"
+                    }
+                  }
+                },
+                {
+                  "path": "/user.slice/user-1001.slice",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 71645599525\nuser_usec 56237449508\nsystem_usec 15408150016\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "9076928512"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "87"
+                    },
+                    "io.stat": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=46.77 avg60=46.78 avg300=27.72 total=6979754343\nfull avg10=0.22 avg60=0.11 avg300=0.07 total=589730367"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.40 avg60=0.41 avg300=0.25 total=68796964\nfull avg10=0.38 avg60=0.33 avg300=0.18 total=58260403"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.12 total=628293226\nfull avg10=0.00 avg60=0.00 avg300=0.11 total=585373288"
+                    }
+                  }
+                },
+                {
+                  "path": "/user.slice",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 935248239809\nuser_usec 833232850269\nsystem_usec 102015389540\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 55\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "9140682752"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "87"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=1549508395008 wbytes=2112827146240 rios=26057712 wios=12348568 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=46.83 avg60=46.81 avg300=27.74 total=78895617148\nfull avg10=0.22 avg60=0.11 avg300=0.07 total=6549682161"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.40 avg60=0.41 avg300=0.25 total=870091176\nfull avg10=0.38 avg60=0.33 avg300=0.18 total=838053694"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.12 total=71436590758\nfull avg10=0.00 avg60=0.00 avg300=0.11 total=70214608869"
+                    }
+                  }
+                },
+                {
+                  "path": "/",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 1261254332102\nuser_usec 1047961619612\nsystem_usec 213292712489\nnice_usec 136732223\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.events.local": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.swap.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "pids.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=3939044092416 wbytes=2867554301440 rios=33928676 wios=52068104 dbytes=2692697565184 dios=5451585\n7:7 \n7:6 rbytes=28672 wbytes=0 rios=22 wios=0 dbytes=0 dios=0\n7:5 rbytes=3320411136 wbytes=0 rios=77549 wios=0 dbytes=0 dios=0\n7:4 rbytes=25251840 wbytes=0 rios=758 wios=0 dbytes=0 dios=0\n7:3 rbytes=669726720 wbytes=0 rios=15603 wios=0 dbytes=0 dios=0\n7:2 rbytes=10001206272 wbytes=0 rios=249691 wios=0 dbytes=0 dios=0\n7:1 rbytes=750592 wbytes=0 rios=122 wios=0 dbytes=0 dios=0\n7:0 rbytes=696320 wbytes=0 rios=75 wios=0 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=44.50 avg60=46.64 avg300=27.97 total=128277405168\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.34 avg60=0.39 avg300=0.23 total=16273133505\nfull avg10=0.33 avg60=0.32 avg300=0.17 total=16115344009"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.02 avg300=0.55 total=90418448885\nfull avg10=0.00 avg60=0.02 avg300=0.43 total=67514119654"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "host_cpu": {
+            "started_at_epoch": 1789399873.3971977,
+            "scope": "visible host aggregate, not exclusive to benchmark; guest ticks overlap user/nice; iowait may decrease",
+            "cpu_ticks": {
+              "user": 104782488,
+              "nice": 13673,
+              "system": 20206469,
+              "idle": 427023460,
+              "iowait": 19609537,
+              "irq": 0,
+              "softirq": 1122801,
+              "steal": 1765566,
+              "guest": 0,
+              "guest_nice": 0
+            },
+            "clock_ticks_per_second": 100,
+            "boot_id": "dc654322-da37-4c6e-9a9d-be3db8949a5a",
+            "finished_at_epoch": 1789399873.3973503
+          },
+          "scope": "observed settings and visible cgroup constraints; effective resource availability and application enforcement not verified"
+        },
+        "after": {
+          "captured_at_epoch": 1789399938.7584996,
+          "engine": "steelsearch",
+          "nodes": [
+            {
+              "pid": 3268552,
+              "start_ticks": 192081446,
+              "sha256": "40830af495aadde1b922acd01ec2cb19a6ce0a9584c30b868a43e0982e807454",
+              "environment": {
+                "STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE": "0",
+                "STEELSEARCH_SYNC_SHARED_RUNTIME_STATE_PER_REQUEST": "0",
+                "STEELSEARCH_DEFER_DEVELOPMENT_SHARD_PERSIST_PER_WRITE": "1",
+                "STEELSEARCH_DEFER_NATIVE_WRITE_UNTIL_REFRESH": "1",
+                "STEELSEARCH_MODE": null,
+                "STEELSEARCH_SECURITY_ENABLED": null,
+                "STEELSEARCH_DEVELOPMENT_SECURITY_MODE": null,
+                "STEELSEARCH_ENABLE_KNN_PLUGIN": null,
+                "STEELSEARCH_ENABLE_ML_COMMONS": null
+              },
+              "selected_cli_options": {},
+              "affinity": {
+                "Cpus_allowed_list": "0-2",
+                "Mems_allowed_list": "0"
+              },
+              "limits": "Limit                     Soft Limit           Hard Limit           Units     \nMax cpu time              unlimited            unlimited            seconds   \nMax file size             unlimited            unlimited            bytes     \nMax data size             unlimited            unlimited            bytes     \nMax stack size            8388608              unlimited            bytes     \nMax core file size        0                    unlimited            bytes     \nMax resident set          unlimited            unlimited            bytes     \nMax processes             71386                71386                processes \nMax open files            1048576              1048576              files     \nMax locked memory         2351321088           2351321088           bytes     \nMax address space         unlimited            unlimited            bytes     \nMax file locks            unlimited            unlimited            locks     \nMax pending signals       71386                71386                signals   \nMax msgqueue size         819200               819200               bytes     \nMax nice priority         0                    0                    \nMax realtime priority     0                    0                    \nMax realtime timeout      unlimited            unlimited            us        \n",
+              "cgroup_membership": "0::/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope\n",
+              "cgroup": {
+                "coverage": "visible-v2-ancestors",
+                "membership": "0::/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope\n",
+                "levels": [
+                  {
+                    "path": "/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "21415"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  },
+                  {
+                    "path": "/user.slice/user-1001.slice/user@1001.service",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "max"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  },
+                  {
+                    "path": "/user.slice/user-1001.slice",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "47115"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  },
+                  {
+                    "path": "/user.slice",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "max"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": ""
+                      }
+                    }
+                  },
+                  {
+                    "path": "/",
+                    "settings": {
+                      "cpu.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpu.weight": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.high": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.swap.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "pids.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  }
+                ],
+                "scope": "visible constraints only; hidden namespace ancestors and effective resource availability unverified"
+              }
+            },
+            {
+              "pid": 3268548,
+              "start_ticks": 192081446,
+              "sha256": "40830af495aadde1b922acd01ec2cb19a6ce0a9584c30b868a43e0982e807454",
+              "environment": {
+                "STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE": "0",
+                "STEELSEARCH_SYNC_SHARED_RUNTIME_STATE_PER_REQUEST": "0",
+                "STEELSEARCH_DEFER_DEVELOPMENT_SHARD_PERSIST_PER_WRITE": "1",
+                "STEELSEARCH_DEFER_NATIVE_WRITE_UNTIL_REFRESH": "1",
+                "STEELSEARCH_MODE": null,
+                "STEELSEARCH_SECURITY_ENABLED": null,
+                "STEELSEARCH_DEVELOPMENT_SECURITY_MODE": null,
+                "STEELSEARCH_ENABLE_KNN_PLUGIN": null,
+                "STEELSEARCH_ENABLE_ML_COMMONS": null
+              },
+              "selected_cli_options": {},
+              "affinity": {
+                "Cpus_allowed_list": "0-2",
+                "Mems_allowed_list": "0"
+              },
+              "limits": "Limit                     Soft Limit           Hard Limit           Units     \nMax cpu time              unlimited            unlimited            seconds   \nMax file size             unlimited            unlimited            bytes     \nMax data size             unlimited            unlimited            bytes     \nMax stack size            8388608              unlimited            bytes     \nMax core file size        0                    unlimited            bytes     \nMax resident set          unlimited            unlimited            bytes     \nMax processes             71386                71386                processes \nMax open files            1048576              1048576              files     \nMax locked memory         2351321088           2351321088           bytes     \nMax address space         unlimited            unlimited            bytes     \nMax file locks            unlimited            unlimited            locks     \nMax pending signals       71386                71386                signals   \nMax msgqueue size         819200               819200               bytes     \nMax nice priority         0                    0                    \nMax realtime priority     0                    0                    \nMax realtime timeout      unlimited            unlimited            us        \n",
+              "cgroup_membership": "0::/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope\n",
+              "cgroup": {
+                "coverage": "visible-v2-ancestors",
+                "membership": "0::/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope\n",
+                "levels": [
+                  {
+                    "path": "/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "21415"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  },
+                  {
+                    "path": "/user.slice/user-1001.slice/user@1001.service",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "max"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  },
+                  {
+                    "path": "/user.slice/user-1001.slice",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "47115"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  },
+                  {
+                    "path": "/user.slice",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "max"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": ""
+                      }
+                    }
+                  },
+                  {
+                    "path": "/",
+                    "settings": {
+                      "cpu.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpu.weight": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.high": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.swap.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "pids.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  }
+                ],
+                "scope": "visible constraints only; hidden namespace ancestors and effective resource availability unverified"
+              }
+            },
+            {
+              "pid": 3268546,
+              "start_ticks": 192081446,
+              "sha256": "40830af495aadde1b922acd01ec2cb19a6ce0a9584c30b868a43e0982e807454",
+              "environment": {
+                "STEELSEARCH_PERSIST_SHARED_RUNTIME_STATE_PER_WRITE": "0",
+                "STEELSEARCH_SYNC_SHARED_RUNTIME_STATE_PER_REQUEST": "0",
+                "STEELSEARCH_DEFER_DEVELOPMENT_SHARD_PERSIST_PER_WRITE": "1",
+                "STEELSEARCH_DEFER_NATIVE_WRITE_UNTIL_REFRESH": "1",
+                "STEELSEARCH_MODE": null,
+                "STEELSEARCH_SECURITY_ENABLED": null,
+                "STEELSEARCH_DEVELOPMENT_SECURITY_MODE": null,
+                "STEELSEARCH_ENABLE_KNN_PLUGIN": null,
+                "STEELSEARCH_ENABLE_ML_COMMONS": null
+              },
+              "selected_cli_options": {},
+              "affinity": {
+                "Cpus_allowed_list": "0-2",
+                "Mems_allowed_list": "0"
+              },
+              "limits": "Limit                     Soft Limit           Hard Limit           Units     \nMax cpu time              unlimited            unlimited            seconds   \nMax file size             unlimited            unlimited            bytes     \nMax data size             unlimited            unlimited            bytes     \nMax stack size            8388608              unlimited            bytes     \nMax core file size        0                    unlimited            bytes     \nMax resident set          unlimited            unlimited            bytes     \nMax processes             71386                71386                processes \nMax open files            1048576              1048576              files     \nMax locked memory         2351321088           2351321088           bytes     \nMax address space         unlimited            unlimited            bytes     \nMax file locks            unlimited            unlimited            locks     \nMax pending signals       71386                71386                signals   \nMax msgqueue size         819200               819200               bytes     \nMax nice priority         0                    0                    \nMax realtime priority     0                    0                    \nMax realtime timeout      unlimited            unlimited            us        \n",
+              "cgroup_membership": "0::/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope\n",
+              "cgroup": {
+                "coverage": "visible-v2-ancestors",
+                "membership": "0::/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope\n",
+                "levels": [
+                  {
+                    "path": "/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "21415"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  },
+                  {
+                    "path": "/user.slice/user-1001.slice/user@1001.service",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "max"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  },
+                  {
+                    "path": "/user.slice/user-1001.slice",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "47115"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  },
+                  {
+                    "path": "/user.slice",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "max"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": ""
+                      }
+                    }
+                  },
+                  {
+                    "path": "/",
+                    "settings": {
+                      "cpu.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpu.weight": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.high": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.swap.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "pids.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  }
+                ],
+                "scope": "visible constraints only; hidden namespace ancestors and effective resource availability unverified"
+              }
+            }
+          ],
+          "resource_counters": [
+            {
+              "pid": 3268552,
+              "levels": [
+                {
+                  "path": "/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 70774479963\nuser_usec 55813383807\nsystem_usec 14961096156\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "10401779712"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "150"
+                    },
+                    "io.stat": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=59.47 avg60=51.67 avg300=32.76 total=6935564264\nfull avg10=1.29 avg60=1.03 avg300=0.69 total=669130724"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.30 avg60=0.65 avg300=0.38 total=68832098\nfull avg10=0.19 avg60=0.47 avg300=0.28 total=58242041"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.09 total=631746311\nfull avg10=0.00 avg60=0.00 avg300=0.08 total=591054206"
+                    }
+                  }
+                },
+                {
+                  "path": "/user.slice/user-1001.slice/user@1001.service",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 70780960806\nuser_usec 55818550389\nsystem_usec 14962410416\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "10407546880"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "153"
+                    },
+                    "io.stat": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=58.94 avg60=51.53 avg300=32.70 total=6937491078\nfull avg10=1.31 avg60=1.03 avg300=0.69 total=669248190"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.30 avg60=0.65 avg300=0.38 total=68651670\nfull avg10=0.20 avg60=0.45 avg300=0.27 total=58074469"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.08 total=628714075\nfull avg10=0.00 avg60=0.00 avg300=0.08 total=587894934"
+                    }
+                  }
+                },
+                {
+                  "path": "/user.slice/user-1001.slice",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 71788278353\nuser_usec 56339427469\nsystem_usec 15448850884\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "10448334848"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "161"
+                    },
+                    "io.stat": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=59.01 avg60=51.57 avg300=32.75 total=7014940508\nfull avg10=0.67 avg60=0.24 avg300=0.10 total=590316526"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.30 avg60=0.65 avg300=0.38 total=69650477\nfull avg10=0.20 avg60=0.45 avg300=0.27 total=58870018"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.09 total=628312073\nfull avg10=0.00 avg60=0.00 avg300=0.08 total=585375714"
+                    }
+                  }
+                },
+                {
+                  "path": "/user.slice",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 935390918034\nuser_usec 833335091589\nsystem_usec 102055826444\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 55\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "10512089088"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "161"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=1549508395008 wbytes=2112830128128 rios=26057712 wios=12348703 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=58.90 avg60=51.53 avg300=32.75 total=78930804297\nfull avg10=0.77 avg60=0.27 avg300=0.11 total=6550267756"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.30 avg60=0.65 avg300=0.38 total=870944668\nfull avg10=0.20 avg60=0.46 avg300=0.28 total=838663089"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.09 total=71436609553\nfull avg10=0.00 avg60=0.00 avg300=0.07 total=70214611294"
+                    }
+                  }
+                },
+                {
+                  "path": "/",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 1261395149291\nuser_usec 1048061875719\nsystem_usec 213333273572\nnice_usec 136732223\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.events.local": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.swap.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "pids.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=3939044092416 wbytes=2867557819904 rios=33928676 wios=52068216 dbytes=2692699166720 dios=5451591\n7:7 \n7:6 rbytes=28672 wbytes=0 rios=22 wios=0 dbytes=0 dios=0\n7:5 rbytes=3320411136 wbytes=0 rios=77549 wios=0 dbytes=0 dios=0\n7:4 rbytes=25251840 wbytes=0 rios=758 wios=0 dbytes=0 dios=0\n7:3 rbytes=669726720 wbytes=0 rios=15603 wios=0 dbytes=0 dios=0\n7:2 rbytes=10001206272 wbytes=0 rios=249691 wios=0 dbytes=0 dios=0\n7:1 rbytes=750592 wbytes=0 rios=122 wios=0 dbytes=0 dios=0\n7:0 rbytes=696320 wbytes=0 rios=75 wios=0 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=59.54 avg60=52.01 avg300=33.12 total=128312781925\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.19 avg60=0.62 avg300=0.37 total=16273990844\nfull avg10=0.17 avg60=0.45 avg300=0.27 total=16115957548"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.43 total=90418474210\nfull avg10=0.00 avg60=0.00 avg300=0.33 total=67514122747"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "pid": 3268548,
+              "levels": [
+                {
+                  "path": "/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 70774482956\nuser_usec 55813384781\nsystem_usec 14961098175\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "10401779712"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "150"
+                    },
+                    "io.stat": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=59.47 avg60=51.67 avg300=32.76 total=6935564264\nfull avg10=1.29 avg60=1.03 avg300=0.69 total=669130724"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.30 avg60=0.65 avg300=0.38 total=68832098\nfull avg10=0.19 avg60=0.47 avg300=0.28 total=58242041"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.09 total=631746311\nfull avg10=0.00 avg60=0.00 avg300=0.08 total=591054206"
+                    }
+                  }
+                },
+                {
+                  "path": "/user.slice/user-1001.slice/user@1001.service",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 70780963842\nuser_usec 55818550431\nsystem_usec 14962413410\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "10407546880"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "153"
+                    },
+                    "io.stat": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=58.94 avg60=51.53 avg300=32.70 total=6937491078\nfull avg10=1.31 avg60=1.03 avg300=0.69 total=669248190"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.30 avg60=0.65 avg300=0.38 total=68651670\nfull avg10=0.20 avg60=0.45 avg300=0.27 total=58074469"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.08 total=628714075\nfull avg10=0.00 avg60=0.00 avg300=0.08 total=587894934"
+                    }
+                  }
+                },
+                {
+                  "path": "/user.slice/user-1001.slice",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 71788282382\nuser_usec 56339428506\nsystem_usec 15448853876\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "10448334848"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "161"
+                    },
+                    "io.stat": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=59.01 avg60=51.57 avg300=32.75 total=7014940508\nfull avg10=0.67 avg60=0.24 avg300=0.10 total=590316526"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.30 avg60=0.65 avg300=0.38 total=69650477\nfull avg10=0.20 avg60=0.45 avg300=0.27 total=58870018"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.09 total=628312073\nfull avg10=0.00 avg60=0.00 avg300=0.08 total=585375714"
+                    }
+                  }
+                },
+                {
+                  "path": "/user.slice",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 935390921060\nuser_usec 833335092650\nsystem_usec 102055828409\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 55\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "10512089088"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "161"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=1549508395008 wbytes=2112830128128 rios=26057712 wios=12348703 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=58.90 avg60=51.53 avg300=32.75 total=78930804297\nfull avg10=0.77 avg60=0.27 avg300=0.11 total=6550267756"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.30 avg60=0.65 avg300=0.38 total=870944668\nfull avg10=0.20 avg60=0.46 avg300=0.28 total=838663089"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.09 total=71436609553\nfull avg10=0.00 avg60=0.00 avg300=0.07 total=70214611294"
+                    }
+                  }
+                },
+                {
+                  "path": "/",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 1261395153228\nuser_usec 1048061876719\nsystem_usec 213333276509\nnice_usec 136732223\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.events.local": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.swap.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "pids.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=3939044092416 wbytes=2867557819904 rios=33928676 wios=52068216 dbytes=2692699166720 dios=5451591\n7:7 \n7:6 rbytes=28672 wbytes=0 rios=22 wios=0 dbytes=0 dios=0\n7:5 rbytes=3320411136 wbytes=0 rios=77549 wios=0 dbytes=0 dios=0\n7:4 rbytes=25251840 wbytes=0 rios=758 wios=0 dbytes=0 dios=0\n7:3 rbytes=669726720 wbytes=0 rios=15603 wios=0 dbytes=0 dios=0\n7:2 rbytes=10001206272 wbytes=0 rios=249691 wios=0 dbytes=0 dios=0\n7:1 rbytes=750592 wbytes=0 rios=122 wios=0 dbytes=0 dios=0\n7:0 rbytes=696320 wbytes=0 rios=75 wios=0 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=59.54 avg60=52.01 avg300=33.12 total=128312781925\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.19 avg60=0.62 avg300=0.37 total=16273990844\nfull avg10=0.17 avg60=0.45 avg300=0.27 total=16115957548"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.43 total=90418474210\nfull avg10=0.00 avg60=0.00 avg300=0.33 total=67514122747"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "pid": 3268546,
+              "levels": [
+                {
+                  "path": "/user.slice/user-1001.slice/user@1001.service/tmux-spawn-2d747d2e-bec1-44f4-91d5-500345da10ee.scope",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 70774486982\nuser_usec 55813385818\nsystem_usec 14961101163\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "10401779712"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "150"
+                    },
+                    "io.stat": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=59.47 avg60=51.67 avg300=32.76 total=6935564264\nfull avg10=1.29 avg60=1.03 avg300=0.69 total=669130724"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.30 avg60=0.65 avg300=0.38 total=68832098\nfull avg10=0.19 avg60=0.47 avg300=0.28 total=58242041"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.09 total=631746311\nfull avg10=0.00 avg60=0.00 avg300=0.08 total=591054206"
+                    }
+                  }
+                },
+                {
+                  "path": "/user.slice/user-1001.slice/user@1001.service",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 70780966832\nuser_usec 55818551403\nsystem_usec 14962415429\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "10407546880"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "153"
+                    },
+                    "io.stat": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=58.94 avg60=51.53 avg300=32.70 total=6937491078\nfull avg10=1.31 avg60=1.03 avg300=0.69 total=669248190"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.30 avg60=0.65 avg300=0.38 total=68651670\nfull avg10=0.20 avg60=0.45 avg300=0.27 total=58074469"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.08 total=628714075\nfull avg10=0.00 avg60=0.00 avg300=0.08 total=587894934"
+                    }
+                  }
+                },
+                {
+                  "path": "/user.slice/user-1001.slice",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 71788285395\nuser_usec 56339429493\nsystem_usec 15448855901\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "10448334848"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "161"
+                    },
+                    "io.stat": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=59.01 avg60=51.57 avg300=32.75 total=7014940508\nfull avg10=0.67 avg60=0.24 avg300=0.10 total=590316526"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.30 avg60=0.65 avg300=0.38 total=69650477\nfull avg10=0.20 avg60=0.45 avg300=0.27 total=58870018"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.09 total=628312073\nfull avg10=0.00 avg60=0.00 avg300=0.08 total=585375714"
+                    }
+                  }
+                },
+                {
+                  "path": "/user.slice",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 935390924072\nuser_usec 833335093642\nsystem_usec 102055830430\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 55\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "10512089088"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "161"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=1549508395008 wbytes=2112830128128 rios=26057712 wios=12348703 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=58.90 avg60=51.53 avg300=32.75 total=78930804297\nfull avg10=0.77 avg60=0.27 avg300=0.11 total=6550267756"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.30 avg60=0.65 avg300=0.38 total=870944668\nfull avg10=0.20 avg60=0.46 avg300=0.28 total=838663089"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.09 total=71436609553\nfull avg10=0.00 avg60=0.00 avg300=0.07 total=70214611294"
+                    }
+                  }
+                },
+                {
+                  "path": "/",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 1261395156228\nuser_usec 1048061877719\nsystem_usec 213333278509\nnice_usec 136732223\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.events.local": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.swap.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "pids.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=3939044092416 wbytes=2867557819904 rios=33928676 wios=52068216 dbytes=2692699166720 dios=5451591\n7:7 \n7:6 rbytes=28672 wbytes=0 rios=22 wios=0 dbytes=0 dios=0\n7:5 rbytes=3320411136 wbytes=0 rios=77549 wios=0 dbytes=0 dios=0\n7:4 rbytes=25251840 wbytes=0 rios=758 wios=0 dbytes=0 dios=0\n7:3 rbytes=669726720 wbytes=0 rios=15603 wios=0 dbytes=0 dios=0\n7:2 rbytes=10001206272 wbytes=0 rios=249691 wios=0 dbytes=0 dios=0\n7:1 rbytes=750592 wbytes=0 rios=122 wios=0 dbytes=0 dios=0\n7:0 rbytes=696320 wbytes=0 rios=75 wios=0 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=59.54 avg60=52.01 avg300=33.12 total=128312781925\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.19 avg60=0.62 avg300=0.37 total=16273990844\nfull avg10=0.17 avg60=0.45 avg300=0.27 total=16115957548"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.43 total=90418474210\nfull avg10=0.00 avg60=0.00 avg300=0.33 total=67514122747"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "host_cpu": {
+            "started_at_epoch": 1789399938.7583756,
+            "scope": "visible host aggregate, not exclusive to benchmark; guest ticks overlap user/nice; iowait may decrease",
+            "cpu_ticks": {
+              "user": 104792514,
+              "nice": 13673,
+              "system": 20210049,
+              "idle": 427028415,
+              "iowait": 19609538,
+              "irq": 0,
+              "softirq": 1123277,
+              "steal": 1765620,
+              "guest": 0,
+              "guest_nice": 0
+            },
+            "clock_ticks_per_second": 100,
+            "boot_id": "dc654322-da37-4c6e-9a9d-be3db8949a5a",
+            "finished_at_epoch": 1789399938.7584982
+          },
+          "scope": "observed settings and visible cgroup constraints; effective resource availability and application enforcement not verified"
+        }
+      },
+      "target_identity": {
+        "cluster_name": "steelsearch-dev",
+        "cluster_uuid": "steelsearch-dev-cluster-uuid",
+        "name": "steel-node-1",
+        "tagline": "The OpenSearch Project: https://opensearch.org/",
+        "version": {
+          "build_date": "2026-05-02T00:00:00Z",
+          "build_hash": "steelsearch-dev",
+          "build_snapshot": true,
+          "build_type": "tar",
+          "distribution": "opensearch",
+          "lucene_version": "10.2.2",
+          "minimum_index_compatibility_version": "3.0.0",
+          "minimum_wire_compatibility_version": "3.7.0",
+          "number": "3.7.0"
+        }
+      },
+      "executable": {
+        "path": "/home/ubuntu/steelsearch/target/v070-candidate-build-20260914/release/steelsearch",
+        "sha256": "40830af495aadde1b922acd01ec2cb19a6ce0a9584c30b868a43e0982e807454"
+      },
+      "base_url": "http://127.0.0.1:39257",
+      "manifest_path": "/home/ubuntu/steelsearch/target/v070-core-gate-20260914/01-candidate/steelsearch-three-node/cluster/cluster.json",
+      "resource_process_pids": [
+        3268552,
+        3268548,
+        3268546
+      ],
+      "resource_container_names": []
+    }
+  },
+  "native_telemetry_budgets": {
+    "steelsearch-single-node": {
+      "success_count": 44809,
+      "counters": {
+        "materialized_response_fetches": {
+          "delta": 0,
+          "success_count": 44809,
+          "per_success": 0.0,
+          "max_per_success": 1.0,
+          "status": "pass",
+          "description": "total materialized response fetches per successful operation"
+        },
+        "compatibility_materialized_response_fetches": {
+          "delta": 0,
+          "success_count": 44809,
+          "per_success": 0.0,
+          "max_per_success": 1.0,
+          "status": "pass",
+          "description": "compatibility materialized response fetches per successful operation"
+        }
+      },
+      "operations": {},
+      "status": "pass"
+    },
+    "steelsearch-three-node": {
+      "success_count": 49292,
+      "counters": {
+        "materialized_response_fetches": {
+          "delta": 0,
+          "success_count": 49292,
+          "per_success": 0.0,
+          "max_per_success": 1.0,
+          "status": "pass",
+          "description": "total materialized response fetches per successful operation"
+        },
+        "compatibility_materialized_response_fetches": {
+          "delta": 0,
+          "success_count": 49292,
+          "per_success": 0.0,
+          "max_per_success": 1.0,
+          "status": "pass",
+          "description": "compatibility materialized response fetches per successful operation"
+        }
+      },
+      "operations": {},
+      "status": "pass"
+    }
+  },
+  "comparisons": {}
+}

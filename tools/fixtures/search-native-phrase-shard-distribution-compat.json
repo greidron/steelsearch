@@ -1,0 +1,82 @@
+{
+  "indices": [
+    {
+      "name": "native-phrase-shard-distribution",
+      "body": {
+        "settings": {
+          "number_of_shards": 3,
+          "number_of_replicas": 0,
+          "refresh_interval": "-1"
+        },
+        "mappings": {
+          "properties": {
+            "body": {
+              "type": "text"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "bulk": [
+    {
+      "index": "native-phrase-shard-distribution",
+      "documents": [
+        {
+          "_id": "phrase-a",
+          "_routing": "tenant-a",
+          "_source": {
+            "body": "alpha beta alpha beta"
+          }
+        },
+        {
+          "_id": "phrase-b",
+          "_routing": "tenant-a",
+          "_source": {
+            "body": "alpha beta"
+          }
+        },
+        {
+          "_id": "other-c",
+          "_routing": "tenant-b",
+          "_source": {
+            "body": "other document"
+          }
+        },
+        {
+          "_id": "other-d",
+          "_routing": "tenant-d",
+          "_source": {
+            "body": "another document"
+          }
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "phrase_score_with_query_absent_from_other_shards",
+      "area": "search",
+      "family": "ranking",
+      "extract": "search_scores",
+      "steps": [
+        {
+          "method": "POST",
+          "path": "/native-phrase-shard-distribution/_search",
+          "expected_status": 200,
+          "body": {
+            "size": 10,
+            "query": {
+              "match_phrase": {
+                "body": {
+                  "query": "alpha beta",
+                  "slop": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

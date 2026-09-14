@@ -18,6 +18,17 @@ SPEC.loader.exec_module(search_compat)
 
 
 class SearchCompatRunnerTests(unittest.TestCase):
+    def test_bulk_body_preserves_explicit_document_routing(self) -> None:
+        body = search_compat.bulk_body("logs", [
+            {"_id": "routed", "_routing": "tenant-a", "_source": {"body": "alpha beta"}},
+            {"_id": "default", "_source": {"body": "other"}},
+        ])
+        lines = [json.loads(line) for line in body.splitlines()]
+        self.assertEqual(lines[0], {"index": {"_id": "routed", "_index": "logs", "routing": "tenant-a"}})
+        self.assertEqual(lines[1], {"body": "alpha beta"})
+        self.assertEqual(lines[2], {"index": {"_id": "default", "_index": "logs"}})
+        self.assertEqual(lines[3], {"body": "other"})
+
     def test_term_vectors_normalizes_only_valid_elapsed_time(self) -> None:
         body = {"_id": "one", "_version": 2, "found": True, "took": 1,
                 "term_vectors": {"body": {"terms": {"alpha": {"term_freq": 2}}}}}

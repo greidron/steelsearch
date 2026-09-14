@@ -1437,7 +1437,11 @@ def normalize_response_headers(response_headers: Any | None) -> dict[str, str]:
 def bulk_body(index: str, documents: list[dict[str, Any]]) -> str:
     lines: list[str] = []
     for doc in documents:
-        lines.append(json.dumps({"index": {"_index": index, "_id": doc["_id"]}}, sort_keys=True))
+        metadata = {"_index": index, "_id": doc["_id"]}
+        routing = doc.get("_routing")
+        if routing is not None:
+            metadata["routing"] = routing
+        lines.append(json.dumps({"index": metadata}, sort_keys=True))
         lines.append(json.dumps(doc["_source"], sort_keys=True))
     return "\n".join(lines) + "\n"
 

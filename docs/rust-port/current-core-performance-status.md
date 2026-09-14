@@ -6,9 +6,9 @@ This file is generated from the latest completed, execution-verified repeated no
 - Throughput ratio = candidate/reference. Latency ratio = reference/candidate.
 - Each cell is the two-run range; the lower endpoint is the conservative value.
 - `took` is excluded. This is not a release approval or implementation-acceptance record.
-- Source: `target/late-replay-current-full-gate-20260914/result.json`.
-- Benchmark plan: 2026-09-14T03:06:52.170895+00:00; candidate SHA-256: `36bb276347baf3318212d11515043b29681662884b5df9743725c96c8a5b8b33`.
-- Fixed v0.6.0 gate: 23/44 measured values have a two-run lower ratio below 0.950x.
+- Source: `target/native-phrase-shard-authority-full-gate-rerun-20260914/result.json`.
+- Benchmark plan: 2026-09-14T08:40:38.023900+00:00; candidate SHA-256: `b38f4c5d10bf1c4917b24957f38afc113f1e4f836e1ec96dd31687692cb25d9a`.
+- Fixed v0.6.0 gate: 26/44 measured values have a two-run lower ratio below 0.950x.
 
 ## At A Glance
 
@@ -19,27 +19,27 @@ Scenario rows use the worst of mean, p95, and p99 across both repetitions.
 
 | Scenario | vs v0.6.0 | vs OpenSearch |
 | --- | ---: | ---: |
-| throughput | 1.047x | 2.777x |
-| write latency | 0.867x | 3.569x |
-| lexical latency | 0.955x | 2.125x |
-| ranking latency | 1.040x | 2.055x |
-| facet latency | 1.352x | 2.234x |
-| sort_filter latency | 0.933x | 2.560x |
-| nested latency | 0.998x | 1.681x |
-| refresh latency | 0.959x | 6.868x |
+| throughput | 1.032x | 2.713x |
+| write latency | 0.859x | 3.585x |
+| lexical latency | 0.928x | 2.040x |
+| ranking latency | 1.027x | 2.027x |
+| facet latency | 1.357x | 2.074x |
+| sort_filter latency | 0.923x | 2.411x |
+| nested latency | 0.976x | 1.581x |
+| refresh latency | 0.944x | 6.580x |
 
 ### 3 Nodes
 
 | Scenario | vs v0.6.0 | vs OpenSearch |
 | --- | ---: | ---: |
-| throughput | 0.923x | 8.390x |
-| write latency | 0.873x | 9.901x |
-| lexical latency | 0.887x | 7.060x |
-| ranking latency | 0.825x | 6.500x |
-| facet latency | 0.969x | 7.298x |
-| sort_filter latency | 0.912x | 9.528x |
-| nested latency | 0.883x | 6.242x |
-| refresh latency | 0.728x | 13.453x |
+| throughput | 0.904x | 7.446x |
+| write latency | 0.849x | 9.043x |
+| lexical latency | 0.898x | 6.616x |
+| ranking latency | 0.847x | 6.016x |
+| facet latency | 0.944x | 6.413x |
+| sort_filter latency | 0.889x | 8.225x |
+| nested latency | 0.835x | 5.706x |
+| refresh latency | 0.747x | 11.485x |
 
 <details>
 <summary>Detailed ranges: mean / p95 / p99</summary>
@@ -50,19 +50,19 @@ Rows are `mean / p95 / p99` performance ratios, all with the same higher-is-fast
 
 | Topology | Scenario | v0.6.0 ratio (mean / p95 / p99) | OpenSearch ratio (mean / p95 / p99) |
 | --- | --- | ---: | ---: |
-| single-node | write | 0.875-0.890x / 0.867-0.901x / 0.877-0.879x | 4.089-4.156x / 3.569-3.726x / 4.287-4.375x |
-| single-node | lexical | 0.955-0.963x / 1.051x / 1.089-1.134x | 2.326-2.388x / 2.125-2.271x / 2.334-2.377x |
-| single-node | ranking | 1.040-1.044x / 1.126-1.146x / 1.179-1.180x | 2.055-2.092x / 2.158-2.226x / 2.610-2.673x |
-| single-node | facet | 1.352-1.371x / 1.448-1.512x / 1.388-1.401x | 2.234-2.235x / 2.276-2.298x / 2.449-2.622x |
-| single-node | sort_filter | 0.933-0.950x / 0.971-1.032x / 1.018-1.087x | 2.560-2.602x / 2.571-2.620x / 2.710-2.754x |
-| single-node | nested | 0.998-1.017x / 1.028-1.061x / 1.071-1.148x | 1.703-1.787x / 1.681-1.862x / 2.001-2.148x |
-| single-node | refresh | 1.017x / 1.113-1.143x / 0.959-1.039x | 6.868-6.996x / 8.343-8.556x / 8.407-8.593x |
-| three-node | write | 0.890-0.895x / 0.873-0.883x / 0.881-0.885x | 9.901-10.345x / 10.675-12.221x / 13.036-16.569x |
-| three-node | lexical | 0.919-0.923x / 0.924-0.934x / 0.887-0.903x | 7.060-7.198x / 9.053-9.282x / 8.457-9.655x |
-| three-node | ranking | 0.853x / 0.869-0.870x / 0.825-0.894x | 6.500-6.704x / 8.132-9.069x / 10.175-12.598x |
-| three-node | facet | 1.031-1.033x / 1.075-1.089x / 0.969-0.991x | 7.298-7.328x / 8.701-8.934x / 9.723-10.265x |
-| three-node | sort_filter | 0.933-0.943x / 0.913-0.925x / 0.912-0.939x | 9.528-9.681x / 11.724-12.683x / 11.533-11.798x |
-| three-node | nested | 0.942-0.951x / 0.943-0.945x / 0.883-0.908x | 6.242-6.609x / 7.878-8.082x / 8.495-9.924x |
-| three-node | refresh | 0.881-0.898x / 0.882-0.888x / 0.728-0.824x | 14.319-15.790x / 15.146-16.053x / 13.453-17.707x |
+| single-node | write | 0.869-0.874x / 0.859-0.883x / 0.862-0.881x | 4.077-4.085x / 3.585-3.620x / 4.427-4.768x |
+| single-node | lexical | 0.928-0.941x / 0.995-1.039x / 1.025-1.076x | 2.240-2.289x / 2.040-2.083x / 2.184-2.347x |
+| single-node | ranking | 1.027-1.029x / 1.098-1.116x / 1.113-1.134x | 2.027-2.036x / 2.100-2.129x / 2.420-2.593x |
+| single-node | facet | 1.357-1.367x / 1.485-1.500x / 1.374-1.420x | 2.181-2.233x / 2.074-2.234x / 2.477-2.502x |
+| single-node | sort_filter | 0.923-0.928x / 0.972-0.989x / 1.021-1.022x | 2.475-2.564x / 2.411-2.525x / 2.495-2.583x |
+| single-node | nested | 0.976-0.989x / 0.994-1.028x / 1.050-1.087x | 1.645-1.651x / 1.581-1.587x / 1.811-1.859x |
+| single-node | refresh | 0.964-0.985x / 1.037-1.102x / 0.944-0.991x | 6.580-6.711x / 7.755-8.025x / 7.590-8.172x |
+| three-node | write | 0.873-0.895x / 0.849-0.886x / 0.880-0.904x | 9.043-9.538x / 10.159-10.863x / 13.435-13.696x |
+| three-node | lexical | 0.914-0.928x / 0.898-0.943x / 0.900-0.928x | 6.616-6.693x / 7.985-8.479x / 8.630-8.917x |
+| three-node | ranking | 0.847-0.864x / 0.861-0.898x / 0.863-0.881x | 6.016-6.265x / 7.878-8.266x / 9.450-9.589x |
+| three-node | facet | 0.996-1.051x / 1.034-1.121x / 0.944-1.028x | 6.413-6.804x / 7.545-8.545x / 8.561-8.749x |
+| three-node | sort_filter | 0.919-0.937x / 0.889-0.927x / 0.895-0.915x | 8.225-8.968x / 9.920-10.830x / 10.822-12.236x |
+| three-node | nested | 0.917-0.940x / 0.896-0.940x / 0.835-0.894x | 5.706-5.981x / 6.739-7.832x / 7.578-8.726x |
+| three-node | refresh | 0.849-0.869x / 0.830-0.866x / 0.747-0.755x | 12.229-12.882x / 11.935-13.457x / 11.485-12.714x |
 
 </details>

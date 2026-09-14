@@ -10,6 +10,7 @@ autotests = false
 [features]
 default = []
 standalone-runtime = []
+diagnostic-search-timing = ["os-engine-tantivy/diagnostic-search-timing"]
 
 [[bin]]
 name = "steelsearch"

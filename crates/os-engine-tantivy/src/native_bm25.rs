@@ -144,12 +144,18 @@ impl Bm25StatisticsProvider for FieldStatistics<'_> {
 
 impl Query for NormalizedBm25Query {
     fn weight(&self, scoring: EnableScoring<'_>) -> tantivy::Result<Box<dyn Weight>> {
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _timer = super::diagnostic_search::start(&super::diagnostic_search::NATIVE_BM25_WEIGHT);
         if !scoring.is_scoring_enabled() {
             return self.query.weight(scoring);
         }
         let searcher = scoring
             .searcher()
             .expect("enabled scoring requires a searcher");
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _statistics_timer = super::diagnostic_search::start(
+            &super::diagnostic_search::NATIVE_BM25_FIELD_STATISTICS,
+        );
         let documents = if searcher.generation() == &self.generation {
             let mut cached = self
                 .cache
@@ -168,10 +174,16 @@ impl Query for NormalizedBm25Query {
             // A query reused with another reader must not reuse its original snapshot statistics.
             field_document_count(searcher, self.field)?
         };
+        #[cfg(feature = "diagnostic-search-timing")]
+        drop(_statistics_timer);
         let statistics = FieldStatistics {
             searcher,
             documents,
         };
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _tantivy_weight_timer = super::diagnostic_search::start(
+            &super::diagnostic_search::NATIVE_BM25_TANTIVY_WEIGHT,
+        );
         self.query
             .weight(EnableScoring::enabled_from_statistics_provider(
                 &statistics,

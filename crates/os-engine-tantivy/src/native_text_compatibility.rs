@@ -101,10 +101,9 @@ impl NativeTextCompatibility {
             let Some(value) = source.get(field) else {
                 continue;
             };
-            let tokens = tokens_for_source_value(value);
-            compatibility.supported &= native_phrase_source_value_supported(value)
-                && tokens.iter().all(|token| token.len() < 40);
-            compatibility.has_terms |= !tokens.is_empty();
+            let (supported, has_terms) = phrase_source_compatibility(value);
+            compatibility.supported &= supported;
+            compatibility.has_terms |= has_terms;
         }
     }
 
@@ -113,4 +112,39 @@ impl NativeTextCompatibility {
             .get(field)
             .is_some_and(|value| value.supported && value.has_terms)
     }
+}
+
+fn phrase_source_compatibility(value: &Value) -> (bool, bool) {
+    match value {
+        Value::Null => (true, false),
+        Value::Bool(_) => (true, true),
+        Value::Number(number) => phrase_text_compatibility(&number.to_string()),
+        Value::String(text) if text.is_ascii() => phrase_text_compatibility(text),
+        Value::String(_) | Value::Object(_) => (false, false),
+        Value::Array(values) => {
+            let mut has_terms = false;
+            for value in values {
+                let (supported, value_has_terms) = phrase_source_compatibility(value);
+                if !supported {
+                    return (false, false);
+                }
+                has_terms |= value_has_terms;
+            }
+            (true, has_terms)
+        }
+    }
+}
+
+fn phrase_text_compatibility(text: &str) -> (bool, bool) {
+    let mut has_terms = false;
+    for token in text.split(|character: char| !character.is_alphanumeric()) {
+        if token.is_empty() {
+            continue;
+        }
+        if token.len() >= 40 {
+            return (false, false);
+        }
+        has_terms = true;
+    }
+    (true, has_terms)
 }

@@ -5,6 +5,8 @@
 mod bucket_budget;
 #[cfg(feature = "diagnostic-lock-timing")]
 mod diagnostic_lock;
+#[cfg(feature = "diagnostic-search-timing")]
+mod diagnostic_search;
 mod field_cache;
 #[cfg(test)]
 mod multi_match_field_tests;
@@ -74,10 +76,11 @@ use tantivy::aggregation::{
     AggregationCollector, AggregationLimits, DistributedAggregationCollector,
 };
 use tantivy::collector::{Count, DocSetCollector, TopDocs};
+use tantivy::fastfield::Column;
 use tantivy::query::{
     AllQuery, BooleanQuery, BoostQuery, ConstScoreQuery, DisjunctionMaxQuery, EmptyQuery,
-    FuzzyTermQuery, Occur, PhrasePrefixQuery, PhraseQuery, Query as TantivyQueryTrait, QueryParser,
-    RangeQuery, RegexQuery, TermQuery,
+    FuzzyTermQuery, MinimumShouldMatchQuery, Occur, PhrasePrefixQuery, PhraseQuery,
+    Query as TantivyQueryTrait, QueryParser, RangeQuery, RegexQuery, TermQuery,
 };
 use tantivy::schema::{
     DateOptions, Field, IndexRecordOption, NumericOptions, Schema as TantivySchemaDef,
@@ -2886,7 +2889,11 @@ impl IndexEngine for TantivyEngine {
                         shard.append_only_since_refresh = non_append_generations
                             .get(&artifact.shard_id)
                             == Some(&shard.non_append_generation);
-                        if shard.append_only_since_refresh {
+                        if artifact.target_refreshed_seq_no >= shard.max_sequence_number() {
+                            // Every pending delete is visible in this reader generation. Keep
+                            // later concurrent deletes until a refresh reaches their seq_no.
+                            shard.pending_deleted_ids.clear();
+                        } else if shard.append_only_since_refresh {
                             for id in &artifact.processed_deleted_document_ids {
                                 shard.pending_deleted_ids.remove(id);
                             }
@@ -3459,6 +3466,8 @@ impl IndexEngine for TantivyEngine {
     }
 
     fn search(&self, mut request: SearchRequest) -> EngineResult<SearchResponse> {
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _timer = diagnostic_search::start(&diagnostic_search::ENGINE_SEARCH);
         let (query, source_projection_fields) = parse_request_query_and_source_projection_fields(
             &request.query,
             request.stored_fields.as_ref(),
@@ -4056,6 +4065,8 @@ impl TantivyEngine {
         scores_required: bool,
     ) -> EngineResult<SearchResponse> {
         let (index_snapshot, search_execution_telemetry) = {
+            #[cfg(feature = "diagnostic-search-timing")]
+            let _timer = diagnostic_search::start(&diagnostic_search::ENGINE_PLAIN_SNAPSHOT);
             #[cfg(not(feature = "diagnostic-lock-timing"))]
             let store = self
                 .store
@@ -4087,21 +4098,22 @@ impl TantivyEngine {
             indices,
             search_execution_telemetry,
         };
-        Ok(store
-            .search_response_index_aware_with_optional_reusable_with_score_requirement(
-                &[index_name.to_string()],
-                Some(index_name),
-                &SearchShardScope::default(),
-                query,
-                sort_specs,
-                aggregation_map,
-                from,
-                size,
-                fetch_subphases,
-                source_projection_fields,
-                scores_required,
-            )?
-            .0)
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _timer = diagnostic_search::start(&diagnostic_search::ENGINE_PLAIN_EXECUTE);
+        let (response, _) = store.search_response_index_aware_with_optional_reusable_with_score_requirement(
+            &[index_name.to_string()],
+            Some(index_name),
+            &SearchShardScope::default(),
+            query,
+            sort_specs,
+            aggregation_map,
+            from,
+            size,
+            fetch_subphases,
+            source_projection_fields,
+            scores_required,
+        )?;
+        Ok(response)
     }
 
     pub fn index_schema(&self, index: &str) -> Option<TantivyIndexSchema> {
@@ -4789,7 +4801,6 @@ impl TantivySearchState {
     ) -> EngineResult<TantivyRefreshTimings> {
         self.retain_bm25_searcher_if_fully_replaced(deleted_document_ids)?;
         let mut timings = TantivyRefreshTimings::default();
-        let preparation_started = std::time::Instant::now();
         let native_text_compatibility = replacement_text_compatibility.unwrap_or_else(|| {
             let mut compatibility = self.native_text_compatibility.clone();
             for document in documents {
@@ -4797,21 +4808,6 @@ impl TantivySearchState {
             }
             compatibility
         });
-        // Finish fallible field conversion before mutating the shared writer.
-        let prepared =
-            if self.fields.values().any(|field| {
-                field.multi_field_source.is_some() || field.text_position_gap.is_some()
-            }) {
-                Some(
-                    documents
-                        .iter()
-                        .map(|document| build_tantivy_document(&self.index, &self.fields, document))
-                        .collect::<EngineResult<Vec<_>>>()?,
-                )
-            } else {
-                None
-            };
-        let preparation_nanos = elapsed_nanos_u64(preparation_started.elapsed());
         let mut writer = self
             .writer
             .lock()
@@ -4825,20 +4821,21 @@ impl TantivySearchState {
         for id in deleted_document_ids {
             writer.delete_term(Term::from_field_text(id_field, id));
         }
-        if let Some(prepared) = prepared {
-            for document in prepared {
-                writer.add_document(document).map_err(tantivy_error)?;
-            }
-        } else {
-            for document in documents {
-                let tantivy_document = build_tantivy_document(&self.index, &self.fields, document)?;
-                writer
-                    .add_document(tantivy_document)
-                    .map_err(tantivy_error)?;
+        for document in documents {
+            let tantivy_document =
+                match build_tantivy_document(&self.index, &self.fields, document) {
+                    Ok(document) => document,
+                    Err(error) => {
+                        writer.rollback().map_err(tantivy_error)?;
+                        return Err(error);
+                    }
+                };
+            if let Err(error) = writer.add_document(tantivy_document) {
+                writer.rollback().map_err(tantivy_error)?;
+                return Err(tantivy_error(error));
             }
         }
-        timings.document_add_nanos =
-            preparation_nanos.saturating_add(elapsed_nanos_u64(document_add_started.elapsed()));
+        timings.document_add_nanos = elapsed_nanos_u64(document_add_started.elapsed());
         let commit_started = std::time::Instant::now();
         writer.commit().map_err(tantivy_error)?;
         timings.commit_nanos = elapsed_nanos_u64(commit_started.elapsed());
@@ -5190,22 +5187,38 @@ fn build_tantivy_document(
             .as_ref()
             .map(|source| source.path.as_str())
             .unwrap_or(field_name);
-        let values = source_values_for_tantivy_field_path(&document.source, source_path);
+        let values = source_values_for_tantivy_indexing(&document.source, source_path);
         if let Some(gap) = indexed_field.text_position_gap {
-            if let [Value::String(text)] = values.as_slice() {
-                tantivy_document.add_text(indexed_field.field, text);
-            } else {
-                add_positioned_text_values(
-                    &mut tantivy_document,
-                    index,
-                    indexed_field.field,
-                    &values,
-                    gap,
-                )?;
+            match values {
+                TantivySourceValues::One(Value::String(text)) => {
+                    tantivy_document.add_text(indexed_field.field, text);
+                }
+                TantivySourceValues::One(value) => {
+                    add_positioned_text_values(
+                        &mut tantivy_document,
+                        index,
+                        indexed_field.field,
+                        std::slice::from_ref(&value),
+                        gap,
+                    )?;
+                }
+                TantivySourceValues::Many(values) => {
+                    if let [Value::String(text)] = values.as_slice() {
+                        tantivy_document.add_text(indexed_field.field, text);
+                    } else {
+                        add_positioned_text_values(
+                            &mut tantivy_document,
+                            index,
+                            indexed_field.field,
+                            &values,
+                            gap,
+                        )?;
+                    }
+                }
             }
             continue;
         }
-        for value in values {
+        let mut add_value = |value: &Value| -> EngineResult<()> {
             if let Some(source) = &indexed_field.multi_field_source {
                 if indexed_field.field_type == TantivyFieldType::Keyword {
                     add_multi_field_keyword_value(
@@ -5214,7 +5227,7 @@ fn build_tantivy_document(
                         value,
                         source.ignore_above,
                     )?;
-                    continue;
+                    return Ok(());
                 }
             }
             add_json_value_to_tantivy_document(
@@ -5223,6 +5236,15 @@ fn build_tantivy_document(
                 &indexed_field.field_type,
                 value,
             );
+            Ok(())
+        };
+        match values {
+            TantivySourceValues::One(value) => add_value(value)?,
+            TantivySourceValues::Many(values) => {
+                for value in values {
+                    add_value(value)?;
+                }
+            }
         }
     }
     Ok(tantivy_document)
@@ -5405,6 +5427,26 @@ fn source_values_for_tantivy_field_path<'a>(source: &'a Value, field: &str) -> V
         }
     }
     current
+}
+
+enum TantivySourceValues<'a> {
+    One(&'a Value),
+    Many(Vec<&'a Value>),
+}
+
+fn source_values_for_tantivy_indexing<'a>(
+    source: &'a Value,
+    field: &str,
+) -> TantivySourceValues<'a> {
+    if !field.contains('.') {
+        if let Value::Object(object) = source {
+            return object
+                .get(field)
+                .map(TantivySourceValues::One)
+                .unwrap_or_else(|| TantivySourceValues::Many(Vec::new()));
+        }
+    }
+    TantivySourceValues::Many(source_values_for_tantivy_field_path(source, field))
 }
 
 fn add_json_value_to_tantivy_document(
@@ -6210,14 +6252,7 @@ fn build_tantivy_minimum_should_match_query(
 
     if minimum_should_match == 1 {
         let mut clauses = Vec::new();
-        let mut optional = Vec::new();
         if !append_built_tantivy_clauses(search_state, &mut clauses, Occur::Must, required_queries)?
-            || !append_built_tantivy_clauses(
-                search_state,
-                &mut optional,
-                Occur::Should,
-                should_queries,
-            )?
             || !append_built_tantivy_clauses(
                 search_state,
                 &mut clauses,
@@ -6227,8 +6262,19 @@ fn build_tantivy_minimum_should_match_query(
         {
             return Ok(None);
         }
-        // Require the optional group once; overlapping combinations would duplicate scores.
-        clauses.push((Occur::Must, Box::new(BooleanQuery::new(optional))));
+        let mut optional = Vec::with_capacity(should_queries.len());
+        for query in should_queries {
+            let Some(inner) = build_tantivy_query(search_state, query)? else {
+                return Ok(None);
+            };
+            optional.push(inner);
+        }
+        // Tantivy's threshold union is the native minimum-one scorer. It keeps
+        // overlapping should scores additive without the extra BooleanQuery layer.
+        clauses.push((
+            Occur::Must,
+            Box::new(MinimumShouldMatchQuery::new(optional, 1)),
+        ));
         return Ok(Some(Box::new(BooleanQuery::new(clauses))));
     }
 
@@ -11964,7 +12010,12 @@ impl StoredIndex {
         size: usize,
         scores_required: bool,
     ) -> EngineResult<Option<(u64, Vec<SearchHit>)>> {
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _timer = diagnostic_search::start(&diagnostic_search::SHARDED_PAGE);
         if sort_uses_default_relevance_order(sort) {
+            #[cfg(feature = "diagnostic-search-timing")]
+            let _candidate_timer =
+                diagnostic_search::start(&diagnostic_search::SHARDED_PAGE_CANDIDATE_COLLECTION);
             let Some((total_hits, mut hits)) = self.collect_sharded_page_candidates(
                 selected_shards,
                 query,
@@ -11977,6 +12028,10 @@ impl StoredIndex {
             else {
                 return Ok(None);
             };
+            #[cfg(feature = "diagnostic-search-timing")]
+            drop(_candidate_timer);
+            #[cfg(feature = "diagnostic-search-timing")]
+            let _sort_timer = diagnostic_search::start(&diagnostic_search::SHARDED_PAGE_SORT);
             // All candidates belong to this index; source is unnecessary for relevance ordering.
             hits.sort_by(|(left, left_score), (right, right_score)| {
                 right_score
@@ -11984,6 +12039,11 @@ impl StoredIndex {
                     .unwrap_or(std::cmp::Ordering::Equal)
                     .then_with(|| left.metadata.id.cmp(&right.metadata.id))
             });
+            #[cfg(feature = "diagnostic-search-timing")]
+            drop(_sort_timer);
+            #[cfg(feature = "diagnostic-search-timing")]
+            let _response_timer =
+                diagnostic_search::start(&diagnostic_search::SHARDED_PAGE_RESPONSE_BUILD);
             return Ok(Some((
                 total_hits,
                 hits.into_iter()
@@ -12059,6 +12119,8 @@ impl StoredIndex {
         Hit: Send,
         Materialize: Fn(&'a StoredDocument, f32) -> Hit + Sync,
     {
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _setup_timer = diagnostic_search::start(&diagnostic_search::SHARDED_CANDIDATE_SETUP);
         if self.documents.shard_count <= 1
             || matches!(query, Query::Knn(_))
             || Self::query_contains_knn(query)
@@ -12079,6 +12141,8 @@ impl StoredIndex {
         let exact_source_score = scores_required
             && query_needs_exact_source_score(query)
             && !native_query_score;
+        #[cfg(feature = "diagnostic-search-timing")]
+        drop(_setup_timer);
         let search_shard =
             |(shard, search_state): &(
                 &'a StoredShard,
@@ -12097,11 +12161,20 @@ impl StoredIndex {
                 ) {
                     return Ok(None);
                 }
-                let Some(tantivy_query) = build_tantivy_query(search_state, query)? else {
+                let searcher = search_state.searcher.clone();
+                #[cfg(feature = "diagnostic-search-timing")]
+                let tantivy_query = {
+                    let _timer = diagnostic_search::start(&diagnostic_search::SHARDED_QUERY_BUILD);
+                    build_tantivy_query(search_state, query)?
+                };
+                #[cfg(not(feature = "diagnostic-search-timing"))]
+                let tantivy_query = build_tantivy_query(search_state, query)?;
+                let Some(tantivy_query) = tantivy_query else {
                     return Ok(None);
                 };
-                let searcher = search_state.searcher.clone();
-                let Some((total_hits, scored_addresses)) =
+                #[cfg(feature = "diagnostic-search-timing")]
+                let search_result = {
+                    let _timer = diagnostic_search::start(&diagnostic_search::SHARDED_TANTIVY_SEARCH);
                     search_tantivy_count_and_top_docs_with_scores(
                         search_state,
                         &searcher,
@@ -12110,6 +12183,17 @@ impl StoredIndex {
                         first_pass_limit,
                         native_query_score,
                     )?
+                };
+                #[cfg(not(feature = "diagnostic-search-timing"))]
+                let search_result = search_tantivy_count_and_top_docs_with_scores(
+                    search_state,
+                    &searcher,
+                    tantivy_query.as_ref(),
+                    sort,
+                    first_pass_limit,
+                    native_query_score,
+                )?;
+                let Some((total_hits, scored_addresses)) = search_result
                 else {
                     return Ok(None);
                 };
@@ -12120,6 +12204,8 @@ impl StoredIndex {
                     return Ok(None);
                 };
                 let mut hits = Vec::with_capacity(scored_addresses.len());
+                #[cfg(feature = "diagnostic-search-timing")]
+                let _timer = diagnostic_search::start(&diagnostic_search::SHARDED_HIT_MATERIALIZATION);
                 for (score, address) in scored_addresses {
                     let document_id = if let Some(document_id) =
                         search_state.document_id_for_address(&searcher, address)
@@ -12162,6 +12248,8 @@ impl StoredIndex {
             };
         let use_parallel_shard_reduce =
             self.documents.len() >= SHARDED_PAGE_PARALLEL_REDUCE_MIN_DOCUMENTS;
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _fanout_timer = diagnostic_search::start(&diagnostic_search::SHARDED_CANDIDATE_FANOUT);
         let shard_results = if use_parallel_shard_reduce {
             shard_states
                 .par_iter()
@@ -12173,6 +12261,10 @@ impl StoredIndex {
                 .map(search_shard)
                 .collect::<EngineResult<Vec<_>>>()?
         };
+        #[cfg(feature = "diagnostic-search-timing")]
+        drop(_fanout_timer);
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _reduce_timer = diagnostic_search::start(&diagnostic_search::SHARDED_CANDIDATE_REDUCE);
         let mut total_hits = 0_u64;
         let mut hits = Vec::new();
         for shard_result in shard_results {
@@ -15599,31 +15691,8 @@ impl StoredIndex {
             return false;
         }
         let state_supports_text = |state: &TantivySearchState| {
-            let Some(indexed) = state.fields.get(field) else {
-                return false;
-            };
-            state.native_text_compatibility.supports(field)
+            state.fields.contains_key(field) && state.native_text_compatibility.supports(field)
         };
-        let state_has_query_term = |state: &TantivySearchState| {
-            state.fields.get(field).is_some_and(|indexed| {
-                tokens.iter().any(|token| {
-                    state
-                        .searcher
-                        .doc_freq(&Term::from_field_text(indexed.field, token))
-                        .unwrap_or_default()
-                        > 0
-                })
-            })
-        };
-        let query_exists_in_index = self.documents.shard_count <= 1
-            && self.search_state.as_ref().is_some_and(state_has_query_term)
-            || self.documents.shard_count > 1
-                && self
-                    .documents
-                    .shards
-                    .values()
-                    .filter_map(|shard| shard.search_state.as_ref())
-                    .any(state_has_query_term);
         if self.documents.shard_count == 1 {
             let shard = self
                 .documents
@@ -15633,11 +15702,8 @@ impl StoredIndex {
                 .expect("single-shard index has a shard");
             return shard.refreshed_seq_no >= shard.max_sequence_number()
                 && shard.pending_deleted_ids.is_empty()
-                && self.search_state.as_ref().is_some_and(state_supports_text)
-                && (!query_exists_in_index
-                    || self.search_state.as_ref().is_some_and(state_has_query_term));
+                && self.search_state.as_ref().is_some_and(state_supports_text);
         }
-        let mut every_state_has_query_term = true;
         for id in self
             .documents
             .shards
@@ -15659,9 +15725,8 @@ impl StoredIndex {
             if !state_supports_text(state) {
                 return false;
             }
-            every_state_has_query_term &= state_has_query_term(state);
         }
-        !query_exists_in_index || every_state_has_query_term
+        true
     }
 
     fn native_query_score_is_authoritative(
@@ -18102,7 +18167,7 @@ fn search_tantivy_top_docs(
         return Ok(None);
     }
     let collector = NativeMultiSortCollector {
-        sort_specs: sort.to_vec(),
+        sort_specs: Arc::from(sort.to_vec()),
         sort_field_exists: sort
             .iter()
             .map(|sort_spec| search_state.fields.contains_key(&sort_spec.field))
@@ -18137,7 +18202,7 @@ fn search_tantivy_top_docs_with_scores(
         return Ok(None);
     }
     let collector = NativeMultiSortCollector {
-        sort_specs: sort.to_vec(),
+        sort_specs: Arc::from(sort.to_vec()),
         sort_field_exists: sort
             .iter()
             .map(|sort_spec| search_state.fields.contains_key(&sort_spec.field))
@@ -18184,7 +18249,7 @@ fn search_tantivy_count_and_top_docs_with_scores(
         return Ok(None);
     }
     let collector = NativeMultiSortCollector {
-        sort_specs: sort.to_vec(),
+        sort_specs: Arc::from(sort.to_vec()),
         sort_field_exists: sort
             .iter()
             .map(|sort_spec| search_state.fields.contains_key(&sort_spec.field))
@@ -18227,7 +18292,7 @@ fn search_tantivy_top_docs_with_offset(
         return Ok(None);
     }
     let collector = NativeMultiSortCollector {
-        sort_specs: sort.to_vec(),
+        sort_specs: Arc::from(sort.to_vec()),
         sort_field_exists: sort
             .iter()
             .map(|sort_spec| search_state.fields.contains_key(&sort_spec.field))
@@ -18348,7 +18413,7 @@ impl NativeSortKey {
     }
 
     fn from_accessors(
-        accessors: &[Box<dyn Fn(u32) -> Option<u64> + Send + Sync>],
+        accessors: &[NativeSortAccessor],
         sort_specs: &[SortSpec],
         doc: u32,
     ) -> Self {
@@ -18359,7 +18424,7 @@ impl NativeSortKey {
                     .iter()
                     .zip(sort_specs)
                     .map(|(accessor, sort_spec)| {
-                        encode_native_sort_key_part(accessor(doc), sort_spec.order.clone())
+                        encode_native_sort_key_part(accessor.value(doc), sort_spec.order.clone())
                     })
                     .collect(),
             );
@@ -18370,7 +18435,7 @@ impl NativeSortKey {
         }; NATIVE_INLINE_SORT_KEY_PARTS];
         for (part, (accessor, sort_spec)) in parts.iter_mut().zip(accessors.iter().zip(sort_specs))
         {
-            *part = encode_native_sort_key_part(accessor(doc), sort_spec.order.clone());
+            *part = encode_native_sort_key_part(accessor.value(doc), sort_spec.order.clone());
         }
         Self::Inline {
             parts,
@@ -18443,7 +18508,7 @@ impl tantivy::collector::SegmentCollector for NativeDocAddressSegmentCollector {
 }
 
 struct NativeMultiSortCollector {
-    sort_specs: Vec<SortSpec>,
+    sort_specs: Arc<[SortSpec]>,
     sort_field_exists: Vec<bool>,
     limit: usize,
     offset: usize,
@@ -18451,10 +18516,29 @@ struct NativeMultiSortCollector {
 
 struct NativeMultiSortSegmentCollector {
     segment_ord: u32,
-    accessors: Vec<Box<dyn Fn(u32) -> Option<u64> + Send + Sync>>,
-    sort_specs: Vec<SortSpec>,
+    accessors: Vec<NativeSortAccessor>,
+    sort_specs: Arc<[SortSpec]>,
     window_limit: usize,
     docs: Vec<(NativeSortKey, TantivyDocAddress)>,
+}
+
+#[derive(Clone)]
+enum NativeSortAccessor {
+    Missing,
+    U64(Column<u64>),
+    #[cfg(test)]
+    Test(Arc<dyn Fn(u32) -> Option<u64> + Send + Sync>),
+}
+
+impl NativeSortAccessor {
+    fn value(&self, doc: u32) -> Option<u64> {
+        match self {
+            Self::Missing => None,
+            Self::U64(column) => column.first(doc),
+            #[cfg(test)]
+            Self::Test(accessor) => accessor(doc),
+        }
+    }
 }
 
 fn compare_native_multi_sort_docs(
@@ -18476,17 +18560,16 @@ impl tantivy::collector::Collector for NativeMultiSortCollector {
         segment_local_id: u32,
         segment_reader: &tantivy::SegmentReader,
     ) -> tantivy::Result<Self::Child> {
-        let mut accessors: Vec<Box<dyn Fn(u32) -> Option<u64> + Send + Sync>> =
-            Vec::with_capacity(self.sort_specs.len());
+        let mut accessors = Vec::with_capacity(self.sort_specs.len());
         for (sort_spec, field_exists) in self.sort_specs.iter().zip(&self.sort_field_exists) {
             if !field_exists {
-                accessors.push(Box::new(|_| None));
+                accessors.push(NativeSortAccessor::Missing);
                 continue;
             }
             if let Some((column, _column_type)) =
                 segment_reader.fast_fields().u64_lenient(&sort_spec.field)?
             {
-                accessors.push(Box::new(move |doc| column.first(doc)));
+                accessors.push(NativeSortAccessor::U64(column));
                 continue;
             }
             if sort_spec
@@ -18495,7 +18578,7 @@ impl tantivy::collector::Collector for NativeMultiSortCollector {
                 .is_some_and(supports_native_unmapped_type)
                 || sort_spec.unmapped_type.is_none()
             {
-                accessors.push(Box::new(|_| None));
+                accessors.push(NativeSortAccessor::Missing);
                 continue;
             }
             return Err(tantivy::TantivyError::SchemaError(format!(
@@ -18520,8 +18603,27 @@ impl tantivy::collector::Collector for NativeMultiSortCollector {
         &self,
         segment_fruits: Vec<<Self::Child as tantivy::collector::SegmentCollector>::Fruit>,
     ) -> tantivy::Result<Self::Fruit> {
-        let mut docs = segment_fruits.into_iter().flatten().collect::<Vec<_>>();
-        docs.sort_by(compare_native_multi_sort_docs);
+        let window_limit = self.offset.saturating_add(self.limit);
+        if window_limit == 0 {
+            return Ok(Vec::new());
+        }
+
+        // Each child is already sorted and bounded to the requested window.
+        // Retain only the global prefix instead of sorting every segment's
+        // candidate window, which is material on refresh-heavy indexes with
+        // many small segments.
+        let mut docs = Vec::with_capacity(window_limit);
+        for candidate in segment_fruits.into_iter().flatten() {
+            let insert_at = docs
+                .binary_search_by(|existing| compare_native_multi_sort_docs(existing, &candidate))
+                .unwrap_or_else(|index| index);
+            if insert_at < window_limit {
+                docs.insert(insert_at, candidate);
+                if docs.len() > window_limit {
+                    docs.pop();
+                }
+            }
+        }
         Ok(docs
             .into_iter()
             .skip(self.offset)
@@ -52145,6 +52247,31 @@ mod tests {
     }
 
     #[test]
+    fn indexing_source_values_uses_single_top_level_value_and_preserves_nested_walk() {
+        let source = serde_json::json!({
+            "flat": ["alpha", "beta"],
+            "nested": {"value": "gamma"}
+        });
+
+        match source_values_for_tantivy_indexing(&source, "flat") {
+            TantivySourceValues::One(Value::Array(values)) => {
+                assert_eq!(values, &vec![serde_json::json!("alpha"), serde_json::json!("beta")]);
+            }
+            _ => panic!("top-level field must retain its single source value"),
+        }
+        match source_values_for_tantivy_indexing(&source, "nested.value") {
+            TantivySourceValues::Many(values) => {
+                assert_eq!(values, vec![source.pointer("/nested/value").unwrap()]);
+            }
+            _ => panic!("dotted field must retain path-walk semantics"),
+        }
+        assert!(matches!(
+            source_values_for_tantivy_indexing(&source, "missing"),
+            TantivySourceValues::Many(values) if values.is_empty()
+        ));
+    }
+
+    #[test]
     fn multi_field_native_keyword_converts_scalars_and_rejects_objects() {
         let mut schema = TantivySchemaDef::builder();
         let field = schema.add_text_field("raw", STRING | STORED);
@@ -52168,7 +52295,7 @@ mod tests {
     }
 
     #[test]
-    fn multi_field_append_conversion_failure_does_not_queue_partial_documents() {
+    fn multi_field_append_conversion_failure_rolls_back_partial_writer_batch() {
         let engine = TantivyEngine::default();
         engine
             .create_index(CreateIndexRequest {
@@ -165099,11 +165226,12 @@ mod tests {
                                 segment_ord,
                                 accessors: (0..width)
                                     .map(|column| {
-                                        Box::new(move |doc| value(doc, column))
-                                            as Box<dyn Fn(u32) -> Option<u64> + Send + Sync>
+                                        NativeSortAccessor::Test(Arc::new(move |doc| {
+                                            value(doc, column)
+                                        }))
                                     })
                                     .collect(),
-                                sort_specs: sort_specs.clone(),
+                                sort_specs: Arc::from(sort_specs.clone()),
                                 window_limit,
                                 docs: Vec::new(),
                             };
@@ -165146,7 +165274,7 @@ mod tests {
                             .map(|(_, address)| address)
                             .collect();
                         let collector = NativeMultiSortCollector {
-                            sort_specs: sort_specs.clone(),
+                            sort_specs: Arc::from(sort_specs.clone()),
                             sort_field_exists: vec![true; width as usize],
                             limit,
                             offset,
@@ -165170,8 +165298,8 @@ mod tests {
                 .unwrap();
                 let mut collector = NativeMultiSortSegmentCollector {
                     segment_ord: 3,
-                    accessors: vec![Box::new(|_| Some(7))],
-                    sort_specs: vec![spec],
+                    accessors: vec![NativeSortAccessor::Test(Arc::new(|_| Some(7)))],
+                    sort_specs: Arc::from(vec![spec]),
                     window_limit,
                     docs: Vec::new(),
                 };

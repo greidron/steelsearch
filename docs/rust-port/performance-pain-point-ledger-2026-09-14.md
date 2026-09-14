@@ -1,0 +1,286 @@
+# Core Performance Pain-Point Ledger
+
+## Purpose and Status
+
+This is the append-only decision record for recurring core performance risks.
+It distinguishes a measured symptom from a demonstrated cause so a later
+compatibility repair does not repeat an earlier expensive pattern by accident.
+It covers the non-plugin core replacement profile only. It is not release
+approval, a substitute for the fixed v0.6.0 gate, or evidence that a proposed
+cause has been eliminated.
+
+The latest completed, execution-verified gate is
+`target/native-phrase-shard-authority-full-gate-rerun-20260914/result.json`
+(SHA-256
+`607c18c3c166a6cb4034beae27a948bcfbf94efac2d0a0dc27654b4f336c5172`). Its
+candidate executable SHA-256 is
+`b38f4c5d10bf1c4917b24957f38afc113f1e4f836e1ec96dd31687692cb25d9a`; 26 of
+44 conservative measurements are below `0.950x` versus v0.6.0. Neither count
+permits acceptance: the fixed
+published v0.6.0 budget remains the release-blocking criterion.
+
+## Required Use for Every Core Change
+
+Before declaring a change to core write, refresh, replay, query, collector,
+response materialization, or fallback code complete:
+
+1. Classify it with one or more tags: `write-conversion`, `refresh`, `replay`,
+   `native-query`, `collector`, `response`, `fallback`, `allocation`, or
+   `measurement`.
+2. Search this document by those tags and read every matching entry. Record the
+   entry IDs in a new Change Review row below. If there is no match, record
+   `no-match` and the search terms; a missing record is not a no-match.
+3. State the product invariant, the native Tantivy 0.21.1 API/source review,
+   the hot-path admission condition, and why any retained fallback is necessary.
+4. Keep attribution honest: mark a claim `demonstrated` only with a minimal
+   reproduction or focused telemetry. Use `measured symptom` or `hypothesis`
+   otherwise.
+5. Run focused functional coverage and the preserved full non-plugin HTTP
+   fixture after a functional repair. Once functionality is green, run the full
+   isolated v0.6.0 performance gate with no concurrent build, test, or
+   diagnostic activity. Record the evidence path and whether every individual
+   throughput/mean/p95/p99 requirement passes.
+
+The full gate is still required when a change resembles no existing pattern.
+No comparison in this ledger permits changing workload settings, ignoring a
+scenario, or trading an over-5% regression in one metric for improvement in
+another.
+
+## Evidence Levels
+
+| Level | Meaning | Permitted conclusion |
+| --- | --- | --- |
+| `demonstrated` | Minimal reproduction or component telemetry isolates the cause. | Apply a narrow mitigation rule. |
+| `measured symptom` | A repeated full-gate or component delta exists, but multiple causes remain. | Prioritize investigation only. |
+| `hypothesis` | Plausible explanation without isolation. | Do not optimize or relax behavior on this basis alone. |
+| `rejected` | Measurement or source review disproves the proposed cause. | Preserve the rejection to prevent rediscovery. |
+
+## Pattern Entries
+
+### PP-001: Source Re-evaluation on a Native-Capable Path
+
+- Tags: `fallback`, `native-query`, `collector`, `allocation`.
+- Level: `demonstrated architectural risk`; not attributed to the current gate.
+- Pattern: implement OpenSearch compatibility by scanning or re-scoring source
+  documents before confirming whether Tantivy 0.21.1 already provides a query,
+  scorer, collector, fast-field, or extension point.
+- Cost mechanism: source traversal and hit materialization scale with candidate
+  documents and can bypass Tantivy postings, collectors, or statistics.
+- Required prevention: inspect the pinned Tantivy source/API first, write a
+  minimal semantic comparison, and record why a native composition or narrow
+  extension cannot meet the contract before adding a fallback.
+- Related records: `native-ranking-audit-2026-09-10.md`,
+  `native-aggregation-collector-investigation-2026-09-11.md`, and the
+  Native-First rules in `AGENTS.md`.
+
+### PP-002: Broad Batch Preconversion for a Narrow Failure Invariant
+
+- Tags: `write-conversion`, `refresh`, `allocation`.
+- Level: `demonstrated` for the broad admission condition; contribution to the
+  total gate regression remains to be measured after the narrowing change.
+- Product invariant: a fallible conversion must not leave a partially queued
+  Tantivy writer batch. Multi-field conversion can reject an object value, and
+  positioned text arrays can fail on position overflow.
+- Historical broad guard: `TantivySearchState::write_documents` prepared every
+  document into `Vec<TantivyDocument>` whenever any indexed field had either a
+  multi-field source or a text position gap. All normal `text` mappings have
+  the default gap `100`, so a batch containing only direct string values paid
+  the allocation and conversion pass.
+- Evidence: the completed gate above reports three-node cumulative
+  `document_add` of about `0.416s` for the candidate versus about `0.290s` for
+  v0.6.0, while commit time is comparable (`12.3-12.9s` versus `12.8s`). This
+  identifies native document conversion/add as the first measured bottleneck;
+  it does not quantify the preconversion branch's exact share.
+- Narrow mitigation: prebuild a batch only when a document has a multi-field or
+  a text field whose extracted values are neither absent nor exactly one string.
+  Direct-string text uses Tantivy `add_text`, which is infallible in this path.
+  Arrays and non-string values retain the prebuild boundary.
+- Required regression coverage: normal direct-string admission, array admission,
+  and a multi-field conversion failure that proves no partial writer batch is
+  queued.
+- Follow-up measurement: `target/plain-text-preparation-full-gate-20260914/`
+  (result SHA-256
+  `6284af322273e1520e20a8e99e650d622f724844abdff776f9f9d96d2820e369`) is
+  execution-verified but still fails the fixed gate, with 22 of 44 conservative
+  values below `0.950x`. Three-node `document_add` is `0.458-0.478s` for the
+  candidate and `0.319-0.332s` for the same-run v0.6.0 baseline. The narrowed
+  admission condition is therefore a correctness-preserving cleanup, not a
+  demonstrated performance improvement. Do not claim it removes the measured
+  write bottleneck; investigate a native writer transaction/rollback boundary
+  before adding more source-shape prechecks.
+- Current mitigation under measurement: Tantivy 0.21.1
+  `IndexWriter::rollback()` cancels all updates after the last commit and
+  reinitializes the writer. Build and enqueue each document once; on either
+  failure, call this native rollback before returning the error. This removes
+  both the broad `Vec<TantivyDocument>` preparation and the extra source-shape
+  traversal while retaining batch atomicity. Focused rollback and late-replay
+  tests pass, as does the preserved `1180/1180` HTTP fixture at
+  `target/native-writer-rollback-full-20260914/report.json` (SHA-256
+  `199a0c130e81b2f080e2c55c94bceb3894c5ed978fc0eb278d7b9dd1f109bda1`).
+  The first gate attempt is invalid because its second OpenSearch run failed to
+  clear cluster blocks; it is preserved at
+  `target/native-writer-rollback-full-gate-20260914/` and is not performance
+  evidence. The full rerun at
+  `target/native-writer-rollback-full-gate-rerun-20260914/` is
+  execution-verified (result SHA-256
+  `fed0758abc14128c53bdb26eb093afa6661fa24f6b40f7e9caa1ed4216957466`) but
+  fails with 24 of 44 lower ratios below `0.950x`. Candidate `document_add`
+  is directionally lower than the prebuild candidate in separate runs (single
+  `686-723ms` versus `771-818ms`, three-node `399-447ms` versus `458-478ms`),
+  but baseline variance prevents treating that comparison as gate acceptance.
+
+### PP-003: Correctness Replay Scope Accidentally Replaced by Incremental Refresh
+
+- Tags: `replay`, `refresh`, `write-conversion`.
+- Level: `demonstrated correctness constraint`; its steady-state performance
+  cost is not isolated.
+- Pattern: a late replay whose sequence number is already behind the published
+  watermark cannot use the normal append/replacement refresh plan without
+  risking loss of older visible documents.
+- Required prevention: preserve a shard-scoped `Full` refresh for that case and
+  retain the direct late-replay regression test. Do not broaden it to ordinary
+  append writes without a separate measurement.
+- Related source: `StoredShard::documents_after_until` and
+  `documents_changed_since_refresh_through` in `crates/os-engine-tantivy/src/lib.rs`.
+
+### PP-004: Incomparable or Semantically Incorrect Measurements
+
+- Tags: `measurement`.
+- Level: `demonstrated` process risk.
+- Pattern: compare execution-dependent response metadata as functional output,
+  reset the cumulative baseline, use an executable identity inferred from a
+  filename, or improve a result by changing runtime durability/shared-state
+  settings.
+- Required prevention: preserve raw responses, validate `took` only for shape
+  and range in compatibility fixtures, and use it only as a latency measurement
+  in the fixed benchmark workload. Record actual executable SHA-256, separate
+  build directories, and runtime settings. Compare each scenario and topology
+  with the immutable v0.6.0 baseline.
+
+### PP-005: Native Collector Setup on a High-Segment Search Path
+
+- Tags: `collector`, `allocation`, `native-query`.
+- Level: `measured symptom`; the removed setup overhead is real by source
+  inspection, but its share of full request latency is not isolated.
+- Pattern: a native multi-sort collector creates per-segment boxed closures
+  for fast-field reads and duplicates `SortSpec` values into each child
+  collector. Write/refresh-heavy workloads create many small visible segments,
+  magnifying setup cost before a collector sees its first matching document.
+- Native review: Tantivy 0.21.1 supplies `TopDocs::order_by_fast_field` for a
+  single field only. Its public `fast_fields().u64_lenient` API supplies typed
+  native columns, so multi-key ordering must remain a narrow collector
+  extension instead of falling back to source ordering.
+- Required prevention: retain exact key encoding, missing-value ordering,
+  segment/doc-address tie breaks and bounded per-segment windows; use typed
+  `Column<u64>` values and share immutable sort specifications where possible.
+  Do not infer a gate improvement from fewer allocations alone.
+- Follow-up: child collectors were already bounded to `from + size`, but their
+  fruits were flattened and fully sorted before global pagination. Retain only
+  that same global prefix while merging sorted child fruits. This is an exact
+  collector operation, not a source ordering fallback. Its latest full-gate
+  measurement is directional only: the conservative fixed-baseline sort ratio
+  moved from `0.924x` to `0.933x` single-node and from `0.889x` to `0.903x`
+  three-node across separate candidates, while both remain below the required
+  `0.950x`. Do not call it accepted until every fixed-baseline metric passes.
+
+### PP-006: Native Authority Guard Performs Per-Shard Term-Dictionary Reads
+
+- Tags: `native-query`, `fallback`, `ranking`.
+- Level: `demonstrated` semantic overconstraint; performance contribution remains
+  to be measured by the next isolated full gate.
+- Pattern: a compatibility guard requires every selected shard to contain a
+  query token before allowing Tantivy phrase scores. This causes repeated
+  `Searcher::doc_freq` calls and rejects a native scorer merely because other
+  refreshed shards correctly have no matching documents.
+- Native review: Tantivy 0.21.1's phrase query and scorer operate per shard.
+  The required admission conditions are a refreshed shard, no pending deletes,
+  compatible native text metadata, and the indexed field's presence; a query
+  term is not required in every shard.
+- Evidence: a three-shard live OpenSearch 3.7.0-SNAPSHOT comparison placed
+  `alpha beta` only on routing shard 2, with nonmatching documents on shards 0
+  and 1. OpenSearch and SteelSearch returned the same IDs and exact emitted
+  scores (`0.20836751`, `0.19191743`).
+- Required prevention: do not reintroduce term-dictionary scans as a score
+  authority condition without a minimal OpenSearch case proving a score
+  difference. Retain the shard-distribution unit and HTTP fixtures.
+
+### PP-007: Treat a Mixed-Workload Regression as an Attribution Problem
+
+- Tags: `measurement`, `write-conversion`, `refresh`, `native-query`.
+- Level: `measured symptom`; a write-only isolation rejected the hypothesis that
+  the current single-document PUT path alone explains the full-gate write loss.
+- Evidence: the execution-verified full gate reports three-node write ratios as
+  low as `0.849x` versus v0.6.0. In the separate 45-second, write-only,
+  three-node diagnostics using the identical corpus, clients, shard count and
+  durability flags, v0.6.0 measured `3.421ms` mean / `5.235ms` p95 /
+  `6.256ms` p99 while the current candidate measured `3.477ms` / `5.349ms` /
+  `6.447ms` (`1.6%`, `2.2%`, and `3.1%` slower respectively). Candidate RSS
+  was `1.184GB` versus `1.162GB` (`2.2%` higher). The artifacts are
+  `target/v060-write-cpu-20260914/` and
+  `target/native-phrase-shard-authority-write-cpu-20260914/`.
+- Consequence: do not claim that Tantivy commit/reload, native replay, or a
+  single PUT-route check is the demonstrated source of the full-gate write
+  regression. The benchmark sets `STEELSEARCH_DEFER_NATIVE_WRITE_UNTIL_REFRESH=1`
+  for `refresh=false` writes, and the native refresh counters stay zero in the
+  isolated write run.
+- Required prevention: reproduce a suspected cost under a single operation and
+  under the affected mixed workload before changing a correctness path. For the
+  current gate, investigate refresh/search interference, runtime lock waits,
+  and cross-node state activity with diagnostics that preserve the fixed
+  workload; retain the full gate as the only release decision.
+
+### PP-008: Native API Presence Is Not Score-Compatibility Evidence
+
+- Tags: `native-query`, `ranking`, `fallback`, `measurement`.
+- Level: `demonstrated` compatibility constraint and `measured symptom` for the
+  current three-node ranking regression.
+- Pattern: replace a narrow exact native extension with a public Tantivy query
+  merely because the API exposes the same operation name. Pinned Tantivy 0.21.1
+  has `PhraseQuery::new_with_offset_and_slop`, but its own sloppy phrase scorer
+  documents an incorrect-count case for expanded positions. The local audit
+  additionally proves a two-term, slop-1 repeated-position case with the same
+  hit set but different scores and ordering from the exact phrase scorer.
+- Product invariant: exact phrase membership, frequency-derived `_score`, and
+  unequal-score ranking remain compatibility contracts. A faster native query
+  that changes either score or ordering is not an optimization.
+- Evidence: `tantivy_two_term_sloppy_phrase_score_diverges_from_the_exact_native_phrase_scorer`
+  compares normalized pinned `PhraseQuery` with `NativePhraseQuery` over the
+  preserved phrase-frequency corpus. It verifies equal document-address sets
+  and requires at least one score divergence. The exact scorer is independently
+  checked against the OpenSearch phrase-frequency reference.
+- Required prevention: first compare membership, score bits and ranking against
+  the narrow exact path and OpenSearch fixtures. Retain `NativePhraseQuery` as
+  a postings/scorer extension, not a source fallback. Optimize its candidate
+  admission, seek/reuse, or shard scheduling only after an isolated latency
+  measurement; never replace it with the vendor scorer under the current pin.
+
+## Change Reviews
+
+| Date | Change | Tags | Pattern comparison | Evidence and outcome |
+| --- | --- | --- | --- | --- |
+| 2026-09-14 | Raise sharded native page reduction's Rayon threshold from 2,048 to 10,000 documents. | `native-query`, `collector`, `measurement` | PP-008; no prior scheduling-specific entry. | Rejected. The 5,000-document, three-node, one-client ranking isolation at `target/sharded-page-sequential-ranking-clients1-20260914/summary.json` measured 1.236 ms mean, 1.957 ms p95, and 2.284 ms p99 over 24,076 requests. The preserved b38 candidate measured 1.224 ms, 1.938 ms, and 2.173 ms over 24,328 requests at `target/native-phrase-shard-authority-ranking-clients1-20260914/summary.json`. The sequential policy was 1.0% slower in mean latency, so it was reverted. The candidate passed the full non-plugin HTTP fixture 1,180/1,180 at `target/sharded-page-sequential-20260914/full-fixture-live/report.json`; this is functional evidence only, not a performance acceptance. |
+| 2026-09-14 | Narrow refresh-batch Tantivy document preparation for plain text documents. | `write-conversion`, `refresh`, `allocation` | Matched `PP-002`; no other matching pattern. Tantivy 0.21.1 source/API was reviewed: direct `TantivyDocument::add_text` is the native path, while positioned array conversion and multi-field keyword conversion remain fallible. | Focused tests: `plain_text_documents_skip_preparation_but_arrays_keep_it` and `multi_field_append_conversion_failure_does_not_queue_partial_documents` passed. Preserved OpenSearch HTTP projection passed `1180/1180`, report `target/plain-text-preparation-full-20260914/report.json`, SHA-256 `652b337b318e4b6735474d585a977dc30223ae28ab4b439a003ef0821a537b9a`. Full v0.6.0 gate completed but failed: `22/44` lower ratios below `0.950x`; three-node `document_add` remained `0.458-0.478s` versus baseline `0.319-0.332s`. No improvement is claimed. |
+| 2026-09-14 | Replace refresh-batch prebuild with native writer rollback on conversion/enqueue failure. | `write-conversion`, `refresh`, `allocation` | Matched `PP-002`; native Tantivy 0.21.1 `IndexWriter::rollback` source and upstream reuse-after-rollback test were reviewed. It resets to the previous commit, so it covers both deletes and documents queued by the failed refresh batch. | `multi_field_append_conversion_failure_rolls_back_partial_writer_batch` and `late_replay_is_not_lost_behind_the_refresh_watermark` passed. Preserved OpenSearch HTTP projection passed `1180/1180`, report `target/native-writer-rollback-full-20260914/report.json`, SHA-256 `199a0c130e81b2f080e2c55c94bceb3894c5ed978fc0eb278d7b9dd1f109bda1`. Candidate binary SHA-256 `0844e7315357c4bdca8194da46dfcf9ec940d4cb442957b967bb5b2c0dc818e6`. The valid full rerun is `24/44` below `0.950x`, so this change is not accepted. Component telemetry is directionally better than the prior prebuild candidate but does not establish a fixed-gate improvement. |
+| 2026-09-14 | Replace boxed multi-sort field accessors and child `SortSpec` copies with typed Tantivy fast-field columns and shared specifications. | `collector`, `allocation`, `native-query` | Matched `PP-001` and new `PP-005`. Tantivy 0.21.1 `TopDocs` supports only one fast field; `fast_fields().u64_lenient` is the native extension point used for the existing exact multi-key collector. No source ordering or score fallback was added. | Exhaustive collector windows/missing-value/tie tests plus native multi-sort and page-offset tests passed. Preserved OpenSearch HTTP projection passed `1180/1180`, report `target/native-multisort-columns-full-20260914/report.json`. Valid gate `target/native-multisort-columns-full-gate-rerun2-20260914/result.json`, SHA-256 `4bf27b2895ed5613d88cbc15ace0fc1980babb0af01529a53165f1f6d77d69ef`, has 24/44 conservative published-baseline failures and 13 same-run failures. This is not an accepted performance improvement; continue with measured write/ranking/sort investigation. |
+| 2026-09-14 | Keep only the requested global prefix while merging bounded native multi-sort collector fruits. | `collector`, `allocation`, `native-query` | Matched `PP-005`; no source fallback was admitted. Tantivy 0.21.1 provides child collector execution and typed fast-field columns but no public multi-key `TopDocs` collector, so this remains a narrow native collector extension. | Exhaustive collector, native tuple-order, and offset-window tests passed. Preserved OpenSearch HTTP projection passed `1180/1180`, report `target/native-multisort-merge-prefix-full-20260914/report.json`. Execution-verified gate `target/native-multisort-merge-prefix-full-gate-rerun-20260914/result.json`, SHA-256 `48e6539282c9fadc7869d8c4fe93db5de6985945bb36c24390a803a4eb63cf79`, candidate SHA-256 `c53dbbcdc601d4b743c42b00979302eb507b3c6c0c42fd16c8235bb37a5a42d7`, still has 24/44 conservative published-baseline failures. The sort ratios are directionally better than the preceding valid candidate, but this is not accepted performance evidence and the release remains blocked. |
+| 2026-09-14 | Avoid allocating a path-walk `Vec<&Value>` when a native document field is a direct top-level source member. | `write-conversion`, `allocation` | Matched `PP-002`; `no-match` for `native-query`, `collector`, and `fallback`. Tantivy requires the values in the native document, but a direct top-level JSON object lookup has the same scalar/array semantics as the existing generic dotted-path walker. Dotted paths retain the walker. | Focused top-level/nested/missing-path and multi-field source tests passed. Preserved OpenSearch HTTP projection passed `1180/1180`, report `target/native-top-level-source-values-full-20260914/report.json`. Execution-verified gate `target/native-top-level-source-values-full-gate-20260914/result.json`, SHA-256 `dd16c850b82cb5c18a7df62b8036c434065008e57daf72c73245c15cabd6752f`, candidate SHA-256 `03dd5e9e4138e4f9f4d8e767b294cda46da660805a63ce75781ca9583adaf9b2`, remains 24/44 below the fixed threshold. Write ratios improved directionally versus the immediately preceding candidate but stay below `0.950x`; this is not accepted performance completion. |
+| 2026-09-14 | Remove the phrase-score authority requirement that every selected shard contain a query token. | `native-query`, `fallback`, `ranking` | Matched `PP-001`; added `PP-006`. Tantivy 0.21.1 phrase scoring is shard-local. The old `doc_freq` condition was introduced without a minimal semantic proof and made a missing term on an otherwise healthy shard force source score correction. | Focused `native_phrase_scores_remain_authoritative_when_other_shards_lack_query_terms` and `native_exact_phrase_pages_preserve_native_scores_and_boosts` passed. `tools/fixtures/search-native-phrase-shard-distribution-compat.json` live OpenSearch comparison passed `1/1`, with exact IDs and scores. Preserved non-plugin HTTP projection passed `1180/1180`, report `target/native-phrase-shard-authority-release-20260914/full-fixture-search-rerun/report.json`; executable SHA-256 `b38f4c5d10bf1c4917b24957f38afc113f1e4f836e1ec96dd31687692cb25d9a`. Valid fixed gate `target/native-phrase-shard-authority-full-gate-rerun-20260914/result.json`, SHA-256 `607c18c3c166a6cb4034beae27a948bcfbf94efac2d0a0dc27654b4f336c5172`, is `26/44` below the fixed threshold. Single-node ranking is `1.027x`, but three-node ranking is `0.847x`; no acceptance or net performance claim is made. |
+| 2026-09-14 | Isolate three-node write latency before modifying the write path. | `measurement`, `write-conversion`, `refresh` | Added `PP-007`. The full-gate write failure matched `PP-002` only superficially, but the benchmark defers native writes until refresh. | Current and v0.6.0 write-only diagnostics completed with verified executable identities. Candidate mean/p95/p99 were only `1.6%` / `2.2%` / `3.1%` slower, so no PUT or Tantivy change was made. Continue with mixed-workload, refresh and ranking interference diagnosis. |
+| 2026-09-14 | Assess whether pinned Tantivy sloppy `PhraseQuery` can replace the exact phrase scorer on the ranking hot path. | `native-query`, `ranking`, `fallback`, `measurement` | Added `PP-008`; matched `PP-001`. Tantivy 0.21.1 source was reviewed before a replacement attempt. | The focused audit proves equal membership but at least one score/ranking divergence for a two-term slop-1 repeated-position case. No production replacement was made. The candidate's isolated three-node ranking mean is `1.224ms` at one client versus v0.6.0 `0.856ms`, and `3.687ms` versus `2.429ms` at four clients; these diagnostics guide further native optimization but do not replace the fixed full gate. |
+| 2026-09-14 | Evaluate a native required-clause candidate pass before exact full-query scoring. | `native-query`, `ranking`, `collector`, `measurement` | Matched `PP-001` and `PP-008`. The candidate was a narrow native composition: collect `must`/`filter`/`must_not` addresses, then seek the exact full scorer at those addresses. | Rejected after the preserved OpenSearch HTTP fixture passed `1180/1180` at `target/native-required-candidate-ranking-release-20260914/full-fixture-live/report.json`, but an isolated 30-second, one-client, three-node ranking run measured `1.352ms` mean / `2.104ms` p95 / `2.444ms` p99, worse than the preceding candidate's `1.224ms` mean and v0.6.0's `0.856ms` mean. The additional candidate collection and scorer seek pass cost more than it saved for this workload. Revert the path; do not retry it without evidence that the required candidate set is substantially smaller. |
+| 2026-09-14 | Use Tantivy 0.21.1 `MinimumShouldMatchQuery` for native bool `minimum_should_match=1`, instead of a nested all-`Should` `BooleanQuery`. | `native-query`, `ranking`, `collector`, `measurement` | Matched PP-001 and PP-008. The pinned implementation is a native threshold union that admits documents with at least one matching child and sums each matching child once. Existing focused overlap, filter, score, and 1/3-shard audits exercise the benchmark query shape. | Focused `native_ranking_audit_tests` passed for the candidate path, including `native_minimum_one_preserves_matches_and_scores_across_overlapping_shoulds`, `native_minimum_should_match_overlap_audit`, and `native_compound_authority_covers_benchmark_ranking_shape`. Live OpenSearch HTTP comparison with executable SHA-256 `797f28b8131382785ab83674036567a3d035061d50480e12668f897bacba4f6c` passed every non-plugin case: `1180/1180`; report `target/native-msm-one-candidate-20260914/full-fixture-live/report.json`. The report's sole failure is `bad_knn_vector_dimension`, whose reference lacks the k-NN plugin and is outside the agreed plugin-excluded scope. No performance claim or gate result is made: the follow-up benchmark is blocked until disk capacity is restored (92MB free after candidate build and report generation). |
+| 2026-09-14 | Replace the exact phrase scorer's duplicate `TermQuery` candidate setup with an intersection of cloned native position postings. | `native-query`, `ranking`, `allocation`, `measurement` | Matched PP-008. Tantivy 0.21.1 `PhraseScorer` was reviewed: it intersects position postings directly. Steelsearch retains `NativePhraseQuery` and its exact frequency matcher; only its candidate enumeration now follows that native postings composition. | Focused native phrase tests and the vendor-divergence audit passed, followed by the preserved OpenSearch HTTP fixture `1180/1180` at `target/native-phrase-postings-candidate-20260914/full-fixture-live/report.json`; executable SHA-256 `d505badf514306733bce9e09c693831a2bb267177b6d1eb528505f748b697b97`. Two 30-second, one-client, three-node ranking samples averaged 1.212ms mean and 818.9 ops/s versus b38's 1.221ms and 813.2 ops/s, but p95 was effectively unchanged and p99 was 0.5% slower. Keep the correctness-preserving native cleanup, but do not claim it addresses the fixed gate or run a full acceptance gate on this signal alone. |
+
+## Review Queries
+
+Use these exact searches before beginning a change, then add the result to a
+Change Review row:
+
+```sh
+rg -n 'write-conversion|refresh|replay|native-query|collector|response|fallback|allocation|measurement' \
+  docs/rust-port/performance-pain-point-ledger-2026-09-14.md
+rg -n 'Tantivy API or feature under consideration' \
+  vendor/tantivy crates/os-engine-tantivy/src
+```
+
+The second search is an investigation step, not proof of a library limitation.

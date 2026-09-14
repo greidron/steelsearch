@@ -1,10 +1,8 @@
 use super::native_phrase_positions::Matcher;
-use std::collections::BTreeSet;
 use tantivy::fieldnorm::FieldNormReader;
 use tantivy::postings::SegmentPostings;
 use tantivy::query::{
-    Bm25Weight, BooleanQuery, EmptyScorer, EnableScoring, Explanation, Occur, Query, Scorer,
-    TermQuery, Weight,
+    intersect_scorers, Bm25Weight, EmptyScorer, EnableScoring, Explanation, Query, Scorer, Weight,
 };
 use tantivy::schema::IndexRecordOption;
 use tantivy::{DocId, DocSet, Postings, Score, SegmentReader, Term, TERMINATED};
@@ -70,27 +68,8 @@ impl Query for NativePhraseQuery {
             } => Some(Bm25Weight::for_terms(statistics_provider, &self.terms)?),
             EnableScoring::Disabled { .. } => None,
         };
-        let conjunction = BooleanQuery::new(
-            self.terms
-                .iter()
-                .collect::<BTreeSet<_>>()
-                .into_iter()
-                .map(|term| {
-                    (
-                        Occur::Must,
-                        Box::new(TermQuery::new(term.clone(), IndexRecordOption::Basic))
-                            as Box<dyn Query>,
-                    )
-                })
-                .collect(),
-        );
-        let candidate = conjunction.weight(EnableScoring::Disabled {
-            schema: scoring.schema(),
-            searcher_opt: scoring.searcher(),
-        })?;
         Ok(Box::new(PhraseWeight {
             query: self.clone(),
-            candidate,
             similarity,
         }))
     }
@@ -104,7 +83,6 @@ impl Query for NativePhraseQuery {
 
 struct PhraseWeight {
     query: NativePhraseQuery,
-    candidate: Box<dyn Weight>,
     similarity: Option<Bm25Weight>,
 }
 
@@ -133,8 +111,15 @@ impl PhraseWeight {
         } else {
             FieldNormReader::constant(reader.max_doc(), 1)
         };
+        let candidate = intersect_scorers(
+            postings
+                .iter()
+                .cloned()
+                .map(|postings| Box::new(PhraseCandidateScorer(postings)) as Box<dyn Scorer>)
+                .collect(),
+        );
         let mut scorer = PhraseScorer {
-            candidate: self.candidate.scorer(reader, 1.0)?,
+            candidate,
             postings,
             positions: vec![Vec::new(); self.query.terms.len()],
             matcher: Matcher::new(&self.query.term_ids, &self.query.offsets),
@@ -178,6 +163,32 @@ impl Weight for PhraseWeight {
     }
 }
 
+struct PhraseCandidateScorer(SegmentPostings);
+
+impl DocSet for PhraseCandidateScorer {
+    fn advance(&mut self) -> DocId {
+        self.0.advance()
+    }
+
+    fn seek(&mut self, target: DocId) -> DocId {
+        self.0.seek(target)
+    }
+
+    fn doc(&self) -> DocId {
+        self.0.doc()
+    }
+
+    fn size_hint(&self) -> u32 {
+        self.0.size_hint()
+    }
+}
+
+impl Scorer for PhraseCandidateScorer {
+    fn score(&mut self) -> Score {
+        0.0
+    }
+}
+
 struct PhraseScorer {
     candidate: Box<dyn Scorer>,
     postings: Vec<SegmentPostings>,
@@ -203,6 +214,10 @@ impl PhraseScorer {
                 }
             }
             self.frequency = if self.similarity.is_some() {
+                #[cfg(feature = "diagnostic-search-timing")]
+                let _timer = super::diagnostic_search::start(
+                    &super::diagnostic_search::NATIVE_PHRASE_POSITION_MATCH,
+                );
                 self.matcher.frequency(&self.positions, self.slop)
             } else {
                 f32::from(self.matcher.matches(&self.positions, self.slop))
@@ -254,6 +269,7 @@ impl Scorer for PhraseScorer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
     use tantivy::collector::{Count, DocSetCollector};
     use tantivy::schema::{Schema, INDEXED, STORED, TEXT};
     use tantivy::{doc, Index, ReloadPolicy};

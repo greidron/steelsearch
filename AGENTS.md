@@ -93,6 +93,26 @@
 - Follow docs/rust-port/core-replacement-implementation-plan-2026-09-07.md for
   benchmark scope, cumulative formulas, repeated-measurement rules and evidence.
 
+# Performance Pain-Point Discipline
+
+- Before changing core write, refresh, replay, native query, collector, response
+  materialization, or fallback code, read
+  docs/rust-port/performance-pain-point-ledger-2026-09-14.md and compare the
+  proposed change with its tagged patterns. Record the matching IDs, or an
+  explicit no-match result and search terms, in the ledger before calling the
+  change complete.
+- Keep observed measurements, demonstrated causes, and hypotheses separate.
+  A performance result alone does not prove a cause; do not promote a hypothesis
+  to a mitigation rule without a focused measurement or a minimal reproduction.
+- Each new compatibility guard must state its hot-path admission condition,
+  failure-atomicity or correctness invariant, native Tantivy capability review,
+  and the workload/telemetry that detects its cost. Narrow a broad guard when
+  its invariant applies only to a subset of documents or queries.
+- A completed optimization or functional repair must append its validation and
+  v0.6.0 gate outcome to the ledger. The ledger is an audit trail, not a waiver:
+  it cannot relax fixture assertions, native-first requirements, or the fixed
+  cumulative performance budget.
+
 # Agent Delegation Preference
 
 - Use Luna or Terra for routine bounded coding, testing, and documentation tasks.

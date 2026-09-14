@@ -18,7 +18,8 @@ fn native_authority_metadata_refresh_and_replacement_do_not_build_source_statist
                 .unwrap();
         for (value, expected) in [
             (serde_json::json!("alpha beta"), true),
-            (serde_json::json!(42), false),
+            // Mapped text scalars are normalized and indexed natively, including numbers.
+            (serde_json::json!(42), true),
             (serde_json::json!("alpha restored"), true),
         ] {
             engine
@@ -72,13 +73,38 @@ fn native_authority_metadata_refresh_and_replacement_do_not_build_source_statist
         let store = engine.store.read().unwrap();
         let index = &store.indices["metadata"];
         index.bm25_stats_cache.lock().unwrap().clear();
-        assert!(index.native_compound_score_is_authoritative(&query, None));
+        assert!(index
+            .documents
+            .shards
+            .values()
+            .all(|shard| shard.pending_deleted_ids.is_empty()));
+        if shards == 1 {
+            assert!(index
+                .search_state
+                .as_ref()
+                .is_some_and(|state| state.native_text_compatibility.supports("title")));
+        } else {
+            assert!(index.documents.shards.values().filter(|shard| !shard.is_empty()).all(
+                |shard| {
+                    shard.search_state.as_ref().is_some_and(|state| {
+                        state.native_text_compatibility.supports("title")
+                    })
+                }
+            ));
+        }
+        // Single-shard dispatch applies its historical-BM25 fallback above the
+        // compound-tree check. Multi-shard authority is rejected by the empty,
+        // deleted shard's native text metadata.
+        assert_eq!(
+            index.native_compound_score_is_authoritative(&query, None),
+            shards == 1
+        );
         assert!(index.bm25_stats_cache.lock().unwrap().is_empty());
     }
 }
 
 #[test]
-fn native_compound_authority_rejects_unproven_leaves_and_respects_shard_stats() {
+fn native_compound_authority_rejects_unproven_leaves_without_requiring_terms_per_shard() {
     let engine = TantivyEngine::default();
     engine.create_index(CreateIndexRequest {index:"authority-guard".into(),
         settings:serde_json::json!({"number_of_shards":3}),
@@ -145,12 +171,14 @@ fn native_compound_authority_rejects_unproven_leaves_and_respects_shard_stats() 
         .unwrap();
     let store = engine.store.read().unwrap();
     let index = &store.indices["authority-guard"];
-    assert!(!index.native_compound_score_is_authoritative(&query, None));
+    // A shard with no matching term contributes no scorer and must not force the
+    // whole distributed query onto source-level scoring.
+    assert!(index.native_compound_score_is_authoritative(&query, None));
     assert!(
         index.native_compound_score_is_authoritative(&query, Some(&BTreeSet::from([good_shard])))
     );
     assert!(
-        !index.native_compound_score_is_authoritative(&query, Some(&BTreeSet::from([bad_shard])))
+        index.native_compound_score_is_authoritative(&query, Some(&BTreeSet::from([bad_shard])))
     );
 }
 
@@ -742,6 +770,79 @@ fn native_exact_phrase_pages_preserve_native_scores_and_boosts() {
 }
 
 #[test]
+fn native_phrase_scores_remain_authoritative_when_other_shards_lack_query_terms() {
+    let engine = TantivyEngine::default();
+    engine
+        .create_index(CreateIndexRequest {
+            index: "phrase-shard-distribution".into(),
+            settings: serde_json::json!({"number_of_shards": 3}),
+            mappings: serde_json::json!({"properties": {"body": {"type": "text"}}}),
+        })
+        .unwrap();
+    for (seq_no, (id, routing, body)) in [
+        ("phrase-a", "tenant-a", "alpha beta alpha beta"),
+        ("phrase-b", "tenant-a", "alpha beta"),
+        ("other-c", "tenant-b", "other document"),
+        ("other-d", "tenant-d", "another document"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        engine
+            .replay_document_with_routing(
+                ReplayDocumentRequest {
+                    index: "phrase-shard-distribution".into(),
+                    metadata: DocumentMetadata {
+                        id: id.into(),
+                        version: 1,
+                        seq_no: seq_no as i64,
+                        primary_term: 1,
+                    },
+                    coordination: WriteCoordinationMetadata::default(),
+                    source: serde_json::json!({"body": body}),
+                },
+                Some(routing),
+            )
+            .unwrap();
+    }
+    engine
+        .refresh(RefreshRequest {
+            indices: vec!["phrase-shard-distribution".into()],
+        })
+        .unwrap();
+
+    let store = engine.store.read().unwrap();
+    let index = &store.indices["phrase-shard-distribution"];
+    let query = parse_query(&serde_json::json!({
+        "match_phrase": {"body": {"query": "alpha beta", "slop": 1}}
+    }))
+    .unwrap();
+    let phrase_shard = index.documents.shard_id_for_write("phrase-a", Some("tenant-a"));
+    assert_eq!(phrase_shard, 2);
+    assert_eq!(index.documents.shard_id_for_write("other-c", Some("tenant-b")), 1);
+    assert_eq!(index.documents.shard_id_for_write("other-d", Some("tenant-d")), 0);
+    assert!(index.native_phrase_score_is_authoritative(&query, None));
+
+    let expected = native_scores(index, &query, false);
+    let (total, hits) = index
+        .search_hits_page_for_query_native_scoped(
+            "phrase-shard-distribution",
+            None,
+            &query,
+            &[],
+            0,
+            10,
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(total, 2);
+    assert_eq!(hits.len(), 2);
+    for hit in hits {
+        assert_eq!(hit.score.to_bits(), expected[&hit.metadata.id].to_bits());
+    }
+}
+
+#[test]
 fn native_exact_phrase_full_sort_preserves_scores_for_null_and_array_values() {
     let engine = TantivyEngine::default();
     engine.create_index(CreateIndexRequest {index:"exact-phrase-full-sort".into(),settings:serde_json::json!({}),
@@ -968,7 +1069,7 @@ fn native_exact_phrase_value_guard_follows_refresh() {
     for (body, expected) in [
         (serde_json::json!("alpha beta"), true),
         (serde_json::json!("alpha caf\u{e9}"), false),
-        (serde_json::json!(5), false),
+        (serde_json::json!(5), true),
         (serde_json::json!("alpha beta alpha beta"), true),
     ] {
         engine
@@ -1016,7 +1117,10 @@ fn native_text_metadata_preserves_accepted_option_input_shapes() {
         for (key, value) in serialized.as_object().unwrap() {
             assert_eq!(value, &request.mappings["properties"]["body"][key]);
         }
-        assert!(!options.supports_native_exact_phrase());
+        assert_eq!(
+            options.supports_native_exact_phrase(),
+            definition["name"] == "native-text-options-gap-string"
+        );
         TantivyEngine::default().create_index(request).unwrap();
     }
     assert_eq!(
@@ -1559,6 +1663,128 @@ fn native_repeated_phrase_frequency_audit() {
         )
         .unwrap();
     }
+}
+
+#[test]
+fn tantivy_two_term_sloppy_phrase_score_diverges_from_the_exact_native_phrase_scorer() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../tools/fixtures/search-native-phrase-frequency-compat.json"
+    ))
+    .unwrap();
+    let mut saw_score_divergence = false;
+    for definition in fixture["indices"].as_array().unwrap() {
+        let name = definition["name"].as_str().unwrap();
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: name.into(),
+                settings: definition["body"]["settings"].clone(),
+                mappings: definition["body"]["mappings"].clone(),
+            })
+            .unwrap();
+        let bulk = fixture["bulk"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|bulk| bulk["index"] == name)
+            .unwrap();
+        for document in bulk["documents"].as_array().unwrap() {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: name.into(),
+                    id: document["_id"].as_str().unwrap().into(),
+                    source: document["_source"].clone(),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec![name.into()],
+            })
+            .unwrap();
+
+        let store = engine.store.read().unwrap();
+        let index = &store.indices[name];
+        let states = if index.documents.shard_count == 1 {
+            index.search_state.iter().collect::<Vec<_>>()
+        } else {
+            index
+                .shard_search_states_for(None)
+                .map(|(_, state)| state)
+                .collect()
+        };
+        for case in fixture["cases"].as_array().unwrap() {
+            let body = &case["steps"][0]["body"]["query"];
+            let query = parse_query(body).unwrap();
+            let Query::MatchPhrase {
+                field,
+                query: text,
+                slop,
+                boost,
+                analyzer: None,
+                zero_terms_all: false,
+            } = query
+            else {
+                continue;
+            };
+            let tokens = tokenize_phrase_text(text.as_str().unwrap());
+            if slop == 0 || tokens.len() != 2 || tokens[0] == tokens[1] {
+                continue;
+            }
+            for state in &states {
+                let exact = build_tantivy_match_phrase_query(
+                    state,
+                    &field,
+                    &text,
+                    slop,
+                    None,
+                    false,
+                )
+                .unwrap()
+                .unwrap();
+                let exact = maybe_boost_tantivy_query(exact, boost);
+                let terms = tokens
+                    .iter()
+                    .enumerate()
+                    .map(|(offset, token)| (offset, Term::from_field_text(state.fields[&field].field, token)))
+                    .collect();
+                let tantivy = state.bm25_field_statistics.wrap(
+                    Box::new(PhraseQuery::new_with_offset_and_slop(terms, slop as u32)),
+                    state.fields[&field].field,
+                    &state.searcher,
+                );
+                let tantivy = maybe_boost_tantivy_query(tantivy, boost);
+                let limit = state.searcher.num_docs() as usize;
+                let exact = state
+                    .searcher
+                    .search(exact.as_ref(), &TopDocs::with_limit(limit))
+                    .unwrap();
+                let tantivy = state
+                    .searcher
+                    .search(tantivy.as_ref(), &TopDocs::with_limit(limit))
+                    .unwrap();
+                let exact_ids = exact
+                    .iter()
+                    .map(|(_, address)| *address)
+                    .collect::<BTreeSet<_>>();
+                let tantivy_ids = tantivy
+                    .iter()
+                    .map(|(_, address)| *address)
+                    .collect::<BTreeSet<_>>();
+                assert_eq!(
+                    exact_ids,
+                    tantivy_ids,
+                    "{} slop={slop}",
+                    case["name"].as_str().unwrap()
+                );
+                saw_score_divergence |= exact != tantivy;
+            }
+        }
+    }
+    assert!(
+        saw_score_divergence,
+        "pinned Tantivy unexpectedly became score-compatible for the sloppy phrase audit"
+    );
 }
 
 // Diagnostic composition only: no production routing or acceptance tolerance changes.
