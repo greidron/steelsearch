@@ -358,6 +358,28 @@ another.
 | 2026-09-14 | Add diagnostic-only refresh phase spans and test a two-worker native writer. | `refresh`, `write-conversion`, `measurement` | Matched PP-007 and PP-011. The spans compile only with `diagnostic-search-timing`; normal release builds do not include them. Pinned Tantivy source confirms 16 MiB total writer memory selects one worker because each worker needs 15 MB. | Rejected and reverted. In the current 1-worker mixed diagnostic at `target/v0711-refresh-phase-diagnostic-20260914/`, sampled means were 0.004ms for native-text compatibility, 0.022ms for document build, 0.159ms for writer enqueue, and 5.669ms for Tantivy commit. Raising the native writer heap to 30 MiB creates two workers, but the matching diagnostic at `target/v0711-writer-two-workers-diagnostic-20260914/summary.json` dropped throughput from 869.20 to 840.57 ops/s and worsened refresh p95 from 19.448ms to 22.541ms. The extra worker increases colocated CPU/merge contention; retain the 16 MiB/one-worker production setting and do not retry this writer-thread change under the fixed topology. |
 | 2026-09-14 | Add an ASCII-only fast path to the required custom OpenSearch standard tokenizer. | `write-conversion`, `allocation`, `measurement` | Matched PP-002 and PP-007. The custom tokenizer remains necessary for demonstrated OpenSearch Unicode semantics; this candidate did not replace it with Tantivy's built-in tokenizer. The ASCII scanner was compared exhaustively against the existing tokenizer over all inputs through length five from `aZ1 '-_`, plus the 255 UTF-16-unit boundary. | Rejected and reverted. The candidate passed the isolated non-plugin OpenSearch HTTP fixture `1180/1180` at `target/v0711-ascii-tokenizer-fixture-isolated-20260914/search-compat-report.json`, executable SHA-256 `ca1a6340d4585811051313130b19b8f90e692e4a04cb83360ce0d7689139cb9e`. Its identical 45-second mixed three-node diagnostics measured 863.21 and 870.19 ops/s at `target/v0711-ascii-tokenizer-mixed-diagnostic-20260914/summary.json` and `target/v0711-ascii-tokenizer-mixed-diagnostic-repeat-20260914/summary.json`, averaging 866.70 ops/s versus the retained current diagnostic's 875.08 ops/s. Avoid allocating character indices only when profiling proves it matters; this implementation did not improve the mixed workload and must not be retained. |
 
+### Correction: PP-012 Tokenizer Measurement
+
+- The earlier PP-012 Change Review incorrectly compared a
+  `diagnostic-search-timing` executable against a non-instrumented executable.
+  That comparison is not performance evidence and must not be used to infer a
+  regression.
+- A follow-up used only non-instrumented executables in an ABAB sequence. The
+  retained control SHA-256 `faf6886691b8dc2dec445461de9ab6f19f0e1eeb9f9ede99264e3b669a0a7d46`
+  measured 864.91 and 868.03 ops/s; the ASCII candidate SHA-256
+  `c35fe5fad9fbcd7cf77ef6956e776e4544d7bfdd1db263addc6424167972ca6d`
+  measured 865.50 and 875.73 ops/s. The candidate's mean throughput was 0.48%
+  higher, inside observed run-to-run variation, while mean refresh latency was
+  9.67ms versus the control's 9.33ms. Both use the same 45-second,
+  5,000-document, four-client, three-node mixed workload. Evidence:
+  `target/v0711-ascii-tokenizer-{control,normal}-mixed*-20260914/summary.json`.
+- The candidate passed the non-plugin fixture 1,180/1,180 with the normal
+  executable at
+  `target/v0711-ascii-tokenizer-normal-fixture-isolated-20260914/search-compat-report.json`.
+  It remains rejected and reverted because it does not produce a reproducible
+  fixed-gate improvement. Future candidates must compare executable feature
+  sets identically before interpreting throughput or latency differences.
+
 ## Review Queries
 
 Use these exact searches before beginning a change, then add the result to a
