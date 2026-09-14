@@ -1,0 +1,29 @@
+{
+  "release": "v0.7.0",
+  "source_commit": "768aac5a1f1ba0489a79382e31b8f3056308cf9a",
+  "source_tree": "bb1aa1a6924da8dbd5a594641f5a3b9c4391d40e",
+  "verified_at": "2026-09-14T15:49:54Z",
+  "executable": {
+    "path": "target/v070-candidate-build-20260914/release/steelsearch",
+    "sha256": "40830af495aadde1b922acd01ec2cb19a6ce0a9584c30b868a43e0982e807454"
+  },
+  "cargo_lock_sha256": "b782e2001f7e700c483bd2b707a8e2302dcdd296d108d36260fc4d7ee15a2cfc",
+  "rustc": "rustc 1.97.0-nightly (ad3a598ca 2026-05-03)",
+  "cargo": "cargo 1.97.0-nightly (4f9b52075 2026-05-01)",
+  "command": [
+    "cargo",
+    "+nightly",
+    "build",
+    "--locked",
+    "--release",
+    "-p",
+    "os-node",
+    "--features",
+    "standalone-runtime",
+    "--bin",
+    "steelsearch"
+  ],
+  "target_directory": "target/v070-candidate-build-20260914",
+  "identity_revalidation": "Locked rebuild after source commit retained the benchmarked executable SHA-256. The performance matrices reference this same executable path and hash.",
+  "performance_gate": "The repeated fixed-v0.6.0 gate completed with verified inputs but failed its numeric 5% budget; this provenance does not claim release acceptance."
+}
