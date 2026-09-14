@@ -17734,15 +17734,16 @@ impl SteelNode {
         id: &str,
         captured: &SharedStoredDocument,
     ) -> os_engine::EngineResult<()> {
-        // A captured write must not resurrect a removed document or overwrite its replacement.
-        let docs = self
+        // The captured Arc defines this refresh generation. Verify its identity while
+        // holding the runtime map, then release the map before native conversion and
+        // replay so later writes are not serialized behind Tantivy work.
+        let captured_is_current = self
             .documents_state
             .lock()
-            .expect("documents state lock poisoned");
-        if docs
+            .expect("documents state lock poisoned")
             .get(key)
-            .map_or(true, |current| !Arc::ptr_eq(current, captured))
-        {
+            .is_some_and(|current| Arc::ptr_eq(current, captured));
+        if !captured_is_current {
             return Ok(());
         }
         let version = u64::try_from(captured.version).map_err(|_| EngineError::InvalidRequest {
