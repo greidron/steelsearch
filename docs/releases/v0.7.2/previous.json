@@ -1,0 +1,1009 @@
+{
+  "generated_at_epoch_seconds": 1789484671,
+  "config": {
+    "corpus_size": 5000,
+    "vector_dimension": 384,
+    "vector_source": "default",
+    "vector_space_type": "default",
+    "duration_seconds": 60.0,
+    "clients": 4,
+    "number_of_shards": 3,
+    "number_of_replicas": 1,
+    "timeout_seconds": 10.0,
+    "query_mix": "write=15,lexical=15,ranking=15,facet=15,sort_filter=10,nested=10,vector=15,hybrid=10,refresh=5",
+    "seed": 13,
+    "profile": "minilm-knn",
+    "operation_resource_deltas": false,
+    "diagnostic_timeline": false,
+    "reuse_steelsearch_binary": true
+  },
+  "scenario_plan": [
+    {
+      "key": "steelsearch-single-node",
+      "label": "Steelsearch 1-node",
+      "engine": "steelsearch",
+      "topology": "single-node",
+      "node_count": 1
+    },
+    {
+      "key": "steelsearch-three-node",
+      "label": "Steelsearch 3-node",
+      "engine": "steelsearch",
+      "topology": "three-node",
+      "node_count": 3
+    }
+  ],
+  "scenarios": {
+    "steelsearch-single-node": {
+      "config": {
+        "base_url": "http://127.0.0.1:36619",
+        "base_urls": [
+          "http://127.0.0.1:36619"
+        ],
+        "clients": 4,
+        "corpus_size": 5000,
+        "diagnostic_timeline": false,
+        "duration_seconds": 60.0,
+        "expected_node_count": 1,
+        "index": "search-benchmark-steelsearch-single-node",
+        "number_of_replicas": 0,
+        "number_of_shards": 3,
+        "operation_resource_deltas": false,
+        "query_mix": {
+          "facet": 15,
+          "fallback_case_insensitive_wildcard": 0,
+          "fallback_distance_feature": 0,
+          "fallback_more_like_this": 0,
+          "fallback_query_string": 0,
+          "fallback_rank_feature": 0,
+          "fallback_terms_set": 0,
+          "hybrid": 10,
+          "lexical": 15,
+          "nested": 10,
+          "ranking": 15,
+          "refresh": 5,
+          "sort_filter": 10,
+          "vector": 15,
+          "write": 15
+        },
+        "reset": true,
+        "seed": 13,
+        "vector_dimension": 384,
+        "vector_source": "default",
+        "vector_space_type": "default"
+      },
+      "operations": {
+        "facet": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 3515,
+            "max": 128.7699060048908,
+            "mean": 6.9237576039828586,
+            "min": 1.1901708785444498,
+            "p50": 4.592644050717354,
+            "p90": 7.922571431845426,
+            "p95": 10.70186989381908,
+            "p99": 81.58468402922153
+          },
+          "success_count": 3515
+        },
+        "hybrid": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 2292,
+            "max": 122.46812600642443,
+            "mean": 10.6271447779011,
+            "min": 2.060099970549345,
+            "p50": 6.557802553288639,
+            "p90": 20.227064890787005,
+            "p95": 24.589384032879007,
+            "p99": 80.16328993486252
+          },
+          "success_count": 2292
+        },
+        "lexical": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 3513,
+            "max": 130.4972020443529,
+            "mean": 5.735573285929233,
+            "min": 0.8521280251443386,
+            "p50": 3.8012759760022163,
+            "p90": 6.785873044282198,
+            "p95": 9.024318121373653,
+            "p99": 77.42158149369094
+          },
+          "success_count": 3513
+        },
+        "nested": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 2353,
+            "max": 125.6500359158963,
+            "mean": 7.2233427109737445,
+            "min": 0.8399279322475195,
+            "p50": 5.303930025547743,
+            "p90": 9.068462019786239,
+            "p95": 11.945857852697372,
+            "p99": 77.02170114032924
+          },
+          "success_count": 2353
+        },
+        "ranking": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 3468,
+            "max": 119.78682107292116,
+            "mean": 7.56528585185936,
+            "min": 1.4144140295684338,
+            "p50": 5.3994315676391125,
+            "p90": 9.052138635888696,
+            "p95": 11.576158669777204,
+            "p99": 79.99390164390203
+          },
+          "success_count": 3468
+        },
+        "refresh": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 1158,
+            "max": 248.1714030727744,
+            "mean": 33.90092882110588,
+            "min": 0.497444998472929,
+            "p50": 10.164536419324577,
+            "p90": 93.13960198778658,
+            "p95": 116.09640097012742,
+            "p99": 169.40435008378722
+          },
+          "success_count": 1158
+        },
+        "sort_filter": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 2372,
+            "max": 126.22688198462129,
+            "mean": 6.487125102477698,
+            "min": 1.0840098839253187,
+            "p50": 4.255400970578194,
+            "p90": 7.531075063161553,
+            "p95": 9.917856915853916,
+            "p99": 77.63384530320764
+          },
+          "success_count": 2372
+        },
+        "vector": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 3399,
+            "max": 224.58581812679768,
+            "mean": 17.966659203877004,
+            "min": 2.4641428608447313,
+            "p50": 6.047938019037247,
+            "p90": 69.32901232503359,
+            "p95": 88.53579086717218,
+            "p99": 124.84511323738842
+          },
+          "success_count": 3399
+        },
+        "write": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 3646,
+            "max": 12.101595057174563,
+            "mean": 3.33329969805063,
+            "min": 0.8770090062171221,
+            "p50": 3.1215496128425,
+            "p90": 5.300589837133884,
+            "p95": 6.077378056943417,
+            "p99": 7.649780530482538
+          },
+          "success_count": 3646
+        }
+      },
+      "resource_usage": {
+        "compatibility_materialized_response_fetches": {
+          "after": 392,
+          "before": 0,
+          "delta": 392,
+          "peak": null
+        },
+        "fast_field_cache_capacity_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_hits": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_invalidated_entries": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_misses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_refresh_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_resets": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_stale_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "materialized_response_avoided_fetches": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "materialized_response_fetches": {
+          "after": 392,
+          "before": 0,
+          "delta": 392,
+          "peak": null
+        },
+        "memory_rss_bytes": {
+          "after": 833007616,
+          "before": 25505792,
+          "delta": 807501824,
+          "peak": 1120555008
+        },
+        "native_response_body_build_nanos": {
+          "after": 377093610,
+          "before": 0,
+          "delta": 377093610,
+          "peak": null
+        },
+        "operation_log_bytes": {
+          "after": 9000,
+          "before": 7333,
+          "delta": 1667,
+          "peak": null
+        },
+        "refresh_tantivy_commit_nanos": {
+          "after": 7318744293,
+          "before": 0,
+          "delta": 7318744293,
+          "peak": null
+        },
+        "refresh_tantivy_doc_id_lookup_nanos": {
+          "after": 231029577,
+          "before": 0,
+          "delta": 231029577,
+          "peak": null
+        },
+        "refresh_tantivy_document_add_nanos": {
+          "after": 359485069,
+          "before": 0,
+          "delta": 359485069,
+          "peak": null
+        },
+        "refresh_tantivy_reload_nanos": {
+          "after": 322566173,
+          "before": 0,
+          "delta": 322566173,
+          "peak": null
+        },
+        "request_result_cache_capacity_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_explain_bypasses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_highlight_bypasses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_hits": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_hybrid_vector_bypasses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_invalidated_entries": {
+          "after": 21,
+          "before": 0,
+          "delta": 21,
+          "peak": null
+        },
+        "request_result_cache_misses": {
+          "after": 17,
+          "before": 0,
+          "delta": 17,
+          "peak": null
+        },
+        "request_result_cache_refresh_invalidations": {
+          "after": 21,
+          "before": 0,
+          "delta": 21,
+          "peak": null
+        },
+        "request_result_cache_resets": {
+          "after": 4,
+          "before": 0,
+          "delta": 4,
+          "peak": null
+        },
+        "request_result_cache_stale_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_unsupported_vector_bypasses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_cache_bytes": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_candidate_scan_nanos": {
+          "after": 3474368107,
+          "before": 0,
+          "delta": 3474368107,
+          "peak": null
+        },
+        "vector_graph_cache_capacity_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_hits": {
+          "after": 4289,
+          "before": 0,
+          "delta": 4289,
+          "peak": null
+        },
+        "vector_graph_cache_invalidated_entries": {
+          "after": 790,
+          "before": 0,
+          "delta": 790,
+          "peak": null
+        },
+        "vector_graph_cache_misses": {
+          "after": 790,
+          "before": 0,
+          "delta": 790,
+          "peak": null
+        },
+        "vector_graph_cache_refresh_invalidations": {
+          "after": 790,
+          "before": 0,
+          "delta": 790,
+          "peak": null
+        },
+        "vector_graph_cache_resets": {
+          "after": 790,
+          "before": 0,
+          "delta": 790,
+          "peak": null
+        },
+        "vector_graph_cache_stale_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_hit_materialization_nanos": {
+          "after": 340347538,
+          "before": 0,
+          "delta": 340347538,
+          "peak": null
+        }
+      },
+      "summary": {
+        "elapsed_seconds": 60.06801620987244,
+        "error_count": 0,
+        "error_rate": 0.0,
+        "operation_count": 25716,
+        "success_count": 25716,
+        "throughput_ops_per_second": 428.1146876925405
+      },
+      "target_identity": {
+        "cluster_name": "steelsearch-dev",
+        "cluster_uuid": "steelsearch-dev-cluster-uuid",
+        "name": "steelsearch-dev-node",
+        "tagline": "The OpenSearch Project: https://opensearch.org/",
+        "version": {
+          "build_date": "2026-05-02T00:00:00Z",
+          "build_hash": "steelsearch-dev",
+          "build_snapshot": true,
+          "build_type": "tar",
+          "distribution": "opensearch",
+          "lucene_version": "10.2.2",
+          "minimum_index_compatibility_version": "3.0.0",
+          "minimum_wire_compatibility_version": "3.7.0",
+          "number": "3.7.0"
+        }
+      },
+      "executable": {
+        "path": "/home/ubuntu/steelsearch/target/v071-candidate-build-20260915/release/steelsearch",
+        "sha256": "898802f92db7e43e21b23c08450628175735e236774d29fb5a7ec90bd167d0d1"
+      },
+      "base_url": "http://127.0.0.1:36619",
+      "manifest_path": null,
+      "resource_process_pids": [
+        4112939
+      ],
+      "resource_container_names": []
+    },
+    "steelsearch-three-node": {
+      "config": {
+        "base_url": "http://127.0.0.1:33439",
+        "base_urls": [
+          "http://127.0.0.1:33439",
+          "http://127.0.0.1:55105",
+          "http://127.0.0.1:41687"
+        ],
+        "clients": 4,
+        "corpus_size": 5000,
+        "diagnostic_timeline": false,
+        "duration_seconds": 60.0,
+        "expected_node_count": 3,
+        "index": "search-benchmark-steelsearch-three-node",
+        "number_of_replicas": 1,
+        "number_of_shards": 3,
+        "operation_resource_deltas": false,
+        "query_mix": {
+          "facet": 15,
+          "fallback_case_insensitive_wildcard": 0,
+          "fallback_distance_feature": 0,
+          "fallback_more_like_this": 0,
+          "fallback_query_string": 0,
+          "fallback_rank_feature": 0,
+          "fallback_terms_set": 0,
+          "hybrid": 10,
+          "lexical": 15,
+          "nested": 10,
+          "ranking": 15,
+          "refresh": 5,
+          "sort_filter": 10,
+          "vector": 15,
+          "write": 15
+        },
+        "reset": true,
+        "seed": 13,
+        "vector_dimension": 384,
+        "vector_source": "default",
+        "vector_space_type": "default"
+      },
+      "operations": {
+        "facet": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 6610,
+            "max": 21.289601922035217,
+            "mean": 4.581307933585501,
+            "min": 1.1956519447267056,
+            "p50": 4.282681155018508,
+            "p90": 6.996375066228212,
+            "p95": 8.122915972489857,
+            "p99": 10.392693970352404
+          },
+          "success_count": 6610
+        },
+        "hybrid": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 4271,
+            "max": 27.495261980220675,
+            "mean": 6.514347427564094,
+            "min": 1.5440951101481915,
+            "p50": 5.586853018030524,
+            "p90": 11.20230695232749,
+            "p95": 13.674550456926227,
+            "p99": 18.759475089609634
+          },
+          "success_count": 4271
+        },
+        "lexical": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 6510,
+            "max": 24.05022899620235,
+            "mean": 3.8046615304834512,
+            "min": 0.8039269596338272,
+            "p50": 3.5141335101798177,
+            "p90": 6.143178860656918,
+            "p95": 7.078032975550741,
+            "p99": 9.32107906322926
+          },
+          "success_count": 6510
+        },
+        "nested": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 4400,
+            "max": 18.686977913603187,
+            "mean": 4.529085382872092,
+            "min": 0.6792061030864716,
+            "p50": 4.294560989364982,
+            "p90": 7.074435870163142,
+            "p95": 7.990988995879892,
+            "p99": 10.083225171547388
+          },
+          "success_count": 4400
+        },
+        "ranking": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 6457,
+            "max": 95.38582782261074,
+            "mean": 5.261379915027218,
+            "min": 1.4656540006399155,
+            "p50": 4.959608195349574,
+            "p90": 7.819155044853687,
+            "p95": 8.86053228750825,
+            "p99": 11.031895382329818
+          },
+          "success_count": 6457
+        },
+        "refresh": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 2210,
+            "max": 92.22199791111052,
+            "mean": 9.95925723815261,
+            "min": 0.505964970216155,
+            "p50": 7.724194088950753,
+            "p90": 15.83318617194891,
+            "p95": 23.051231517456458,
+            "p99": 69.23400464234865
+          },
+          "success_count": 2210
+        },
+        "sort_filter": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 4392,
+            "max": 20.13987209647894,
+            "mean": 4.164971895496834,
+            "min": 0.8582479786127806,
+            "p50": 3.9051169296726584,
+            "p90": 6.584026943892241,
+            "p95": 7.534391526132822,
+            "p99": 9.5497313560918
+          },
+          "success_count": 4392
+        },
+        "vector": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 6517,
+            "max": 94.64606107212603,
+            "mean": 6.061758166344832,
+            "min": 2.1427799947559834,
+            "p50": 5.0900878850370646,
+            "p90": 8.041276410222064,
+            "p95": 9.443370113149285,
+            "p99": 39.834917169064326
+          },
+          "success_count": 6517
+        },
+        "write": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 6734,
+            "max": 11.51342992670834,
+            "mean": 3.3964589573548043,
+            "min": 0.8984480518847704,
+            "p50": 3.1774709932506084,
+            "p90": 5.465836031362414,
+            "p95": 6.328728049993515,
+            "p99": 7.989834723994138
+          },
+          "success_count": 6734
+        }
+      },
+      "resource_usage": {
+        "compatibility_materialized_response_fetches": {
+          "after": 95,
+          "before": 0,
+          "delta": 95,
+          "peak": null
+        },
+        "fast_field_cache_capacity_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_hits": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_invalidated_entries": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_misses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_refresh_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_resets": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "fast_field_cache_stale_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "materialized_response_avoided_fetches": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "materialized_response_fetches": {
+          "after": 95,
+          "before": 0,
+          "delta": 95,
+          "peak": null
+        },
+        "memory_rss_bytes": {
+          "after": 1092833280,
+          "before": 90873856,
+          "delta": 1001959424,
+          "peak": 1129586688
+        },
+        "native_response_body_build_nanos": {
+          "after": 343369274,
+          "before": 0,
+          "delta": 343369274,
+          "peak": null
+        },
+        "operation_log_bytes": {
+          "after": 87564,
+          "before": 85652,
+          "delta": 1912,
+          "peak": null
+        },
+        "refresh_tantivy_commit_nanos": {
+          "after": 7023333216,
+          "before": 0,
+          "delta": 7023333216,
+          "peak": null
+        },
+        "refresh_tantivy_doc_id_lookup_nanos": {
+          "after": 148419068,
+          "before": 0,
+          "delta": 148419068,
+          "peak": null
+        },
+        "refresh_tantivy_document_add_nanos": {
+          "after": 287027989,
+          "before": 0,
+          "delta": 287027989,
+          "peak": null
+        },
+        "refresh_tantivy_reload_nanos": {
+          "after": 256156297,
+          "before": 0,
+          "delta": 256156297,
+          "peak": null
+        },
+        "request_result_cache_capacity_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_explain_bypasses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_highlight_bypasses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_hits": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_hybrid_vector_bypasses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_invalidated_entries": {
+          "after": 24,
+          "before": 0,
+          "delta": 24,
+          "peak": null
+        },
+        "request_result_cache_misses": {
+          "after": 17,
+          "before": 0,
+          "delta": 17,
+          "peak": null
+        },
+        "request_result_cache_refresh_invalidations": {
+          "after": 24,
+          "before": 0,
+          "delta": 24,
+          "peak": null
+        },
+        "request_result_cache_resets": {
+          "after": 8,
+          "before": 0,
+          "delta": 8,
+          "peak": null
+        },
+        "request_result_cache_stale_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "request_result_cache_unsupported_vector_bypasses": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_cache_bytes": {
+          "after": 7260672,
+          "before": 0,
+          "delta": 7260672,
+          "peak": null
+        },
+        "vector_candidate_scan_nanos": {
+          "after": 2046341646,
+          "before": 0,
+          "delta": 2046341646,
+          "peak": null
+        },
+        "vector_graph_cache_capacity_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_evictions": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_graph_cache_hits": {
+          "after": 4116,
+          "before": 0,
+          "delta": 4116,
+          "peak": null
+        },
+        "vector_graph_cache_invalidated_entries": {
+          "after": 671,
+          "before": 0,
+          "delta": 671,
+          "peak": null
+        },
+        "vector_graph_cache_misses": {
+          "after": 672,
+          "before": 0,
+          "delta": 672,
+          "peak": null
+        },
+        "vector_graph_cache_refresh_invalidations": {
+          "after": 671,
+          "before": 0,
+          "delta": 671,
+          "peak": null
+        },
+        "vector_graph_cache_resets": {
+          "after": 671,
+          "before": 0,
+          "delta": 671,
+          "peak": null
+        },
+        "vector_graph_cache_stale_invalidations": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_hit_materialization_nanos": {
+          "after": 355261679,
+          "before": 0,
+          "delta": 355261679,
+          "peak": null
+        }
+      },
+      "summary": {
+        "elapsed_seconds": 60.01192197599448,
+        "error_count": 0,
+        "error_rate": 0.0,
+        "operation_count": 48101,
+        "success_count": 48101,
+        "throughput_ops_per_second": 801.5240708211445
+      },
+      "target_identity": {
+        "cluster_name": "steelsearch-dev",
+        "cluster_uuid": "steelsearch-dev-cluster-uuid",
+        "name": "steel-node-1",
+        "tagline": "The OpenSearch Project: https://opensearch.org/",
+        "version": {
+          "build_date": "2026-05-02T00:00:00Z",
+          "build_hash": "steelsearch-dev",
+          "build_snapshot": true,
+          "build_type": "tar",
+          "distribution": "opensearch",
+          "lucene_version": "10.2.2",
+          "minimum_index_compatibility_version": "3.0.0",
+          "minimum_wire_compatibility_version": "3.7.0",
+          "number": "3.7.0"
+        }
+      },
+      "executable": {
+        "path": "/home/ubuntu/steelsearch/target/v071-candidate-build-20260915/release/steelsearch",
+        "sha256": "898802f92db7e43e21b23c08450628175735e236774d29fb5a7ec90bd167d0d1"
+      },
+      "base_url": "http://127.0.0.1:33439",
+      "manifest_path": "target/v072-release-benchmarks-20260915/previous/steelsearch-three-node/cluster/cluster.json",
+      "resource_process_pids": [
+        4117056,
+        4117054,
+        4117052
+      ],
+      "resource_container_names": []
+    }
+  },
+  "native_telemetry_budgets": {
+    "steelsearch-single-node": {
+      "success_count": 25716,
+      "counters": {
+        "materialized_response_fetches": {
+          "delta": 392,
+          "success_count": 25716,
+          "per_success": 0.015243428215896719,
+          "max_per_success": 1.0,
+          "status": "pass",
+          "description": "total materialized response fetches per successful operation"
+        },
+        "compatibility_materialized_response_fetches": {
+          "delta": 392,
+          "success_count": 25716,
+          "per_success": 0.015243428215896719,
+          "max_per_success": 1.0,
+          "status": "pass",
+          "description": "compatibility materialized response fetches per successful operation"
+        }
+      },
+      "operations": {},
+      "status": "pass"
+    },
+    "steelsearch-three-node": {
+      "success_count": 48101,
+      "counters": {
+        "materialized_response_fetches": {
+          "delta": 95,
+          "success_count": 48101,
+          "per_success": 0.001975010914534001,
+          "max_per_success": 1.0,
+          "status": "pass",
+          "description": "total materialized response fetches per successful operation"
+        },
+        "compatibility_materialized_response_fetches": {
+          "delta": 95,
+          "success_count": 48101,
+          "per_success": 0.001975010914534001,
+          "max_per_success": 1.0,
+          "status": "pass",
+          "description": "compatibility materialized response fetches per successful operation"
+        }
+      },
+      "operations": {},
+      "status": "pass"
+    }
+  },
+  "comparisons": {}
+}
