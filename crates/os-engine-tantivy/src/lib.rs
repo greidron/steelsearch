@@ -2174,6 +2174,8 @@ impl IndexEngine for TantivyEngine {
     }
 
     fn refresh(&self, request: RefreshRequest) -> EngineResult<RefreshResponse> {
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _engine_timer = diagnostic_search::start(&diagnostic_search::REFRESH_ENGINE_TOTAL);
         enum ShardRefreshPlan {
             Busy,
             Incremental {
@@ -2261,6 +2263,9 @@ impl IndexEngine for TantivyEngine {
                 .load(Ordering::Acquire)
                 .max(requested_target_refreshed_seq_no);
             'refresh_index: loop {
+                #[cfg(feature = "diagnostic-search-timing")]
+                let _plan_timer =
+                    diagnostic_search::start(&diagnostic_search::REFRESH_PLAN_CAPTURE);
                 let Some((index_target_refreshed_seq_no, plans, non_append_generations)) = ({
                     #[cfg(not(feature = "diagnostic-lock-timing"))]
                     let mut store = self
@@ -2481,6 +2486,8 @@ impl IndexEngine for TantivyEngine {
                 }) else {
                     break 'refresh_index;
                 };
+                #[cfg(feature = "diagnostic-search-timing")]
+                drop(_plan_timer);
                 if plans
                     .iter()
                     .any(|plan| matches!(plan, ShardRefreshPlan::Busy))
@@ -2497,6 +2504,9 @@ impl IndexEngine for TantivyEngine {
                         }
                     )
                 });
+                #[cfg(feature = "diagnostic-search-timing")]
+                let _artifact_timer =
+                    diagnostic_search::start(&diagnostic_search::REFRESH_ARTIFACT_EXECUTE);
                 let artifacts = if has_global_incremental_plan {
                     let mut artifacts = Vec::new();
                     for plan in plans {
@@ -2817,6 +2827,11 @@ impl IndexEngine for TantivyEngine {
                         }
                     }
                 };
+                #[cfg(feature = "diagnostic-search-timing")]
+                drop(_artifact_timer);
+                #[cfg(feature = "diagnostic-search-timing")]
+                let _publish_timer =
+                    diagnostic_search::start(&diagnostic_search::REFRESH_ARTIFACT_PUBLISH);
                 #[cfg(not(feature = "diagnostic-lock-timing"))]
                 let mut store = self
                     .store
@@ -2950,6 +2965,8 @@ impl IndexEngine for TantivyEngine {
                     refreshed_any = true;
                     break 'refresh_index;
                 }
+                #[cfg(feature = "diagnostic-search-timing")]
+                drop(_publish_timer);
                 drop(store);
                 std::thread::sleep(std::time::Duration::from_millis(1));
                 continue 'refresh_index;

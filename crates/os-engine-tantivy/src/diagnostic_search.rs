@@ -55,6 +55,10 @@ pub(crate) static REFRESH_TEXT_COMPATIBILITY: Site = Site::new("refresh_text_com
 pub(crate) static REFRESH_DOCUMENT_BUILD: Site = Site::new("refresh_document_build");
 pub(crate) static REFRESH_WRITER_ADD: Site = Site::new("refresh_writer_add");
 pub(crate) static REFRESH_TANTIVY_COMMIT: Site = Site::new("refresh_tantivy_commit");
+pub(crate) static REFRESH_ENGINE_TOTAL: Site = Site::new("refresh_engine_total");
+pub(crate) static REFRESH_PLAN_CAPTURE: Site = Site::new("refresh_plan_capture");
+pub(crate) static REFRESH_ARTIFACT_EXECUTE: Site = Site::new("refresh_artifact_execute");
+pub(crate) static REFRESH_ARTIFACT_PUBLISH: Site = Site::new("refresh_artifact_publish");
 
 pub(crate) struct Span {
     site: &'static str,
