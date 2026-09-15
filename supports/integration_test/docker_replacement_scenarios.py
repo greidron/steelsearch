@@ -22,6 +22,13 @@ DOCS = [
     {"_id": "3", "_source": {"tenant": "beta", "title": "blue car", "price": 30}},
 ]
 
+KNN_DOCS = [
+    {"_id": "a", "_source": {"tenant": "alpha", "title": "fresh apple", "embedding": [1.0, 0.0, 0.0, 0.0]}},
+    {"_id": "b", "_source": {"tenant": "alpha", "title": "green apple", "embedding": [0.8, 0.2, 0.0, 0.0]}},
+    {"_id": "c", "_source": {"tenant": "beta", "title": "blue car", "embedding": [0.0, 1.0, 0.0, 0.0]}},
+    {"_id": "d", "_source": {"tenant": "beta", "title": "red car", "embedding": [0.0, 0.8, 0.2, 0.0]}},
+]
+
 
 @dataclass
 class Scenario:
@@ -213,6 +220,85 @@ def scenario_search_compare(opensearch: HttpJson, steelsearch: HttpJson, suffix:
         cleanup(steelsearch, index)
 
 
+def create_knn_index(client: HttpJson, index: str) -> None:
+    client.request(
+        "PUT",
+        f"/{index}",
+        {
+            "settings": {"index": {"knn": True}, "number_of_shards": 1, "number_of_replicas": 0},
+            "mappings": {
+                "properties": {
+                    "tenant": {"type": "keyword"},
+                    "title": {"type": "text"},
+                    "embedding": {"type": "knn_vector", "dimension": 4},
+                }
+            },
+        },
+        expected={200, 201},
+    )
+
+
+def ordered_hit_ids(client: HttpJson, index: str, query: dict[str, Any]) -> list[str]:
+    _, response = client.request("POST", f"/{index}/_search", query)
+    return hit_ids(response)
+
+
+def scenario_knn_search_compare(opensearch: HttpJson, steelsearch: HttpJson, suffix: str) -> Scenario:
+    """Compare k-NN query semantics, without invoking k-NN plugin management APIs."""
+    scenario = Scenario("knn_search_compare")
+    index = f"docker-knn-compare-{suffix}"
+    cleanup(opensearch, index)
+    cleanup(steelsearch, index)
+    try:
+        create_knn_index(opensearch, index)
+        create_knn_index(steelsearch, index)
+        index_docs(opensearch, index, KNN_DOCS)
+        index_docs(steelsearch, index, KNN_DOCS)
+        queries = {
+            "knn": {
+                "size": 2,
+                "query": {"knn": {"embedding": {"vector": [1.0, 0.0, 0.0, 0.0], "k": 2}}},
+            },
+            "knn_filter": {
+                "size": 2,
+                "query": {
+                    "knn": {
+                        "embedding": {
+                            "vector": [0.0, 1.0, 0.0, 0.0],
+                            "k": 2,
+                            "filter": {"term": {"tenant": "beta"}},
+                        }
+                    }
+                },
+            },
+            "hybrid_bool": {
+                "size": 2,
+                "query": {
+                    "bool": {
+                        "must": [
+                            {"match": {"title": "apple"}},
+                            {"knn": {"embedding": {"vector": [1.0, 0.0, 0.0, 0.0], "k": 2}}},
+                        ],
+                        "filter": [{"term": {"tenant": "alpha"}}],
+                    }
+                },
+            },
+        }
+        comparisons = {}
+        for name, query in queries.items():
+            os_ids = ordered_hit_ids(opensearch, index, query)
+            ss_ids = ordered_hit_ids(steelsearch, index, query)
+            comparisons[name] = {"opensearch": os_ids, "steelsearch": ss_ids}
+            if os_ids != ss_ids:
+                raise AssertionError(f"{name} mismatch: {comparisons[name]}")
+        scenario.status = "passed"
+        scenario.details = {"index": index, "comparisons": comparisons}
+        return scenario
+    finally:
+        cleanup(opensearch, index)
+        cleanup(steelsearch, index)
+
+
 def scenario_migration(opensearch: HttpJson, steelsearch: HttpJson, suffix: str) -> Scenario:
     scenario = Scenario("opensearch_to_steelsearch_migration")
     source = f"docker-migrate-source-{suffix}"
@@ -390,6 +476,11 @@ def main() -> int:
 
     run_required("root_and_health", lambda: scenario_root_and_health(opensearch, steelsearch), scenarios)
     run_required("search_compare", lambda: scenario_search_compare(opensearch, steelsearch, suffix), scenarios)
+    run_required(
+        "knn_search_compare",
+        lambda: scenario_knn_search_compare(opensearch, steelsearch, suffix),
+        scenarios,
+    )
     run_required(
         "opensearch_to_steelsearch_migration",
         lambda: scenario_migration(opensearch, steelsearch, suffix),

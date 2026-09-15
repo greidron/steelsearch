@@ -12,6 +12,13 @@ from pathlib import Path
 START = "<!-- release-performance:start -->"
 END = "<!-- release-performance:end -->"
 OPERATIONS = ("write", "lexical", "ranking", "facet", "sort_filter", "nested", "refresh")
+NATIVE_KNN_OPERATIONS = OPERATIONS + ("vector", "hybrid")
+SUPPORT_PROFILE_OPERATIONS = {
+    # Retained solely to validate already-published release bundles.
+    "core-no-plugins": OPERATIONS,
+    # Core vector queries are covered; plugin management and ML APIs are not.
+    "core-native-knn": NATIVE_KNN_OPERATIONS,
+}
 TOPOLOGIES = ("single-node", "three-node")
 REPORTS = ("current", "previous", "opensearch")
 TAG = re.compile(r"v\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?")
@@ -66,7 +73,9 @@ def performance_section(directory: Path) -> str:
     for key in ("release", "previous_release"):
         require(isinstance(manifest.get(key), str) and TAG.fullmatch(manifest[key]), f"invalid {key}")
     require(manifest["release"] != manifest["previous_release"], "previous release must differ")
-    require(manifest.get("support_profile") == "core-no-plugins", "only core-no-plugins is supported")
+    support_profile = manifest.get("support_profile")
+    require(support_profile in SUPPORT_PROFILE_OPERATIONS, "unsupported support_profile")
+    operations = SUPPORT_PROFILE_OPERATIONS[support_profile]
     for key in ("opensearch_version", "environment", "runtime_settings", "comparison_limits"):
         text(manifest.get(key), key)
     reports = {name: load(directory / f"{name}.json") for name in REPORTS}
@@ -77,7 +86,8 @@ def performance_section(directory: Path) -> str:
         require(not report.get("diagnostic_only", False), f"{name}: diagnostic profiling is not release evidence")
         config = report["config"]
         weights = query_weights(config["query_mix"])
-        require(set(weights) == set(OPERATIONS), f"{name}: all seven core operations, no plugins, required")
+        require(set(weights) == set(operations),
+                f"{name}: required operations for {support_profile} are missing or unexpected")
         normalized = {key: config[key] for key in (
             "corpus_size", "vector_dimension", "duration_seconds", "clients", "number_of_shards", "number_of_replicas", "seed"
         )}
@@ -120,10 +130,10 @@ def performance_section(directory: Path) -> str:
                     "throughput does not match request count and elapsed time")
             require(count(summary["operation_count"], "total requests") == successful,
                     f"{name}/{topology}: total request count differs from successes")
-            require(set(scenario["operations"]) == set(OPERATIONS),
-                    f"{name}/{topology}: exactly seven core operation results required")
+            require(set(scenario["operations"]) == set(operations),
+                    f"{name}/{topology}: operation results do not match {support_profile}")
             operation_samples = 0
-            for operation in OPERATIONS:
+            for operation in operations:
                 result = scenario["operations"][operation]
                 require(result["error_count"] == 0, f"{name}/{topology}/{operation}: errors")
                 samples = count(result["success_count"], "operation samples")
@@ -146,15 +156,19 @@ def performance_section(directory: Path) -> str:
     rows.extend([
         START, "## Performance", "",
         f"- Current: `{manifest['release']}`; previous published release: `{manifest['previous_release']}`.",
-        f"- Reference: OpenSearch `{manifest['opensearch_version']}`; support: `core-no-plugins`.",
+        f"- Reference: OpenSearch `{manifest['opensearch_version']}`; support: `{support_profile}`.",
         f"- Environment: {manifest['environment']}",
         f"- Runtime and durability settings: {manifest['runtime_settings']}",
         f"- Limits: {manifest['comparison_limits']}",
         f"- Workload: {config['corpus_size']} documents, {config['clients']} clients, "
         f"{config['duration_seconds']} seconds per topology, {config['number_of_shards']} shards; "
         f"replicas: 0 on one node, {min(config['number_of_replicas'], 2)} on three nodes; seed {config['seed']}.",
-        "- Operation weights: " + ", ".join(f"{key}={config['query_mix'][key]}" for key in OPERATIONS) + ".",
-        f"- Synthetic source embedding array: {config['vector_dimension']} numbers per document; no k-NN index or requests.",
+        "- Operation weights: " + ", ".join(f"{key}={config['query_mix'][key]}" for key in operations) + ".",
+        (
+            f"- k-NN: `{config['vector_dimension']}` dimensions; vector and hybrid requests are included."
+            if "vector" in operations
+            else f"- Synthetic source embedding array: {config['vector_dimension']} numbers per document; no k-NN index or requests."
+        ),
         f"- Current binary SHA-256: `{hashes['current']}`.",
         f"- Previous binary SHA-256: `{hashes['previous']}`.",
         "- Raw reports and release metadata: attached `performance-evidence.zip`.", "",
@@ -176,7 +190,7 @@ def performance_section(directory: Path) -> str:
         "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ])
     for topology in TOPOLOGIES:
-        for operation in OPERATIONS:
+        for operation in operations:
             metrics = [scenario(name, topology)["operations"][operation]["latency_ms"] for name in REPORTS]
             current, previous, reference = [metric["mean"] for metric in metrics]
             rows.append(f"| {topology} | {operation} | {previous:.2f} | {current:.2f} | "

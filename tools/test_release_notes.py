@@ -93,7 +93,7 @@ class ReleaseNotesTests(unittest.TestCase):
 
     def test_missing_scenario_rejected(self):
         self.change_report("current", lambda r: r["scenarios"]["steelsearch-three-node"]["operations"].pop("write"))
-        with self.assertRaisesRegex(ValueError, "exactly seven"):
+        with self.assertRaisesRegex(ValueError, "operation results"):
             notes.performance_section(self.root)
 
     def test_same_binary_cannot_be_labelled_as_previous_release(self):
@@ -106,8 +106,38 @@ class ReleaseNotesTests(unittest.TestCase):
 
     def test_plugin_workload_rejected(self):
         self.change_report("current", lambda r: r["config"]["query_mix"].update(vector=1))
-        with self.assertRaisesRegex(ValueError, "no plugins"):
+        with self.assertRaisesRegex(ValueError, "required operations"):
             notes.performance_section(self.root)
+
+    def test_core_native_knn_profile_requires_and_renders_vector_operations(self):
+        self.manifest["support_profile"] = "core-native-knn"
+        self.write("release.json", self.manifest)
+        operations = notes.NATIVE_KNN_OPERATIONS
+        for name in ("current", "previous", "opensearch"):
+            report = notes.load(self.root / f"{name}.json")
+            report["config"]["query_mix"] = {operation: 1 for operation in operations}
+            for scenario in report["scenarios"].values():
+                scenario["config"]["query_mix"] = {operation: 1 for operation in operations}
+                total = scenario["summary"]["success_count"]
+                scenario["operations"] = {
+                    operation: {
+                        "error_count": 0,
+                        "success_count": total // len(operations) + (index < total % len(operations)),
+                        "latency_ms": {
+                            "mean": 2,
+                            "p95": 4,
+                            "count": total // len(operations) + (index < total % len(operations)),
+                        },
+                    }
+                    for index, operation in enumerate(operations)
+                }
+            self.write(f"{name}.json", report)
+        notes.validate_notes(self.root, render=True)
+        content = self.note_path.read_text()
+        self.assertIn("support: `core-native-knn`", content)
+        self.assertIn("vector and hybrid requests are included", content)
+        for operation in ("vector", "hybrid"):
+            self.assertIn(f"| single-node | {operation} |", content)
 
     def test_diagnostic_profile_cannot_be_promoted_to_release_evidence(self):
         original = notes.load(self.root / "current.json")

@@ -6,7 +6,7 @@ TODO: Describe user-facing changes and fixes.
 
 ## Compatibility
 
-TODO: State core-no-plugins support and migration/breaking changes.
+TODO: State core-native-knn support, excluded plugin management APIs, and migration/breaking changes.
 
 ## Validation
 

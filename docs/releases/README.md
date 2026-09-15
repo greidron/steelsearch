@@ -43,13 +43,16 @@ This source field does not enable a k-NN mapping or plugin support.
 CPU-profiler runs are diagnostic-only and must not be used as release speed
 evidence. Reports or scenarios marked `diagnostic_only` are rejected.
 
-Required operations are `write`, `lexical`, `ranking`, `facet`, `sort_filter`,
-`nested`, and `refresh`, on both single-node and three-node topologies.
-The current support profile is `core-no-plugins`: vector/hybrid operations must
-have zero weight. Supply, for example:
+Required operations for all new releases are `write`, `lexical`, `ranking`,
+`facet`, `sort_filter`, `nested`, `refresh`, `vector`, and `hybrid`, on both
+single-node and three-node topologies. Set `support_profile` to
+`core-native-knn`: this covers native `knn_vector` indexing and `knn` query
+execution, but not k-NN plugin management or ML APIs. The legacy
+`core-no-plugins` seven-operation profile remains accepted only to validate
+already-published evidence bundles. Supply, for example:
 
 ```sh
---query-mix write=15,lexical=15,ranking=15,facet=15,sort_filter=10,nested=10,refresh=5
+--query-mix write=15,lexical=15,ranking=15,facet=15,sort_filter=10,nested=10,vector=15,hybrid=10,refresh=5
 ```
 
 `release.json` has this structure (replace illustrative values):
@@ -60,7 +63,7 @@ have zero weight. Supply, for example:
   "release": "v0.5.1",
   "previous_release": "v0.5.0",
   "prerelease": false,
-  "support_profile": "core-no-plugins",
+  "support_profile": "core-native-knn",
   "opensearch_version": "2.19.0",
   "environment": "Describe host CPU/RAM/OS and per-node resource limits",
   "runtime_settings": "Describe each engine's persistence, refresh, security and deployment settings",
@@ -93,7 +96,10 @@ python3 tools/release_notes.py docs/releases/<tag>
 Missing scenarios, invalid/non-finite measurements, request errors, missing
 binary hashes, reference-version mismatches, different workload configurations,
 identical current/previous executable hashes, and stale/edited generated tables
-fail validation. Reports must contain exactly the seven core operation results.
+fail validation. Reports must contain the operation set required by the declared
+support profile: seven legacy core operations for historical `core-no-plugins`
+bundles, or nine operations including `vector` and `hybrid` for every new
+`core-native-knn` bundle.
 Successful request counts, total request counts and latency sample counts must
 be positive integers: each operation's latency sample count must match its
 successful requests, operation successes must sum to the scenario total, and

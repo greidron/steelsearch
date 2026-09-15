@@ -35,7 +35,11 @@ The JSON report is written to `target/docker-replacement-scenarios/report.json`.
    - export source documents through `_search`
    - create and load a target index in Steelsearch
    - validate document count and source checksum parity
-4. Steelsearch MiniLM-compatible ML Commons lifecycle and k-NN search:
+4. Cross-engine core k-NN search comparison:
+   - create the same `knn_vector` mapping and fixed vectors in both engines
+   - compare ordered IDs for k-NN, filtered k-NN, and lexical+k-NN bool queries
+   - does not call k-NN plugin management APIs
+5. Steelsearch MiniLM-compatible ML Commons lifecycle and k-NN search:
    - register and deploy an `all-MiniLM-L6-v2` style embedding model
    - predict vectors through `_plugins/_ml/models/{model_id}/_predict`
    - create a `knn_vector` index
@@ -43,4 +47,8 @@ The JSON report is written to `target/docker-replacement-scenarios/report.json`.
 
 ## Scope Notes
 
-The default OpenSearch Docker image is not treated as a k-NN or ML plugin image. The Docker replacement run therefore validates k-NN and MiniLM-compatible embedding behavior on Steelsearch, while generic OpenSearch parity checks cover REST indexing, search, and migration. To run OpenSearch k-NN parity, set `OPENSEARCH_IMAGE` to an image that includes the OpenSearch k-NN plugin and add a plugin-specific parity case to `tools/docker_replacement_scenarios.py`.
+The pinned `opensearchproject/opensearch:2.19.0` image used by the benchmark
+tools contains `opensearch-knn`. Core `knn_vector` indexing and `knn` query
+semantics are therefore compared against OpenSearch. Plugin management and
+operational APIs, such as model management, warmup, stats, and native-memory
+controls, remain outside this replacement scenario.

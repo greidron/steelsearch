@@ -5,10 +5,12 @@ ready` and fixes the minimum evidence required for each replacement profile.
 
 ## REST Parity Complete Versus OpenSearch Replacement Ready
 
-Release scope decision (2026-09-06): the user-selected `core-no-plugins`
-candidate does not support OpenSearch plugin APIs, including k-NN and ML
-Commons. Plugin compatibility is not an acceptance requirement for that
-candidate, and excluded plugin cases must not be counted as passing evidence.
+Release scope decision (2026-09-06, clarified 2026-09-15): the user-selected
+`core-no-plugins` candidate does not support OpenSearch plugin management and
+operational APIs, including k-NN and ML Commons management endpoints. Core
+`knn_vector` indexing and `knn` query semantics are not plugin-excluded: they
+require direct OpenSearch comparison with an image carrying `opensearch-knn`.
+Excluded plugin cases must not be counted as passing evidence.
 The explicit search-suite exclusions are recorded in
 `tools/fixtures/release-core-plugin-exclusions.json`. Apply them through the
 existing `SEARCH_COMPAT_EXCLUDE_CASES` runner/checker setting. This does not
