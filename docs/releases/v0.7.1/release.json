@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "release": "v0.7.1",
+  "previous_release": "v0.7.0",
+  "prerelease": false,
+  "support_profile": "core-no-plugins",
+  "opensearch_version": "2.19.0",
+  "environment": "Ubuntu 24.04.3 LTS ARM64 host with 3 Neoverse-N1 CPUs and 17 GiB RAM; SteelSearch native processes and Docker OpenSearch with a 512 MiB JVM heap per node, without Docker CPU or memory quotas",
+  "runtime_settings": "All SteelSearch runs used the benchmark runner development persistence settings with shared runtime persistence and per-request synchronization disabled, deferred shard persistence enabled, and native writes deferred until refresh; OpenSearch used its pinned 2.19.0 image with security/demo setup disabled and explicit refresh workload",
+  "comparison_limits": "Measured 2026-09-15 with one fresh 60-second matrix per engine/topology, 5000 generated documents and identical workload settings; development durability and deployment differ from OpenSearch, so ratios are not production-equivalent speed claims. The fixed v0.6.0 cumulative 5% gate remains failed; this user-approved v0.7.1 release records that scoped exception and does not reset or waive the gate."
+}
