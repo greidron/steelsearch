@@ -803,6 +803,28 @@ another.
   functional verification and the full fixed-v0.6.0 gate.
   Evidence: `target/v073-refresh-work-three-abba-20260916/result.json`.
 
+### PP-032: Do Not Add a Fixed Refresh Coalescing Delay
+
+- Tags: `refresh`, `native-query`, `measurement`.
+- Tantivy 0.21.1 exposes no asynchronous public commit that preserves the
+  required reader-visibility boundary. A candidate therefore waited 250us
+  after obtaining the per-index refresh owner, only when its captured target
+  was unpublished, before reading the shared admitted watermark. No-op refresh
+  calls did not wait; completed callers still required their own captured
+  watermark to be visible.
+- The focused watermark regressions passed, and the candidate's full non-plugin
+  HTTP fixture passed 1,198 / 0 / 0 at
+  `target/v073-refresh-coalesce-full-compat-20260916/search-compat-report.json`.
+  The ABBA three-node mixed diagnostic nevertheless did not reduce native work:
+  mean throughput was 0.994x (821.528 versus 826.090 ops/s), refresh mean was
+  1.038x (11.359 versus 10.947ms), and cumulative Tantivy commit time was
+  34.231 versus 34.494 seconds. The mixed p99 improvement was not enough to
+  offset the mean regression.
+- Revert the delay. Do not retry a fixed refresh sleep or yield window without
+  direct evidence that the workload has multiple refresh requests arriving
+  within the window and that they share a native commit. Evidence:
+  `target/v073-refresh-coalesce-paired-three-20260916/result.json`.
+
 ## Review Queries
 
 Use these exact searches before beginning a change, then add the result to a
