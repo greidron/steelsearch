@@ -763,6 +763,23 @@ another.
   `target/v073-merge-default-paired-after-reverse-20260916/summary.json`, and
   `target/v073-merge-default-paired-before-reverse-20260916/summary.json`.
 
+### PP-030: Do Not Delay Native Merge Scheduling Beyond Eight Segments
+
+- Tags: `refresh`, `collector`, `native-query`, `measurement`.
+- The retained 512-floor policy keeps Tantivy's native default of eight
+  segments required for a merge. A candidate raised only this trigger to 16,
+  leaving the writer, documents, merge algorithm, visibility, and query paths
+  unchanged. It passed the full HTTP fixture: 1,198 passed, 0 failed, 0
+  skipped at `target/v073-merge-segments16-full-compat-20260916/search-compat-report.json`.
+- The first same-host three-node mixed comparison decisively rejected it:
+  throughput was 0.963x and ranking mean/p95/p99 were
+  0.877x/0.883x/0.896x versus the retained eight-segment policy. Refresh did
+  not materially improve. This exceeds the fixed budget in a core failed
+  scenario, so an inverse-order repeat would not make the candidate eligible.
+  Restore the default native trigger. Evidence:
+  `target/v073-merge-segments16-paired-before-20260916/summary.json` and
+  `target/v073-merge-segments16-paired-after-20260916/summary.json`.
+
 ## Review Queries
 
 Use these exact searches before beginning a change, then add the result to a
