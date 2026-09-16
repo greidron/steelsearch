@@ -4894,6 +4894,21 @@ impl TantivySearchState {
         #[cfg(feature = "diagnostic-search-timing")]
         let _commit_timer = diagnostic_search::start(&diagnostic_search::REFRESH_TANTIVY_COMMIT);
         let commit_started = std::time::Instant::now();
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _prepare_commit_timer =
+            diagnostic_search::start(&diagnostic_search::REFRESH_TANTIVY_PREPARE_COMMIT);
+        #[cfg(feature = "diagnostic-search-timing")]
+        let prepared_commit = writer.prepare_commit().map_err(tantivy_error)?;
+        #[cfg(feature = "diagnostic-search-timing")]
+        drop(_prepare_commit_timer);
+        #[cfg(feature = "diagnostic-search-timing")]
+        let _publish_commit_timer =
+            diagnostic_search::start(&diagnostic_search::REFRESH_TANTIVY_PUBLISH_COMMIT);
+        #[cfg(feature = "diagnostic-search-timing")]
+        prepared_commit.commit().map_err(tantivy_error)?;
+        #[cfg(feature = "diagnostic-search-timing")]
+        drop(_publish_commit_timer);
+        #[cfg(not(feature = "diagnostic-search-timing"))]
         writer.commit().map_err(tantivy_error)?;
         timings.commit_nanos = elapsed_nanos_u64(commit_started.elapsed());
         #[cfg(feature = "diagnostic-search-timing")]

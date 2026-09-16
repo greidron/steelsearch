@@ -847,6 +847,35 @@ another.
   both throughput and refresh latency. Evidence:
   `target/v073-merge-worker-one-paired-three-20260916/result.json`.
 
+### PP-034: Commit Preparation Dominates, but Lazy Tokenization Does Not Close the Gate
+
+- Tags: `refresh`, `write-conversion`, `measurement`, `native-query`.
+- A diagnostic-only split of Tantivy's public `IndexWriter::commit` into its
+  documented `prepare_commit().commit()` stages was added behind the existing
+  `diagnostic-search-timing` feature. Ordinary and release builds retain the
+  unmodified `writer.commit()` call. The three-node mixed diagnostic recorded
+  38 sparse samples: native commit mean 6.286ms, prepare mean 5.785ms, and
+  publish mean 0.293ms. Prepare therefore includes nearly all observed native
+  commit time; metadata publication is not the primary target. Evidence:
+  `target/v073-commit-split-diagnostic-three-20260916/result.json` and node
+  stderr samples in that directory.
+- A candidate changed the required OpenSearch-standard tokenizer from eager
+  character/token vectors to a lazy reusable-token stream while preserving the
+  tested Unicode, emoji, apostrophe, and UTF-16 token-boundary behavior. Focused
+  tokenizer and queued-refresh regressions passed, and the full non-plugin HTTP
+  fixture passed 1,198 / 0 / 0 at
+  `target/v073-lazy-tokenizer-full-compat-20260916/search-compat-report.json`.
+  Its short paired mixed diagnostic looked favorable (0.8% higher throughput;
+  refresh mean/p95/p99 1.012x/1.017x/1.046x faster) but is diagnostic-only.
+- Reject and revert the lazy tokenizer after the full fixed-v0.6.0 gate at
+  `target/v073-lazy-tokenizer-full-gate-20260916/result.json` completed with
+  verified executable inputs and failed both repeated paired checks. The
+  recurring failures include all single-node write and refresh percentiles, all
+  three-node write percentiles, three-node ranking mean/p95, and three-node
+  refresh mean/p95/p99. Do not infer gate acceptance from a short mixed ABBA;
+  any future tokenizer candidate must first show a material prepare-stage
+  reduction and then pass the full fixed gate.
+
 ## Review Queries
 
 Use these exact searches before beginning a change, then add the result to a
