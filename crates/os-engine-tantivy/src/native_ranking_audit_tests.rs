@@ -84,13 +84,17 @@ fn native_authority_metadata_refresh_and_replacement_do_not_build_source_statist
                 .as_ref()
                 .is_some_and(|state| state.native_text_compatibility.supports("title")));
         } else {
-            assert!(index.documents.shards.values().filter(|shard| !shard.is_empty()).all(
-                |shard| {
-                    shard.search_state.as_ref().is_some_and(|state| {
-                        state.native_text_compatibility.supports("title")
-                    })
-                }
-            ));
+            assert!(index
+                .documents
+                .shards
+                .values()
+                .filter(|shard| !shard.is_empty())
+                .all(|shard| {
+                    shard
+                        .search_state
+                        .as_ref()
+                        .is_some_and(|state| state.native_text_compatibility.supports("title"))
+                }));
         }
         // Single-shard dispatch applies its historical-BM25 fallback above the
         // compound-tree check. Multi-shard authority is rejected by the empty,
@@ -817,10 +821,22 @@ fn native_phrase_scores_remain_authoritative_when_other_shards_lack_query_terms(
         "match_phrase": {"body": {"query": "alpha beta", "slop": 1}}
     }))
     .unwrap();
-    let phrase_shard = index.documents.shard_id_for_write("phrase-a", Some("tenant-a"));
+    let phrase_shard = index
+        .documents
+        .shard_id_for_write("phrase-a", Some("tenant-a"));
     assert_eq!(phrase_shard, 2);
-    assert_eq!(index.documents.shard_id_for_write("other-c", Some("tenant-b")), 1);
-    assert_eq!(index.documents.shard_id_for_write("other-d", Some("tenant-d")), 0);
+    assert_eq!(
+        index
+            .documents
+            .shard_id_for_write("other-c", Some("tenant-b")),
+        1
+    );
+    assert_eq!(
+        index
+            .documents
+            .shard_id_for_write("other-d", Some("tenant-d")),
+        0
+    );
     assert!(index.native_phrase_score_is_authoritative(&query, None));
 
     let expected = native_scores(index, &query, false);
@@ -1481,7 +1497,7 @@ fn native_repeated_phrase_frequency_audit() {
                 let normalized =
                     state
                         .bm25_field_statistics
-                        .wrap(Box::new(phrase), field, &state.searcher);
+                        .wrap(Box::new(phrase), field, &state.searcher, Arc::new(Vec::new()));
                 let boosted = BoostQuery::new(
                     normalized,
                     body["match_phrase"]["body"]["boost"].as_f64().unwrap() as f32,
@@ -1732,26 +1748,26 @@ fn tantivy_two_term_sloppy_phrase_score_diverges_from_the_exact_native_phrase_sc
                 continue;
             }
             for state in &states {
-                let exact = build_tantivy_match_phrase_query(
-                    state,
-                    &field,
-                    &text,
-                    slop,
-                    None,
-                    false,
-                )
-                .unwrap()
-                .unwrap();
+                let exact =
+                    build_tantivy_match_phrase_query(state, &field, &text, slop, None, false)
+                        .unwrap()
+                        .unwrap();
                 let exact = maybe_boost_tantivy_query(exact, boost);
                 let terms = tokens
                     .iter()
                     .enumerate()
-                    .map(|(offset, token)| (offset, Term::from_field_text(state.fields[&field].field, token)))
+                    .map(|(offset, token)| {
+                        (
+                            offset,
+                            Term::from_field_text(state.fields[&field].field, token),
+                        )
+                    })
                     .collect();
                 let tantivy = state.bm25_field_statistics.wrap(
                     Box::new(PhraseQuery::new_with_offset_and_slop(terms, slop as u32)),
                     state.fields[&field].field,
                     &state.searcher,
+                    Arc::new(Vec::new()),
                 );
                 let tantivy = maybe_boost_tantivy_query(tantivy, boost);
                 let limit = state.searcher.num_docs() as usize;

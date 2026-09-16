@@ -4788,15 +4788,15 @@ fn default_search_thread_pool_size() -> u64 {
 }
 
 fn default_search_thread_pool_size_for_parallelism(parallelism: usize) -> u64 {
-    u64::try_from(parallelism.max(1).saturating_mul(2)).unwrap_or(u64::MAX)
+    parallelism.max(1) as u64
 }
 
 #[cfg(test)]
 #[test]
-fn default_search_thread_pool_size_allows_two_requests_per_cpu() {
-    assert_eq!(default_search_thread_pool_size_for_parallelism(0), 2);
-    assert_eq!(default_search_thread_pool_size_for_parallelism(1), 2);
-    assert_eq!(default_search_thread_pool_size_for_parallelism(3), 6);
+fn default_search_thread_pool_size_matches_available_parallelism() {
+    assert_eq!(default_search_thread_pool_size_for_parallelism(0), 1);
+    assert_eq!(default_search_thread_pool_size_for_parallelism(1), 1);
+    assert_eq!(default_search_thread_pool_size_for_parallelism(3), 3);
 }
 
 fn runtime_thread_pool_entry_blocked(

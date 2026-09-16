@@ -22,6 +22,7 @@ impl Site {
 }
 
 pub(crate) static SEARCH_SNAPSHOT: Site = Site::new("search_snapshot");
+pub(crate) static VECTOR_UNCACHED_READ: Site = Site::new("vector_uncached_read");
 pub(crate) static REFRESH_PLAN: Site = Site::new("refresh_plan");
 pub(crate) static REFRESH_PUBLISH: Site = Site::new("refresh_publish");
 pub(crate) static REFRESH_OWNER: Site = Site::new("refresh_owner");

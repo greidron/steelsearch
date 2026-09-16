@@ -2488,6 +2488,23 @@ impl IndexEngine for TantivyEngine {
                 };
                 #[cfg(feature = "diagnostic-search-timing")]
                 drop(_plan_timer);
+                #[cfg(feature = "diagnostic-search-timing")]
+                for plan in &plans {
+                    match plan {
+                        ShardRefreshPlan::Busy => {
+                            diagnostic_search::event(&diagnostic_search::REFRESH_PLAN_BUSY)
+                        }
+                        ShardRefreshPlan::Incremental { .. } => diagnostic_search::event(
+                            &diagnostic_search::REFRESH_PLAN_INCREMENTAL,
+                        ),
+                        ShardRefreshPlan::Replace { .. } => {
+                            diagnostic_search::event(&diagnostic_search::REFRESH_PLAN_REPLACE)
+                        }
+                        ShardRefreshPlan::Full { .. } => {
+                            diagnostic_search::event(&diagnostic_search::REFRESH_PLAN_FULL)
+                        }
+                    }
+                }
                 if plans
                     .iter()
                     .any(|plan| matches!(plan, ShardRefreshPlan::Busy))
@@ -4014,10 +4031,17 @@ impl TantivyEngine {
         let Some(index_name) = single_index_name else {
             return Ok(None);
         };
+        #[cfg(not(feature = "diagnostic-lock-timing"))]
         let store = self
             .store
             .read()
             .expect("tantivy engine store rwlock poisoned");
+        #[cfg(feature = "diagnostic-lock-timing")]
+        let store = diagnostic_lock::acquire(&diagnostic_lock::VECTOR_UNCACHED_READ, || {
+            self.store
+                .read()
+                .expect("tantivy engine store rwlock poisoned")
+        });
         let Some(index) = store.indices.get(index_name) else {
             return Err(EngineError::IndexNotFound {
                 index: index_name.to_string(),
@@ -6453,6 +6477,38 @@ fn build_tantivy_match_query(
     }
     match indexed_field.field_type {
         TantivyFieldType::Text => {
+            if query_text.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric() || byte.is_ascii_whitespace()
+            }) {
+                let terms = tokenize_phrase_text(&query_text);
+                let query: Box<dyn TantivyQueryTrait> = if terms.len() == 1 {
+                    Box::new(TermQuery::new(
+                        Term::from_field_text(indexed_field.field, &terms[0]),
+                        IndexRecordOption::WithFreqs,
+                    ))
+                } else {
+                    Box::new(BooleanQuery::new(
+                        terms
+                            .into_iter()
+                            .map(|term| {
+                                (
+                                    Occur::Should,
+                                    Box::new(TermQuery::new(
+                                        Term::from_field_text(indexed_field.field, &term),
+                                        IndexRecordOption::WithFreqs,
+                                    )) as Box<dyn TantivyQueryTrait>,
+                                )
+                            })
+                            .collect(),
+                    ))
+                };
+                return Ok(Some(search_state.bm25_field_statistics.wrap(
+                    query,
+                    indexed_field.field,
+                    &search_state.searcher,
+                    Arc::clone(&search_state.historical_bm25_searchers),
+                )));
+            }
             let parser = QueryParser::for_index(&search_state.index, vec![indexed_field.field]);
             parser
                 .parse_query(&query_text)
@@ -6461,6 +6517,7 @@ fn build_tantivy_match_query(
                         query,
                         indexed_field.field,
                         &search_state.searcher,
+                        Arc::clone(&search_state.historical_bm25_searchers),
                     ))
                 })
                 .map_err(tantivy_error)
@@ -6532,6 +6589,7 @@ fn build_tantivy_match_phrase_query(
                     query,
                     indexed_field.field,
                     &search_state.searcher,
+                    Arc::clone(&search_state.historical_bm25_searchers),
                 )));
             }
             let parser = QueryParser::for_index(&search_state.index, vec![indexed_field.field]);
@@ -6543,6 +6601,7 @@ fn build_tantivy_match_phrase_query(
                         query,
                         indexed_field.field,
                         &search_state.searcher,
+                        Arc::clone(&search_state.historical_bm25_searchers),
                     ))
                 })
                 .map_err(tantivy_error)
@@ -15769,15 +15828,6 @@ impl StoredIndex {
         query: &Query,
         selected_shards: Option<&BTreeSet<u32>>,
     ) -> bool {
-        // Tantivy scores only its current reader. OpenSearch keeps deleted reader
-        // generations visible to BM25 statistics until those readers are merged.
-        // Keep Tantivy for candidate collection, but use the retained-statistics
-        // scorer for text queries while such a generation is still observable.
-        if query_uses_bm25_text_scoring(query)
-            && self.selected_shards_have_historical_bm25_readers(selected_shards)
-        {
-            return false;
-        }
         self.native_phrase_score_is_authoritative(query, selected_shards)
             || self.native_compound_score_is_authoritative(query, selected_shards)
     }
@@ -52219,6 +52269,67 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
+    fn simple_ascii_match_uses_parser_equivalent_native_terms() {
+        let engine = TantivyEngine::default();
+        engine
+            .create_index(CreateIndexRequest {
+                index: "ascii-match".to_string(),
+                settings: serde_json::json!({}),
+                mappings: serde_json::json!({"properties": {"title": {"type": "text"}}}),
+            })
+            .unwrap();
+        for (id, title) in [
+            ("one", "premium checkout"),
+            ("two", "premium catalog"),
+            ("three", "checkout dashboard"),
+        ] {
+            engine
+                .index_document(IndexDocumentRequest {
+                    index: "ascii-match".to_string(),
+                    id: id.to_string(),
+                    source: serde_json::json!({"title": title}),
+                })
+                .unwrap();
+        }
+        engine
+            .refresh(RefreshRequest {
+                indices: vec!["ascii-match".to_string()],
+            })
+            .unwrap();
+
+        let store = engine.store.read().unwrap();
+        let state = store.indices["ascii-match"].search_state.as_ref().unwrap();
+        let field = state.fields["title"].field;
+        let direct = build_tantivy_match_query(
+            state,
+            "title",
+            &Value::String("Premium checkout".to_string()),
+            None,
+            None,
+            None,
+            0,
+            true,
+            false,
+        )
+        .unwrap()
+        .unwrap();
+        let parser = QueryParser::for_index(&state.index, vec![field])
+            .parse_query("Premium checkout")
+            .unwrap();
+        let parsed = state.bm25_field_statistics.wrap(
+            parser,
+            field,
+            &state.searcher,
+            Arc::clone(&state.historical_bm25_searchers),
+        );
+        let collector = TopDocs::with_limit(10);
+        assert_eq!(
+            state.searcher.search(direct.as_ref(), &collector).unwrap(),
+            state.searcher.search(parsed.as_ref(), &collector).unwrap(),
+        );
+    }
+
+    #[test]
     fn multi_field_schema_keeps_explicit_subfields() {
         let fields = read_field_mappings(&serde_json::json!({"properties": {
             "value": {"type": "text", "fields": {"raw": {"type": "keyword"}}},
@@ -53054,7 +53165,7 @@ mod tests {
             }
         }))
         .unwrap();
-        assert!(!index.native_query_score_is_authoritative(
+        assert!(index.native_query_score_is_authoritative(
             &query,
             Some(&BTreeSet::from([shard_id]))
         ));

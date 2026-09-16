@@ -390,6 +390,8 @@ another.
 | 2026-09-15 | Measure refresh artifact selection before changing incremental refresh or replay behavior. | `refresh`, `replay`, `measurement` | Matched PP-002, PP-007, and the rejected deferred-replay batch experiment. The diagnostic-only plan events are emitted after the plan is captured and before execution; normal and release builds exclude them. | No production path changed. The 45-second, 5,000-document, four-client, three-node mixed run at `target/v0711-refresh-plan-diagnostic-20260915/` used diagnostic SHA-256 `f92ac3e6a81c23a8adee6531244309dd0611bad1e208bb4747a84ea81c642f36`, completed 39,063 requests without errors, and recorded 3,471 artifact plans: 3,462 incremental (99.74%), 9 full (the initial three shards on each node), 0 replace, and 0 busy. Incremental refresh is not being lost to late replay or replacement in this workload. Do not revisit replay batching, refresh-plan locking, or an append-only eligibility relaxation without a workload that records non-incremental plans; investigate the native incremental add/commit/reload and vector-cache work instead. |
 | 2026-09-15 | Test whether the enlarged v0.7.1 search admission pool causes the single-node vector tail. | `vector`, `response`, `measurement` | Matched PP-010 and PP-011. This is a runtime environment diagnostic only; no product default changed. | Rejected. The retained v0.7.1 binary's 45-second, four-client, single-node vector/hybrid run at `target/v0711-knn-single-repeat-20260915/` measured 460.55 ops/s, vector 15.973ms mean / 81.828ms p95 / 118.781ms p99, and hybrid 11.038ms / 24.831ms / 76.344ms. With `STEELSEARCH_SEARCH_THREAD_POOL_SIZE=3`, `target/v0711-knn-single-pool3-diagnostic-20260915/` measured 456.87 ops/s, vector 16.286ms / 81.969ms / 117.063ms, and hybrid 10.440ms / 22.771ms / 76.402ms. It does not improve the demonstrated vector tail and lowers aggregate throughput. Do not shrink the global search admission pool for vector performance; inspect vector cache invalidation and request/refresh interference instead. |
 
+| 2026-09-15 | Measure single-node uncached vector read-lock contention before moving vector execution to a snapshot. | `vector`, `refresh`, `response`, `measurement` | Matched PP-007, PP-010, and PP-011. Pinned Tantivy 0.21.1 has no vector/k-NN/ANN execution API. The repository's `hnsw_*` helpers rebuild a complete graph per request and are test-only; they are not a native replacement candidate. | Rejected. Diagnostic-only SHA-256 `8a687087d2fa83ed31eb6be1f3534b1ddfaca84c60a96d8a3fd5cf8f3e2805e5` ran the 45-second, 5,000-document, four-client, single-node mixed workload at `target/v072-vector-lock-diagnostic-20260915/` without errors. `vector_uncached_read` had 70 samples: mean/max wait 0.000059/0.000320ms and mean/max hold 1.667/15.547ms, while vector response latency was 16.430ms mean / 84.588ms p95 / 121.064ms p99. It cannot explain the tail. `refresh_publish` instead waited 33.094ms mean and 72.934ms max, but this only proves another reader holds the store lock, not that vector does. Do not add snapshot cloning or retain stale vector result caches on this evidence; next attribute HTTP blocking execution and the refresh/search CPU overlap. |
+
 ### Correction: PP-012 Tokenizer Measurement
 
 - The earlier PP-012 Change Review incorrectly compared a
@@ -411,6 +413,335 @@ another.
   It remains rejected and reverted because it does not produce a reproducible
   fixed-gate improvement. Future candidates must compare executable feature
   sets identically before interpreting throughput or latency differences.
+
+### PP-013: Read-Lock Substitution Is Not Evidence of a BM25 Cache Bottleneck
+
+- A candidate changed the generation-scoped historical BM25 statistics cache
+  from `Mutex` to `RwLock` after the cache itself raised the exact v0.6.0
+  three-node workload from 816.53 to 845.84 ops/s. The cache remains required
+  for correctness and avoids repeated historical-reader scans; only the lock
+  substitution is rejected.
+- The separate release candidate SHA-256
+  `639f20c11377c65679f8e4a286dbc4dc0fbfc3d6f39350a5650f9121561c3652`
+  measured 846.38 and 845.00 ops/s in two identical 60-second, 5,000-document,
+  four-client, three-node runs. Ranking was 5.423/9.333/12.281ms and
+  5.446/9.204/12.080ms (mean/p95/p99); refresh was
+  9.408/19.279/24.828ms and 9.453/19.563/26.290ms. Evidence:
+  `target/v072-historical-bm25-rwlock-v060-three-20260915/summary.json` and
+  `target/v072-historical-bm25-rwlock-v060-three-repeat-20260915/summary.json`.
+- The throughput effect is within run-to-run variation and does not close the
+  fixed baseline gap. Revert the `RwLock` substitution, retain the cache, and
+  do not revisit cache lock mechanics without contention evidence from the
+  actual ranking workload.
+
+### PP-014: Native Hit Reuse Does Not Explain Ranking Loss
+
+- The ranking-only, three-node comparison isolates a material loss: the current
+  native candidate measured 1,059.17 ops/s and 3.765ms mean versus the fixed
+  v0.6.0 executable's 1,603.70 ops/s and 2.484ms mean under the identical
+  45-second, 5,000-document, four-client workload. Evidence:
+  `target/v072-pool-default-ranking-only-20260915/summary.json` and
+  `target/v060-ranking-only-20260915/summary.json`.
+- A narrow candidate reused already materialized authoritative native hits in
+  the uncomplicated response path instead of a source-document score lookup.
+  It preserved the benchmark-shape and page/score/min_score tests, but measured
+  1,057.61 ops/s and 3.771ms mean. Revert it: the existing paginated native
+  collector already avoids full hit materialization, and this outer path is not
+  the ranking bottleneck. Evidence:
+  `target/v072-native-direct-ranking-only-20260915/summary.json`.
+- Next attribution must separate HTTP/runtime queueing from shard query build,
+  Tantivy collection, and hit materialization. Do not retry response-loop
+  micro-optimizations without a measured allocation or CPU contribution.
+
+### PP-015: Do Not Globally Serialize Sharded Search Fan-Out
+
+- A three-node ranking diagnostic showed low single-request engine time but a
+  large four-client end-to-end loss, so the page fan-out threshold was raised
+  from 2,048 to 10,000 documents. This keeps the 5,000-document benchmark on
+  the caller thread while preserving refresh artifact parallelism.
+- The correctness window and snapshot-reference tests passed, but the exact
+  60-second mixed workload regressed to 833.42 ops/s. Ranking was
+  5.474/9.411/12.247ms and refresh 10.368/21.254/30.444ms
+  (mean/p95/p99). Evidence:
+  `target/v072-sequential-search-fanout-v060-three-20260915/summary.json`.
+- Revert the threshold. The observed multi-request queueing does not justify
+  a fixed sequential policy; a future candidate must use measured request
+  concurrency without degrading one-request sharded collection.
+
+### PP-016: Restore the Fixed-Baseline Search Admission Default
+
+- A source comparison found that v0.6.0 admitted one search request per
+  available CPU, while a later diagnostic commit doubled the default to two.
+  On the three-CPU benchmark host this changed every local daemon from three
+  to six admitted searches, so it was not an identical fixed-baseline resource
+  setting.
+- With the current candidate executable, explicit pool sizes 3, 2, and 1
+  measured 855.55, 862.61, and 853.59 ops/s respectively in the exact
+  three-node workload. The pool-2 experiment is topology-specific and is not a
+  product default. Restore the baseline-compatible default of one per CPU,
+  preserving the explicit environment override. Evidence:
+  `target/v072-historical-bm25-pool3-v060-three-20260915/summary.json`,
+  `target/v072-historical-bm25-pool2-v060-three-20260915/summary.json`, and
+  `target/v072-historical-bm25-pool1-v060-three-20260915/summary.json`.
+- The first rebuilt default candidate measured 849.12 ops/s, which is inside
+  current run variation and still below the fixed gate. Keep the restore for
+  comparable resource settings, but do not claim it closes the performance
+  budget without repeated paired evidence.
+
+### PP-017: Refresh Directory Lock Fast Path Does Not Reduce Tail Latency
+
+- Diagnostic timing initially suggested that every Tantivy directory lock took
+  the refresh directory's shared wait mutex. A candidate first attempted the
+  underlying nonblocking RAM-directory lock and entered the existing mutex and
+  condition-variable path only after contention. The blocking wait and wake
+  contract were otherwise unchanged.
+- The focused refresh-directory lock tests passed, but the ordinary candidate
+  executable measured 836.47 ops/s in the exact 60-second, 5,000-document,
+  four-client, three-node workload. Ranking was 5.494/9.552/12.350ms and
+  refresh was 10.218/21.269/31.479ms (mean/p95/p99), all worse than the
+  849.12 ops/s baseline-compatible candidate. Evidence:
+  `target/v072-refresh-lock-fastpath-v060-three-20260915/summary.json`.
+- Revert the fast path. Do not infer a mutex bottleneck from call frequency;
+  require measured lock-wait time or contention attribution before changing
+  refresh-directory locking again.
+
+### PP-018: Ranking Loss Persists Without Multi-Request Queueing
+
+- A sequential, same-host ranking-only comparison used one client, three
+  nodes, 5,000 documents, and the preserved 45-second workload. The v0.6.0
+  executable measured 1,128.97 ops/s and 0.877ms mean latency; the current
+  baseline-compatible candidate measured 774.18 ops/s and 1.282ms. This is a
+  31.4% throughput loss and a 46.2% request-latency increase before the
+  four-client admission queue can contribute.
+- Evidence is
+  `target/v060-current-host-ranking-only-clients1-20260915/summary.json` and
+  `target/v072-pool-default-ranking-only-clients1-20260915/summary.json`.
+  The measurement is diagnostic, not a full fixed-gate result.
+- Do not pursue another static search-pool or lock-tuning candidate as the
+  primary ranking repair. Attribute the compound BM25/phrase collector and
+  score construction work per request first, preserving the current exact
+  score, page, and min_score contracts.
+
+### PP-019: Native ASCII Match Construction Is a Small, Verified Improvement
+
+- `build_tantivy_match_query` previously sent every text `match` value through
+  `QueryParser`, including benchmark values consisting only of ASCII letters,
+  digits, and whitespace. Tantivy 0.21.1 exposes `TermQuery` and
+  `BooleanQuery` directly, so the bounded simple-text form can be constructed
+  natively without re-parsing query syntax. Punctuation, non-ASCII text,
+  operators, fuzzy matching, and `minimum_should_match` remain on their
+  established paths.
+- The direct query was compared with `QueryParser` under the same wrapped BM25
+  statistics and yielded identical ranked document addresses and scores in the
+  focused regression test. The full HTTP fixture then passed `1198/1198`,
+  failed `0`, skipped `0`, at
+  `target/v072-direct-ascii-match-full-compat-20260915/search-compat-report.json`.
+- In the same-host, three-node, one-client, 45-second ranking-only diagnostic,
+  the candidate measured 784.97 ops/s and 1.264ms mean versus 774.18 ops/s and
+  1.282ms for the immediately preceding baseline-compatible candidate. This is
+  a small approximately 1.4% improvement, not evidence that query parsing is
+  the principal ranking loss. Preserve the bounded native path and continue
+  attribution at BM25/collector construction. Evidence:
+  `target/v072-direct-ascii-match-ranking-only-clients1-20260915/summary.json`.
+
+### PP-020: Reuse Tantivy BM25 Statistics Only After Equality Is Proven
+
+- Tantivy 0.21.1's native `Searcher` BM25 provider uses the same statistics as
+  the compatibility wrapper only when there are no retained historical readers
+  and the queried field occurs in every document in the current snapshot. The
+  wrapper's first scored query already records the compatibility field document
+  count. On later matching-generation queries, equality with Tantivy's native
+  total document count proves the narrow condition without a source scan.
+- The native path is therefore bypassed for sparse fields, uncached fields,
+  mismatched generations, and every historical-reader case. Focused dense-field
+  score equality and the existing snapshot/deletion regression test passed.
+  The full HTTP fixture then passed `1198/1198`, failed `0`, skipped `0`, at
+  `target/v072-dense-bm25-native-full-compat-20260915/search-compat-report.json`.
+- The same three-node, one-client, 45-second ranking-only diagnostic measured
+  808.70 ops/s and 1.227ms mean. That is +3.0% throughput and -3.0% mean
+  latency relative to the direct-ASCII candidate, and +4.5%/-4.3% relative to
+  the preceding baseline-compatible candidate. An immediate same-host
+  four-client mixed three-node pair also improved from 776.65 to 796.14 ops/s;
+  ranking mean/p99 changed from 5.272/11.738ms to 5.215/10.817ms and refresh
+  mean/p99 from 10.824/70.481ms to 10.359/67.525ms. Preserve this native path;
+  it does not close the fixed v0.6.0 gate. Evidence:
+  `target/v072-dense-bm25-native-ranking-only-clients1-20260915/summary.json`,
+  `target/v072-direct-ascii-paired-v060-three-20260915/summary.json`, and
+  `target/v072-dense-bm25-native-v060-three-20260915/summary.json`.
+
+### PP-021: Remove the Identity Boost Wrapper from Normalized BM25 Queries
+
+- Tantivy 0.21.1's `BoostQuery::new(query, 1.0)` always allocates a
+  `BoostWeight` and adds scorer indirection, even though multiplication by one
+  preserves the query's score exactly. The normalized BM25 wrapper had added
+  this identity layer around every query. Actual query boosts are composed
+  below this wrapper and are unaffected.
+- The wrapper now retains the original boxed query and clones it through
+  Tantivy's `Query::box_clone` contract. Dense-field equality and historical
+  snapshot/deletion tests passed. The full HTTP fixture passed `1198/1198`,
+  failed `0`, skipped `0`, at
+  `target/v072-bm25-noop-boost-full-compat-20260915/search-compat-report.json`.
+- An immediate same-host ranking-only pair measured 815.24 ops/s and 1.217ms
+  mean for the no-op-boost candidate versus 791.16 ops/s and 1.254ms for the
+  preceding dense-native executable: +3.0% throughput and -3.0% mean latency.
+  A mixed three-node follow-up measured 793.18 ops/s with ranking
+  5.228/8.901/11.211ms and refresh 10.696/33.472/68.820ms
+  (mean/p95/p99), all with zero errors. Preserve this removal; it is a verified
+  native hot-path reduction, not a replacement for the full fixed v0.6.0 gate.
+  Evidence:
+  `target/v072-bm25-noop-boost-ranking-only-clients1-20260915/summary.json`
+  and
+  `target/v072-dense-bm25-native-paired-ranking-only-clients1-20260915/summary.json`,
+  `target/v072-bm25-noop-boost-v060-three-20260915/summary.json`.
+
+### PP-022: Do Not Elide the Normalized BM25 Wrapper at Query Build Time
+
+- A follow-up candidate returned the unwrapped Tantivy query from
+  `FieldStatisticsCache::wrap` after the dense-field cache had proved native
+  statistics equal. Sparse fields and retained readers remained wrapped, but
+  the candidate widened the construction-time distinction without removing the
+  native term/boolean weight work itself.
+- Actual focused regressions used full module-qualified names and passed:
+  `native_bm25::tests::dense_field_reuses_tantivy_native_bm25_statistics` and
+  `native_bm25::tests::field_statistics_follow_snapshots_and_segment_deletions`.
+  The paired ranking-only measurement was inconclusive: wrapper elision
+  measured 807.64 ops/s and 1.229ms mean versus 805.28 ops/s and 1.232ms for
+  the immediately following retained-wrapper executable. This is within run
+  variation and does not justify a broader execution-path distinction.
+- Revert query-build-time elision. Keep the already verified in-weight native
+  statistics branch from PP-020 and focus on the measured sharded fan-out and
+  native collector work. Evidence:
+  `target/v072-bm25-wrapper-elision-ranking-only-clients1-20260915/summary.json`
+  and
+  `target/v072-bm25-noop-boost-paired-after-wrapper-ranking-only-clients1-20260915/summary.json`.
+
+### PP-023: Attribute Sharded Fan-Out Before Revising Its Policy
+
+- A latest diagnostic executable for the retained no-op-boost/native-statistics
+  candidate measured three-node, one-client ranking-only execution. Mean
+  `engine_search` was 442.7us, `sharded_page` 352.0us, candidate fan-out
+  286.6us, and summed per-shard Tantivy search samples 86.9us. Query build,
+  hit materialization, page reduction, and response build were respectively
+  8.3us, 1.9us, 0.5us, and 14.6us. The BM25 weight span was sampled 1,257
+  times at 31.2us mean, reflecting nested scorer construction rather than a
+  source scoring fallback.
+- The benchmark host has three available CPUs and no `RAYON_NUM_THREADS`
+  override. Its colocated three-node processes each use the Rayon default, so
+  static worker-count and sequential-fanout changes cannot be inferred from
+  the fan-out span alone. PP-015 and PP-017 already reject those policies on
+  preserved mixed workloads.
+- Do not retry global Rayon or fan-out thresholds. A next candidate must prove
+  that nested request/shard parallelism can be suppressed only when it is
+  oversubscribed, while preserving the measured refresh and ranking tails.
+  Evidence:
+  `target/v072-bm25-noop-boost-ranking-diagnostic-20260915/steelsearch-three-node/cluster/node-*/logs/stderr.log`.
+
+### PP-024: Do Not Cache Dynamic Tantivy Weights by Debug Representation
+
+- Tantivy 0.21.1 `Weight` is `Send + Sync + 'static`, so a bounded
+  per-field, per-snapshot scoring-weight cache was tested. It forwarded every
+  `Weight` method, including the pruning path, to preserve collector behavior.
+  The key was the immutable query debug representation and the cache was
+  cleared with `TantivySearchState` on refresh.
+- Full module-qualified BM25 dense and historical snapshot tests passed. The
+  performance result rejected the candidate: under an immediate same-host
+  one-client ranking-only pair, the cache candidate measured 791.02 ops/s and
+  1.255ms mean versus 821.77 ops/s and 1.208ms for the retained no-op-boost
+  executable. Debug formatting, cache lookup, and forwarding overhead exceed
+  repeated weight construction for this workload.
+- Revert the entire weight cache. Do not revive it with a different string key
+  unless profiling proves key construction and cache synchronization are below
+  the recoverable scorer-construction cost. Evidence:
+  `target/v072-bm25-weight-cache-ranking-only-clients1-20260915/summary.json`
+  and
+  `target/v072-bm25-noop-boost-paired-after-weight-cache-ranking-only-clients1-20260915/summary.json`.
+
+### PP-025: Pinned Tantivy Does Not Expose Native TermWeight Construction
+
+- The public `Bm25Weight` API is available in the registry source, but the
+  pinned vendored Tantivy surface used by this workspace does not re-export
+  `TermWeight`. A proposed ASCII-only cache would have reused a snapshot-bound
+  `Bm25Weight` while constructing the ordinary native `TermWeight`, but that
+  construction is unavailable without depending on private vendored internals.
+- The compile check failed on the missing public `tantivy::query::TermWeight`
+  import before a candidate binary was made. Revert the prototype immediately;
+  do not patch or fork Tantivy internals merely to cache term weights. The
+  existing `TermQuery` and native BM25 path remain authoritative.
+
+### PP-026: Conditional Sequential Fan-Out Does Not Reduce Mixed-Load Tails
+
+- A request-local guard retained Rayon fan-out for a single admitted search and
+  selected sequential shard execution only when `active searches * selected
+  shards > available CPUs`. It changed no query, scorer, collector, response,
+  or ordering contract.
+- The immediate same-host three-node, four-client, 60-second ranking/refresh
+  pair rejected the policy. The retained candidate measured 1,418.92 ops/s;
+  ranking mean/p95/p99 was 3.318/5.572/6.871ms and refresh was
+  2.291/4.127/5.286ms. The guarded candidate measured 1,412.47 ops/s;
+  ranking was 3.375/5.619/6.911ms and refresh was 2.260/4.131/5.364ms, with
+  zero errors in both runs. Throughput was `0.995x`; ranking mean/p95/p99 was
+  `0.983x`/`0.992x`/`0.994x` and refresh p99 was `0.986x` relative to the
+  immediately preceding executable.
+- Revert the guard. Do not retry admission-count-based sequential fan-out
+  without component evidence that scheduling, rather than native per-shard
+  work or refresh interference, dominates the affected tail. Evidence:
+  `target/v072-noop-boost-conditional-fanout-paired-baseline-20260915/summary.json`
+  and `target/v072-conditional-fanout-paired-candidate-20260915/summary.json`.
+
+### PP-027: Snapshot-Bound Native BM25 Exactness Need Not Re-Lock Per Weight
+
+- Tags: `native-query`, `collector`, `allocation`.
+- The normalized BM25 wrapper previously acquired its field-statistics map mutex
+  for every scored weight only to rediscover that an earlier same-snapshot
+  calculation had proved Tantivy statistics exact. The proof is valid only for
+  a matching reader generation with no historical reader and a dense field.
+- The cache now creates a per-field `AtomicBool` when a query is wrapped. It is
+  set only after the existing document-count equality check succeeds. Later
+  weights retain the generation and historical-reader guards and use Tantivy's
+  native provider without the mutex. Sparse fields, historical readers, and
+  mismatched generations retain the compatibility provider.
+- Focused dense and historical-reader tests passed. Immediate paired
+  ranking-only evidence improved throughput `1.046x`, mean `1.046x`, p95
+  `1.050x`, and p99 `1.155x`. The paired three-node, four-client mixed run
+  improved throughput `1.025x`; ranking mean/p95/p99 was
+  `1.025x`/`1.022x`/`1.028x`, and refresh mean/p95/p99 was
+  `1.024x`/`1.014x`/`1.021x`. Evidence:
+  `target/v072-bm25-atomic-exact-paired-baseline-ranking-20260915/summary.json`,
+  `target/v072-bm25-atomic-exact-paired-candidate-ranking-20260915/summary.json`,
+  `target/v072-bm25-atomic-exact-paired-baseline-mixed-20260915/summary.json`,
+  and `target/v072-bm25-atomic-exact-paired-candidate-mixed-20260915/summary.json`.
+
+### PP-028: Reject Small Native Writer Batching Despite Focused Gains
+
+- Tags: `refresh`, `write-conversion`, `native-query`, `allocation`.
+- The mixed three-node diagnostic attributed refresh tail to native artifact
+  execution and deferred replay, not to reader locks or response handling.
+  On the current candidate, sampled artifact execution was 73.707ms mean while
+  individual Tantivy commits were 5.969ms mean. The existing per-document
+  `IndexWriter::add_document` path sends one channel batch per document.
+- Pinned Tantivy 0.21.1 exposes `IndexWriter::run`, which accepts ordered
+  `UserOperation`s and sends a single native add batch while preserving delete
+  then add operation order. The candidate uses it only when the combined delete
+  and add count is at most 32. Larger refreshes retain the existing streaming
+  conversion and rollback path, preventing a broad preconversion allocation
+  from returning through this optimization. Conversion and writer errors still
+  call `rollback` before the refresh returns an error.
+- The partial conversion rollback regression and native array rollback suite
+  passed. The isolated non-plugin HTTP fixture completed 1,198 passed, 0
+  failed, 0 skipped with executable SHA-256
+  `93b4e07b143e29fa6fca2638e4fb722960c1b660bc5272b8495eb42a17488596` at
+  `target/v072-native-writer-batch-full-compat-20260916/search-compat-report.json`.
+- ABBA three-node, four-client, 60-second mixed measurements averaged 1.005x
+  throughput. Write mean/p95 were 1.010x/1.014x and refresh mean/p95/p99 were
+  1.006x/1.007x/1.003x relative to the prior atomic-BM25 candidate. The complete
+  fixed-v0.6.0 gate nevertheless failed both paired orders, including three-node
+  throughput and write/refresh tails. Reject this candidate and retain the
+  original per-document writer submission path. Evidence:
+  `target/v072-native-writer-batch-paired-before-20260916/summary.json`,
+  `target/v072-native-writer-batch-paired-after-20260916/summary.json`,
+  `target/v072-native-writer-batch-paired-after-reverse-20260916/summary.json`,
+  `target/v072-native-writer-batch-paired-before-reverse-20260916/summary.json`,
+  and `target/v072-native-writer-batch-full-gate-20260916/result.json`.
 
 ## Review Queries
 
