@@ -743,6 +743,26 @@ another.
   `target/v072-native-writer-batch-paired-before-reverse-20260916/summary.json`,
   and `target/v072-native-writer-batch-full-gate-20260916/result.json`.
 
+### PP-029: Keep the Small-Segment Merge Floor Under Mixed Refresh Load
+
+- Tags: `refresh`, `write-conversion`, `collector`, `native-query`.
+- Tantivy 0.21.1's default `LogMergePolicy` uses a 10,000-document layer
+  floor, while the compatibility implementation deliberately uses 512 to keep
+  repeated small refresh segments from merging into the initial seed segment.
+  This changes native segment scheduling only; document visibility, ordering,
+  and query semantics are unchanged.
+- A separately built default-policy candidate passed the full HTTP fixture:
+  1,198 passed, 0 failed, 0 skipped at
+  `target/v073-merge-default-full-compat-20260916/search-compat-report.json`.
+  However, ABBA three-node mixed runs averaged 0.991x throughput, refresh
+  mean/p95/p99 0.926x/0.894x/0.896x, and write p99 0.946x relative to the
+  retained 512-floor binary. Ranking modestly improved, but that cannot offset
+  the refresh and write regressions. Retain the 512 floor. Evidence:
+  `target/v073-merge-default-paired-before-20260916/summary.json`,
+  `target/v073-merge-default-paired-after-20260916/summary.json`,
+  `target/v073-merge-default-paired-after-reverse-20260916/summary.json`, and
+  `target/v073-merge-default-paired-before-reverse-20260916/summary.json`.
+
 ## Review Queries
 
 Use these exact searches before beginning a change, then add the result to a
