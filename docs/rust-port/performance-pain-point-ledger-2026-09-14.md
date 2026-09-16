@@ -780,6 +780,29 @@ another.
   `target/v073-merge-segments16-paired-before-20260916/summary.json` and
   `target/v073-merge-segments16-paired-after-20260916/summary.json`.
 
+### PP-031: ID Lookup Savings Do Not Explain the Remaining Mixed Refresh Gap
+
+- Tags: `refresh`, `replay`, `measurement`, `native-query`.
+- The retained v0.7.3 executable was measured against the preserved v0.6.0
+  executable in an ABBA, three-node, 60-second mixed-load diagnostic. This is
+  not a fixed-baseline performance gate: its purpose is to select the next
+  investigation target without changing the product.
+- The two v0.6.0 runs measured 863.856 and 877.281 ops/s, with refresh means
+  9.740 and 9.566ms. The two v0.7.3 runs measured 844.167 and 831.261 ops/s,
+  with refresh means 10.362 and 10.551ms. Averaged over each pair, v0.7.3
+  retained 0.962x throughput and had 1.084x refresh mean latency.
+- Across the three local-node snapshots, v0.7.3 reduced cumulative document-ID
+  lookup time from 1.632s to 0.571s, but its cumulative native Tantivy commit
+  time was effectively unchanged (32.287s versus 32.922s). Document-add and
+  reload counters were also slightly higher. These counters include setup and
+  are not request-time attribution, so they do not prove a single cause.
+- Do not reintroduce source-level ID lookup work or revisit merge-policy knobs
+  based on this result. PP-028 through PP-030 already reject those candidates.
+  Any new candidate must first isolate native commit scheduling or mixed
+  search/refresh CPU contention with a native API/source audit, then pass
+  functional verification and the full fixed-v0.6.0 gate.
+  Evidence: `target/v073-refresh-work-three-abba-20260916/result.json`.
+
 ## Review Queries
 
 Use these exact searches before beginning a change, then add the result to a
