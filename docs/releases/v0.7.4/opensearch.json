@@ -1,0 +1,3084 @@
+{
+  "generated_at_epoch_seconds": 1789533197,
+  "config": {
+    "corpus_size": 5000,
+    "vector_dimension": 384,
+    "vector_source": "default",
+    "vector_space_type": "default",
+    "duration_seconds": 60.0,
+    "clients": 4,
+    "number_of_shards": 3,
+    "number_of_replicas": 1,
+    "timeout_seconds": 10.0,
+    "query_mix": "write=15,lexical=15,ranking=15,facet=15,sort_filter=10,nested=10,vector=15,hybrid=10,refresh=5",
+    "seed": 13,
+    "profile": "minilm-knn",
+    "operation_resource_deltas": false,
+    "diagnostic_timeline": false,
+    "reuse_steelsearch_binary": false
+  },
+  "scenario_plan": [
+    {
+      "key": "opensearch-single-node",
+      "label": "OpenSearch 1-node",
+      "engine": "opensearch",
+      "topology": "single-node",
+      "node_count": 1
+    },
+    {
+      "key": "opensearch-three-node",
+      "label": "OpenSearch 3-node",
+      "engine": "opensearch",
+      "topology": "three-node",
+      "node_count": 3
+    }
+  ],
+  "scenarios": {
+    "opensearch-single-node": {
+      "config": {
+        "base_url": "http://127.0.0.1:43369",
+        "base_urls": [
+          "http://127.0.0.1:43369"
+        ],
+        "clients": 4,
+        "corpus_size": 5000,
+        "diagnostic_timeline": false,
+        "duration_seconds": 60.0,
+        "expected_node_count": 1,
+        "index": "search-benchmark-opensearch-single-node",
+        "number_of_replicas": 0,
+        "number_of_shards": 3,
+        "operation_resource_deltas": false,
+        "query_mix": {
+          "facet": 15,
+          "fallback_case_insensitive_wildcard": 0,
+          "fallback_distance_feature": 0,
+          "fallback_more_like_this": 0,
+          "fallback_query_string": 0,
+          "fallback_rank_feature": 0,
+          "fallback_terms_set": 0,
+          "hybrid": 10,
+          "lexical": 15,
+          "nested": 10,
+          "ranking": 15,
+          "refresh": 5,
+          "sort_filter": 10,
+          "vector": 15,
+          "write": 15
+        },
+        "reset": true,
+        "seed": 13,
+        "vector_dimension": 384,
+        "vector_source": "default",
+        "vector_space_type": "default"
+      },
+      "operations": {
+        "facet": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 1905,
+            "max": 136.9699400383979,
+            "mean": 13.68073812304578,
+            "min": 2.90207308717072,
+            "p50": 11.776495026424527,
+            "p90": 21.59411297179759,
+            "p95": 27.336394041776657,
+            "p99": 46.34439207613479
+          },
+          "success_count": 1905
+        },
+        "hybrid": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 1236,
+            "max": 154.48670112527907,
+            "mean": 18.883501116976046,
+            "min": 5.174419144168496,
+            "p50": 17.078995471820235,
+            "p90": 26.988508529029787,
+            "p95": 34.0219713980332,
+            "p99": 48.00626445794488
+          },
+          "success_count": 1236
+        },
+        "lexical": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 1916,
+            "max": 117.94200097210705,
+            "mean": 11.076683683091451,
+            "min": 2.60803010314703,
+            "p50": 9.67209052760154,
+            "p90": 17.231517587788403,
+            "p95": 21.271394682116807,
+            "p99": 36.07000301126385
+          },
+          "success_count": 1916
+        },
+        "nested": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 1262,
+            "max": 118.84740297682583,
+            "mean": 12.285842693435905,
+            "min": 2.9376728925853968,
+            "p50": 10.918264393694699,
+            "p90": 18.607870652340353,
+            "p95": 22.852414019871507,
+            "p99": 35.290389321744456
+          },
+          "success_count": 1262
+        },
+        "ranking": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 1898,
+            "max": 257.68068293109536,
+            "mean": 14.618203902148,
+            "min": 3.6260809283703566,
+            "p50": 12.82168657053262,
+            "p90": 22.331019467674196,
+            "p95": 28.269820485729717,
+            "p99": 51.078975505661205
+          },
+          "success_count": 1898
+        },
+        "refresh": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 630,
+            "max": 358.52701705880463,
+            "mean": 62.59273117045976,
+            "min": 1.6114579048007727,
+            "p50": 53.572011529468,
+            "p90": 113.10355225577952,
+            "p95": 137.49152619857338,
+            "p99": 211.88688899856126
+          },
+          "success_count": 630
+        },
+        "sort_filter": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 1271,
+            "max": 104.48864614591002,
+            "mean": 14.274524434313564,
+            "min": 3.2613170333206654,
+            "p50": 12.693225173279643,
+            "p90": 22.762338165193796,
+            "p95": 27.957761543802917,
+            "p99": 42.42112904321395
+          },
+          "success_count": 1271
+        },
+        "vector": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 1799,
+            "max": 170.20900500938296,
+            "mean": 20.45603144902005,
+            "min": 7.648807018995285,
+            "p50": 18.086085096001625,
+            "p90": 30.505719967186455,
+            "p95": 37.80565350316464,
+            "p99": 53.77088315784931
+          },
+          "success_count": 1799
+        },
+        "write": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 1981,
+            "max": 257.5448420830071,
+            "mean": 15.89912782009016,
+            "min": 6.058068946003914,
+            "p50": 13.832439202815294,
+            "p90": 22.139014909043908,
+            "p95": 28.18635990843177,
+            "p99": 51.99948768131438
+          },
+          "success_count": 1981
+        }
+      },
+      "resource_usage": {
+        "compatibility_materialized_response_fetches": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_capacity_evictions": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_evictions": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_hits": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_invalidated_entries": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_misses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_refresh_invalidations": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_resets": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_stale_invalidations": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "materialized_response_avoided_fetches": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "materialized_response_fetches": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "memory_rss_bytes": {
+          "after": 997326848,
+          "before": 861118464,
+          "delta": 136208384,
+          "peak": 1011896320
+        },
+        "native_response_body_build_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "operation_log_bytes": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "refresh_tantivy_commit_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "refresh_tantivy_doc_id_lookup_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "refresh_tantivy_document_add_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "refresh_tantivy_reload_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_capacity_evictions": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_evictions": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_explain_bypasses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_highlight_bypasses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_hits": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_hybrid_vector_bypasses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_invalidated_entries": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_misses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_refresh_invalidations": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_resets": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_stale_invalidations": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_unsupported_vector_bypasses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_cache_bytes": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_candidate_scan_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_capacity_evictions": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_evictions": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_hits": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_invalidated_entries": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_misses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_refresh_invalidations": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_resets": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_stale_invalidations": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_hit_materialization_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        }
+      },
+      "summary": {
+        "elapsed_seconds": 60.00459693209268,
+        "error_count": 0,
+        "error_rate": 0.0,
+        "operation_count": 13898,
+        "success_count": 13898,
+        "throughput_ops_per_second": 231.61558798117406
+      },
+      "runtime_evidence": {
+        "before": {
+          "captured_at_epoch": 1789533216.2669358,
+          "engine": "opensearch",
+          "nodes": [
+            {
+              "name": "steelsearch-bench-opensearch-single-1789533197",
+              "id": "6ee5138737ec1a3e4c23addcf9dececbe82fde544f904c003225629138079413",
+              "image_id": "sha256:1f8b88245a6af61e7aa500afe0e87d43401e4b33140bb47230a919428ce3f7cb",
+              "pid": 985436,
+              "started_at": "2026-09-16T04:33:17.449885332Z",
+              "restart_count": 0,
+              "environment": {
+                "DISABLE_SECURITY_PLUGIN": "true",
+                "DISABLE_INSTALL_DEMO_CONFIG": "true"
+              },
+              "requested_heap_flags": [
+                "-Xms512m",
+                "-Xmx512m"
+              ],
+              "limits": {
+                "Memory": 0,
+                "MemorySwap": 0,
+                "NanoCpus": 0,
+                "CpuQuota": 0,
+                "CpuPeriod": 0,
+                "CpusetCpus": "",
+                "CpusetMems": ""
+              },
+              "cgroup": {
+                "coverage": "visible-v2-ancestors",
+                "membership": "0::/system.slice/docker-6ee5138737ec1a3e4c23addcf9dececbe82fde544f904c003225629138079413.scope\n",
+                "levels": [
+                  {
+                    "path": "/system.slice/docker-6ee5138737ec1a3e4c23addcf9dececbe82fde544f904c003225629138079413.scope",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "21415"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": ""
+                      }
+                    }
+                  },
+                  {
+                    "path": "/system.slice",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "max"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": ""
+                      }
+                    }
+                  },
+                  {
+                    "path": "/",
+                    "settings": {
+                      "cpu.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpu.weight": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.high": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.swap.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "pids.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  }
+                ],
+                "scope": "visible constraints only; hidden namespace ancestors and effective resource availability unverified"
+              },
+              "start_ticks": 205413913
+            }
+          ],
+          "resource_counters": [
+            {
+              "pid": 985436,
+              "levels": [
+                {
+                  "path": "/system.slice/docker-6ee5138737ec1a3e4c23addcf9dececbe82fde544f904c003225629138079413.scope",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 34424921\nuser_usec 31515180\nsystem_usec 2909740\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "1043263488"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "65"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=118190080 wbytes=1585152 rios=7028 wios=84 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=1.76 avg60=0.86 avg300=0.21 total=911078\nfull avg10=0.08 avg60=0.04 avg300=0.01 total=135214"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.00 total=0\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=3.25 avg60=1.21 avg300=0.29 total=1002816\nfull avg10=3.14 avg60=1.14 avg300=0.27 total=924618"
+                    }
+                  }
+                },
+                {
+                  "path": "/system.slice",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 315473655589\nuser_usec 243174595780\nsystem_usec 72299059808\nnice_usec 143490293\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "4696576000"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "558"
+                    },
+                    "io.stat": {
+                      "value": "7:6 rbytes=28672 wbytes=0 rios=22 wios=0 dbytes=0 dios=0\n7:5 rbytes=3320411136 wbytes=0 rios=77549 wios=0 dbytes=0 dios=0\n7:3 rbytes=709911552 wbytes=0 rios=16556 wios=0 dbytes=0 dios=0\n7:4 rbytes=25251840 wbytes=0 rios=758 wios=0 dbytes=0 dios=0\n7:2 rbytes=10080620544 wbytes=0 rios=251764 wios=0 dbytes=0 dios=0\n7:1 rbytes=750592 wbytes=0 rios=122 wios=0 dbytes=0 dios=0\n7:0 rbytes=696320 wbytes=0 rios=75 wios=0 dbytes=0 dios=0\n8:0 rbytes=2363418450432 wbytes=227271736832 rios=23901114 wios=34301682 dbytes=57488914432 dios=238563"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=2.00 avg60=1.39 avg300=0.78 total=55740512256\nfull avg10=0.03 avg60=0.46 avg300=0.40 total=11132569567"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.00 total=2579684470\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=2512104456"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=3.26 avg60=1.31 avg300=0.40 total=73763385789\nfull avg10=3.09 avg60=1.20 avg300=0.37 total=68332398656"
+                    }
+                  }
+                },
+                {
+                  "path": "/",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 1386045116079\nuser_usec 1149213562625\nsystem_usec 236831553454\nnice_usec 143490293\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.events.local": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.swap.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "pids.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=3975905974784 wbytes=3017408615936 rios=34903991 wios=55212197 dbytes=2956756195328 dios=5935575\n7:7 \n7:6 rbytes=28672 wbytes=0 rios=22 wios=0 dbytes=0 dios=0\n7:5 rbytes=3320411136 wbytes=0 rios=77549 wios=0 dbytes=0 dios=0\n7:4 rbytes=25251840 wbytes=0 rios=758 wios=0 dbytes=0 dios=0\n7:3 rbytes=709911552 wbytes=0 rios=16556 wios=0 dbytes=0 dios=0\n7:2 rbytes=10080620544 wbytes=0 rios=251764 wios=0 dbytes=0 dios=0\n7:1 rbytes=750592 wbytes=0 rios=122 wios=0 dbytes=0 dios=0\n7:0 rbytes=696320 wbytes=0 rios=75 wios=0 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=7.56 avg60=28.34 avg300=23.44 total=140956910002\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.00 total=16407900960\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=16224450726"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=3.07 avg60=1.24 avg300=1.20 total=91849310537\nfull avg10=2.81 avg60=1.06 avg300=0.50 total=68438988524"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "host_cpu": {
+            "started_at_epoch": 1789533216.266801,
+            "scope": "visible host aggregate, not exclusive to benchmark; guest ticks overlap user/nice; iowait may decrease",
+            "cpu_ticks": {
+              "user": 114907007,
+              "nice": 14349,
+              "system": 22434409,
+              "idle": 453992178,
+              "iowait": 19864062,
+              "irq": 0,
+              "softirq": 1248745,
+              "steal": 1900122,
+              "guest": 0,
+              "guest_nice": 0
+            },
+            "clock_ticks_per_second": 100,
+            "boot_id": "dc654322-da37-4c6e-9a9d-be3db8949a5a",
+            "finished_at_epoch": 1789533216.2669342
+          },
+          "scope": "observed settings and visible cgroup constraints; effective resource availability and application enforcement not verified"
+        },
+        "after": {
+          "captured_at_epoch": 1789533308.483632,
+          "engine": "opensearch",
+          "nodes": [
+            {
+              "name": "steelsearch-bench-opensearch-single-1789533197",
+              "id": "6ee5138737ec1a3e4c23addcf9dececbe82fde544f904c003225629138079413",
+              "image_id": "sha256:1f8b88245a6af61e7aa500afe0e87d43401e4b33140bb47230a919428ce3f7cb",
+              "pid": 985436,
+              "started_at": "2026-09-16T04:33:17.449885332Z",
+              "restart_count": 0,
+              "environment": {
+                "DISABLE_SECURITY_PLUGIN": "true",
+                "DISABLE_INSTALL_DEMO_CONFIG": "true"
+              },
+              "requested_heap_flags": [
+                "-Xms512m",
+                "-Xmx512m"
+              ],
+              "limits": {
+                "Memory": 0,
+                "MemorySwap": 0,
+                "NanoCpus": 0,
+                "CpuQuota": 0,
+                "CpuPeriod": 0,
+                "CpusetCpus": "",
+                "CpusetMems": ""
+              },
+              "cgroup": {
+                "coverage": "visible-v2-ancestors",
+                "membership": "0::/system.slice/docker-6ee5138737ec1a3e4c23addcf9dececbe82fde544f904c003225629138079413.scope\n",
+                "levels": [
+                  {
+                    "path": "/system.slice/docker-6ee5138737ec1a3e4c23addcf9dececbe82fde544f904c003225629138079413.scope",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "21415"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": ""
+                      }
+                    }
+                  },
+                  {
+                    "path": "/system.slice",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "max"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": ""
+                      }
+                    }
+                  },
+                  {
+                    "path": "/",
+                    "settings": {
+                      "cpu.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpu.weight": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.high": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.swap.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "pids.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  }
+                ],
+                "scope": "visible constraints only; hidden namespace ancestors and effective resource availability unverified"
+              },
+              "start_ticks": 205413913
+            }
+          ],
+          "resource_counters": [
+            {
+              "pid": 985436,
+              "levels": [
+                {
+                  "path": "/system.slice/docker-6ee5138737ec1a3e4c23addcf9dececbe82fde544f904c003225629138079413.scope",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 209732632\nuser_usec 184828008\nsystem_usec 24904624\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "1242308608"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "87"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=128765952 wbytes=128622592 rios=7101 wios=25874 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=59.16 avg60=39.49 avg300=12.15 total=40851965\nfull avg10=14.08 avg60=8.24 avg300=2.45 total=8623355"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.00 total=2\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=2"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=2.35 avg60=2.96 avg300=1.32 total=5361274\nfull avg10=0.02 avg60=1.38 avg300=0.81 total=3653123"
+                    }
+                  }
+                },
+                {
+                  "path": "/system.slice",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 315661659539\nuser_usec 243332812529\nsystem_usec 72328847010\nnice_usec 143490293\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "4903239680"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "582"
+                    },
+                    "io.stat": {
+                      "value": "7:6 rbytes=28672 wbytes=0 rios=22 wios=0 dbytes=0 dios=0\n7:5 rbytes=3320411136 wbytes=0 rios=77549 wios=0 dbytes=0 dios=0\n7:3 rbytes=709911552 wbytes=0 rios=16556 wios=0 dbytes=0 dios=0\n7:4 rbytes=25251840 wbytes=0 rios=758 wios=0 dbytes=0 dios=0\n7:2 rbytes=10080620544 wbytes=0 rios=251764 wios=0 dbytes=0 dios=0\n7:1 rbytes=750592 wbytes=0 rios=122 wios=0 dbytes=0 dios=0\n7:0 rbytes=696320 wbytes=0 rios=75 wios=0 dbytes=0 dios=0\n8:0 rbytes=2363429026304 wbytes=227400486400 rios=23901187 wios=34327760 dbytes=57488914432 dios=238563"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=62.00 avg60=41.47 avg300=13.20 total=55782796147\nfull avg10=11.77 avg60=6.69 avg300=2.28 total=11139545505"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.00 total=2579684473\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=2512104459"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=2.40 avg60=2.94 avg300=1.39 total=73767751964\nfull avg10=0.01 avg60=1.34 avg300=0.85 total=68334950852"
+                    }
+                  }
+                },
+                {
+                  "path": "/",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 1386262165551\nuser_usec 1149386184400\nsystem_usec 236875981151\nnice_usec 143490293\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.events.local": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.swap.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "pids.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=3975916550656 wbytes=3017798428160 rios=34904064 wios=55247866 dbytes=2956775667712 dios=5935676\n7:7 \n7:6 rbytes=28672 wbytes=0 rios=22 wios=0 dbytes=0 dios=0\n7:5 rbytes=3320411136 wbytes=0 rios=77549 wios=0 dbytes=0 dios=0\n7:4 rbytes=25251840 wbytes=0 rios=758 wios=0 dbytes=0 dios=0\n7:3 rbytes=709911552 wbytes=0 rios=16556 wios=0 dbytes=0 dios=0\n7:2 rbytes=10080620544 wbytes=0 rios=251764 wios=0 dbytes=0 dios=0\n7:1 rbytes=750592 wbytes=0 rios=122 wios=0 dbytes=0 dios=0\n7:0 rbytes=696320 wbytes=0 rios=75 wios=0 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=71.54 avg60=52.45 avg300=31.34 total=141004289972\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.00 total=16407900962\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=16224450729"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=4.07 avg60=4.83 avg300=2.76 total=91856442807\nfull avg10=0.02 avg60=1.92 avg300=1.29 total=68442857738"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "host_cpu": {
+            "started_at_epoch": 1789533308.4834998,
+            "scope": "visible host aggregate, not exclusive to benchmark; guest ticks overlap user/nice; iowait may decrease",
+            "cpu_ticks": {
+              "user": 114924269,
+              "nice": 14349,
+              "system": 22438432,
+              "idle": 453995975,
+              "iowait": 19865190,
+              "irq": 0,
+              "softirq": 1249165,
+              "steal": 1900951,
+              "guest": 0,
+              "guest_nice": 0
+            },
+            "clock_ticks_per_second": 100,
+            "boot_id": "dc654322-da37-4c6e-9a9d-be3db8949a5a",
+            "finished_at_epoch": 1789533308.483631
+          },
+          "scope": "observed settings and visible cgroup constraints; effective resource availability and application enforcement not verified"
+        }
+      },
+      "target_identity": {
+        "name": "6ee5138737ec",
+        "cluster_name": "docker-cluster",
+        "cluster_uuid": "HJnINNnxTbGkIxN9vOdv8A",
+        "version": {
+          "distribution": "opensearch",
+          "number": "2.19.0",
+          "build_type": "tar",
+          "build_hash": "fd9a9d90df25bea1af2c6a85039692e815b894f5",
+          "build_date": "2025-02-05T16:13:57.130576800Z",
+          "build_snapshot": false,
+          "lucene_version": "9.12.1",
+          "minimum_wire_compatibility_version": "7.10.0",
+          "minimum_index_compatibility_version": "7.0.0"
+        },
+        "tagline": "The OpenSearch Project: https://opensearch.org/"
+      },
+      "base_url": "http://127.0.0.1:43369",
+      "manifest_path": null,
+      "resource_process_pids": [
+        985436
+      ],
+      "resource_container_names": [
+        "steelsearch-bench-opensearch-single-1789533197"
+      ]
+    },
+    "opensearch-three-node": {
+      "config": {
+        "base_url": "http://127.0.0.1:50535",
+        "base_urls": [
+          "http://127.0.0.1:50535",
+          "http://127.0.0.1:41951",
+          "http://127.0.0.1:38135"
+        ],
+        "clients": 4,
+        "corpus_size": 5000,
+        "diagnostic_timeline": false,
+        "duration_seconds": 60.0,
+        "expected_node_count": 3,
+        "index": "search-benchmark-opensearch-three-node",
+        "number_of_replicas": 1,
+        "number_of_shards": 3,
+        "operation_resource_deltas": false,
+        "query_mix": {
+          "facet": 15,
+          "fallback_case_insensitive_wildcard": 0,
+          "fallback_distance_feature": 0,
+          "fallback_more_like_this": 0,
+          "fallback_query_string": 0,
+          "fallback_rank_feature": 0,
+          "fallback_terms_set": 0,
+          "hybrid": 10,
+          "lexical": 15,
+          "nested": 10,
+          "ranking": 15,
+          "refresh": 5,
+          "sort_filter": 10,
+          "vector": 15,
+          "write": 15
+        },
+        "reset": true,
+        "seed": 13,
+        "vector_dimension": 384,
+        "vector_source": "default",
+        "vector_space_type": "default"
+      },
+      "operations": {
+        "facet": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 819,
+            "max": 323.59561999328434,
+            "mean": 35.16182478350134,
+            "min": 7.002715952694416,
+            "p50": 26.973417028784752,
+            "p90": 61.13304318860173,
+            "p95": 80.07807009853421,
+            "p99": 166.14933999255297
+          },
+          "success_count": 819
+        },
+        "hybrid": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 495,
+            "max": 268.51008483208716,
+            "mean": 42.43684049855654,
+            "min": 9.821468032896519,
+            "p50": 35.44002794660628,
+            "p90": 72.19642903655767,
+            "p95": 92.33325012028197,
+            "p99": 139.7440047701821
+          },
+          "success_count": 495
+        },
+        "lexical": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 805,
+            "max": 268.23704200796783,
+            "mean": 26.60164783234413,
+            "min": 4.200486000627279,
+            "p50": 20.15558280982077,
+            "p90": 50.07104626856744,
+            "p95": 68.35391153581439,
+            "p99": 111.75078829750429
+          },
+          "success_count": 805
+        },
+        "nested": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 533,
+            "max": 196.76985801197588,
+            "mean": 26.56511199620411,
+            "min": 4.27896692417562,
+            "p50": 22.021200973540545,
+            "p90": 48.42318724840881,
+            "p95": 62.138931779190884,
+            "p99": 98.6429689358919
+          },
+          "success_count": 533
+        },
+        "ranking": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 802,
+            "max": 508.14605597406626,
+            "mean": 35.688936690616416,
+            "min": 5.357058020308614,
+            "p50": 27.412520023062825,
+            "p90": 67.16066545341162,
+            "p95": 86.79175445577125,
+            "p99": 148.28155486378824
+          },
+          "success_count": 802
+        },
+        "refresh": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 273,
+            "max": 599.8466208111495,
+            "mean": 147.17413104248433,
+            "min": 7.9853271599859,
+            "p50": 134.49063315056264,
+            "p90": 245.9355409257114,
+            "p95": 318.4042232111096,
+            "p99": 499.034732487051
+          },
+          "success_count": 273
+        },
+        "sort_filter": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 536,
+            "max": 263.39891413226724,
+            "mean": 39.50627464514378,
+            "min": 7.067316910251975,
+            "p50": 32.05225197598338,
+            "p90": 70.80803962890059,
+            "p95": 99.37377698952332,
+            "p99": 136.09684158582226
+          },
+          "success_count": 536
+        },
+        "vector": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 764,
+            "max": 300.50772591494024,
+            "mean": 46.03439241041873,
+            "min": 12.418575817719102,
+            "p50": 38.48418151028454,
+            "p90": 78.18924493622035,
+            "p95": 95.10721857659519,
+            "p99": 144.08494867151603
+          },
+          "success_count": 764
+        },
+        "write": {
+          "error_count": 0,
+          "error_examples": [],
+          "latency_ms": {
+            "count": 832,
+            "max": 227.05026296898723,
+            "mean": 35.31141652358481,
+            "min": 8.788136998191476,
+            "p50": 28.376193600706756,
+            "p90": 63.78252438735217,
+            "p95": 83.49400417646389,
+            "p99": 116.5495275310239
+          },
+          "success_count": 832
+        }
+      },
+      "resource_usage": {
+        "compatibility_materialized_response_fetches": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_capacity_evictions": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_evictions": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_hits": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_invalidated_entries": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_misses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_refresh_invalidations": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_resets": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "fast_field_cache_stale_invalidations": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "materialized_response_avoided_fetches": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "materialized_response_fetches": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "memory_rss_bytes": {
+          "after": 2921672704,
+          "before": 2597019648,
+          "delta": 324653056,
+          "peak": 2922160128
+        },
+        "native_response_body_build_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "operation_log_bytes": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "refresh_tantivy_commit_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "refresh_tantivy_doc_id_lookup_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "refresh_tantivy_document_add_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "refresh_tantivy_reload_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_capacity_evictions": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_evictions": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_explain_bypasses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_highlight_bypasses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_hits": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_hybrid_vector_bypasses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_invalidated_entries": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_misses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_refresh_invalidations": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_resets": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_stale_invalidations": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "request_result_cache_unsupported_vector_bypasses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_cache_bytes": {
+          "after": 0,
+          "before": 0,
+          "delta": 0,
+          "peak": null
+        },
+        "vector_candidate_scan_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_capacity_evictions": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_evictions": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_hits": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_invalidated_entries": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_misses": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_refresh_invalidations": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_resets": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_graph_cache_stale_invalidations": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        },
+        "vector_hit_materialization_nanos": {
+          "after": null,
+          "before": null,
+          "delta": null,
+          "peak": null
+        }
+      },
+      "summary": {
+        "elapsed_seconds": 60.011374201159924,
+        "error_count": 0,
+        "error_rate": 0.0,
+        "operation_count": 5859,
+        "success_count": 5859,
+        "throughput_ops_per_second": 97.63149199617487
+      },
+      "runtime_evidence": {
+        "before": {
+          "captured_at_epoch": 1789533349.3341942,
+          "engine": "opensearch",
+          "nodes": [
+            {
+              "name": "steelsearch-bench-opensearch-three-node-1789533309-1",
+              "id": "da19121e155476dd7c9557ba001bc5247e5f0ba3d47a459377636369e3094051",
+              "image_id": "sha256:1f8b88245a6af61e7aa500afe0e87d43401e4b33140bb47230a919428ce3f7cb",
+              "pid": 986302,
+              "started_at": "2026-09-16T04:35:10.264802544Z",
+              "restart_count": 0,
+              "environment": {
+                "DISABLE_SECURITY_PLUGIN": "true",
+                "DISABLE_INSTALL_DEMO_CONFIG": "true"
+              },
+              "requested_heap_flags": [
+                "-Xms512m",
+                "-Xmx512m"
+              ],
+              "limits": {
+                "Memory": 0,
+                "MemorySwap": 0,
+                "NanoCpus": 0,
+                "CpuQuota": 0,
+                "CpuPeriod": 0,
+                "CpusetCpus": "",
+                "CpusetMems": ""
+              },
+              "cgroup": {
+                "coverage": "visible-v2-ancestors",
+                "membership": "0::/system.slice/docker-da19121e155476dd7c9557ba001bc5247e5f0ba3d47a459377636369e3094051.scope\n",
+                "levels": [
+                  {
+                    "path": "/system.slice/docker-da19121e155476dd7c9557ba001bc5247e5f0ba3d47a459377636369e3094051.scope",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "21415"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": ""
+                      }
+                    }
+                  },
+                  {
+                    "path": "/system.slice",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "max"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": ""
+                      }
+                    }
+                  },
+                  {
+                    "path": "/",
+                    "settings": {
+                      "cpu.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpu.weight": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.high": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.swap.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "pids.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  }
+                ],
+                "scope": "visible constraints only; hidden namespace ancestors and effective resource availability unverified"
+              },
+              "start_ticks": 205425195
+            },
+            {
+              "name": "steelsearch-bench-opensearch-three-node-1789533309-2",
+              "id": "158ed51dfa49261771fc901a4e9407e1327e305d62a564c6b5ad50949b099b12",
+              "image_id": "sha256:1f8b88245a6af61e7aa500afe0e87d43401e4b33140bb47230a919428ce3f7cb",
+              "pid": 986494,
+              "started_at": "2026-09-16T04:35:10.595723416Z",
+              "restart_count": 0,
+              "environment": {
+                "DISABLE_SECURITY_PLUGIN": "true",
+                "DISABLE_INSTALL_DEMO_CONFIG": "true"
+              },
+              "requested_heap_flags": [
+                "-Xms512m",
+                "-Xmx512m"
+              ],
+              "limits": {
+                "Memory": 0,
+                "MemorySwap": 0,
+                "NanoCpus": 0,
+                "CpuQuota": 0,
+                "CpuPeriod": 0,
+                "CpusetCpus": "",
+                "CpusetMems": ""
+              },
+              "cgroup": {
+                "coverage": "visible-v2-ancestors",
+                "membership": "0::/system.slice/docker-158ed51dfa49261771fc901a4e9407e1327e305d62a564c6b5ad50949b099b12.scope\n",
+                "levels": [
+                  {
+                    "path": "/system.slice/docker-158ed51dfa49261771fc901a4e9407e1327e305d62a564c6b5ad50949b099b12.scope",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "21415"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": ""
+                      }
+                    }
+                  },
+                  {
+                    "path": "/system.slice",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "max"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": ""
+                      }
+                    }
+                  },
+                  {
+                    "path": "/",
+                    "settings": {
+                      "cpu.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpu.weight": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.high": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.swap.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "pids.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  }
+                ],
+                "scope": "visible constraints only; hidden namespace ancestors and effective resource availability unverified"
+              },
+              "start_ticks": 205425228
+            },
+            {
+              "name": "steelsearch-bench-opensearch-three-node-1789533309-3",
+              "id": "db6b4f46536ff472cff080832833b469eed0ab0d3db841749a1f4e7dbafec4a4",
+              "image_id": "sha256:1f8b88245a6af61e7aa500afe0e87d43401e4b33140bb47230a919428ce3f7cb",
+              "pid": 986676,
+              "started_at": "2026-09-16T04:35:10.949302384Z",
+              "restart_count": 0,
+              "environment": {
+                "DISABLE_SECURITY_PLUGIN": "true",
+                "DISABLE_INSTALL_DEMO_CONFIG": "true"
+              },
+              "requested_heap_flags": [
+                "-Xms512m",
+                "-Xmx512m"
+              ],
+              "limits": {
+                "Memory": 0,
+                "MemorySwap": 0,
+                "NanoCpus": 0,
+                "CpuQuota": 0,
+                "CpuPeriod": 0,
+                "CpusetCpus": "",
+                "CpusetMems": ""
+              },
+              "cgroup": {
+                "coverage": "visible-v2-ancestors",
+                "membership": "0::/system.slice/docker-db6b4f46536ff472cff080832833b469eed0ab0d3db841749a1f4e7dbafec4a4.scope\n",
+                "levels": [
+                  {
+                    "path": "/system.slice/docker-db6b4f46536ff472cff080832833b469eed0ab0d3db841749a1f4e7dbafec4a4.scope",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "21415"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": ""
+                      }
+                    }
+                  },
+                  {
+                    "path": "/system.slice",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "max"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": ""
+                      }
+                    }
+                  },
+                  {
+                    "path": "/",
+                    "settings": {
+                      "cpu.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpu.weight": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.high": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.swap.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "pids.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  }
+                ],
+                "scope": "visible constraints only; hidden namespace ancestors and effective resource availability unverified"
+              },
+              "start_ticks": 205425263
+            }
+          ],
+          "resource_counters": [
+            {
+              "pid": 986302,
+              "levels": [
+                {
+                  "path": "/system.slice/docker-da19121e155476dd7c9557ba001bc5247e5f0ba3d47a459377636369e3094051.scope",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 37468776\nuser_usec 35039591\nsystem_usec 2429184\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "934580224"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "74"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=0 wbytes=1961984 rios=0 wios=146 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=40.51 avg60=22.99 avg300=6.15 total=19722656\nfull avg10=20.27 avg60=11.00 avg300=2.92 total=9452913"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.00 total=0\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.00 total=42326\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=28106"
+                    }
+                  }
+                },
+                {
+                  "path": "/system.slice",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 315774254520\nuser_usec 243437514330\nsystem_usec 72336740189\nnice_usec 143490293\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "7064936448"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "762"
+                    },
+                    "io.stat": {
+                      "value": "7:6 rbytes=28672 wbytes=0 rios=22 wios=0 dbytes=0 dios=0\n7:5 rbytes=3320411136 wbytes=0 rios=77549 wios=0 dbytes=0 dios=0\n7:3 rbytes=709921792 wbytes=0 rios=16557 wios=0 dbytes=0 dios=0\n7:4 rbytes=25251840 wbytes=0 rios=758 wios=0 dbytes=0 dios=0\n7:2 rbytes=10080620544 wbytes=0 rios=251764 wios=0 dbytes=0 dios=0\n7:1 rbytes=750592 wbytes=0 rios=122 wios=0 dbytes=0 dios=0\n7:0 rbytes=696320 wbytes=0 rios=75 wios=0 dbytes=0 dios=0\n8:0 rbytes=2363432442368 wbytes=227437301248 rios=23901301 wios=34329745 dbytes=57488914432 dios=238563"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=72.47 avg60=59.75 avg300=21.68 total=55815456917\nfull avg10=4.53 avg60=5.08 avg300=2.39 total=11140976436"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.00 total=2579684473\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=2512104459"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.24 avg60=1.63 avg300=1.25 total=73767975483\nfull avg10=0.01 avg60=0.75 avg300=0.76 total=68335056895"
+                    }
+                  }
+                },
+                {
+                  "path": "/",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 1386379147822\nuser_usec 1149491777492\nsystem_usec 236887370329\nnice_usec 143490293\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.events.local": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.swap.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "pids.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=3975919966720 wbytes=3017865164288 rios=34904178 wios=55251492 dbytes=2956896577536 dios=5936085\n7:7 \n7:6 rbytes=28672 wbytes=0 rios=22 wios=0 dbytes=0 dios=0\n7:5 rbytes=3320411136 wbytes=0 rios=77549 wios=0 dbytes=0 dios=0\n7:4 rbytes=25251840 wbytes=0 rios=758 wios=0 dbytes=0 dios=0\n7:3 rbytes=709921792 wbytes=0 rios=16557 wios=0 dbytes=0 dios=0\n7:2 rbytes=10080620544 wbytes=0 rios=251764 wios=0 dbytes=0 dios=0\n7:1 rbytes=750592 wbytes=0 rios=122 wios=0 dbytes=0 dios=0\n7:0 rbytes=696320 wbytes=0 rios=75 wios=0 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=72.54 avg60=65.62 avg300=37.59 total=141037181255\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.00 total=16407900962\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=16224450729"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=1.80 avg60=3.01 avg300=2.54 total=91857037346\nfull avg10=0.21 avg60=1.15 avg300=1.18 total=68443083995"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "pid": 986494,
+              "levels": [
+                {
+                  "path": "/system.slice/docker-158ed51dfa49261771fc901a4e9407e1327e305d62a564c6b5ad50949b099b12.scope",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 35929866\nuser_usec 33533241\nsystem_usec 2396625\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "924676096"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "72"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=45056 wbytes=1802240 rios=7 wios=134 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=36.02 avg60=22.52 avg300=6.12 total=19935698\nfull avg10=20.89 avg60=10.46 avg300=2.74 total=8959577"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.00 total=0\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.18 avg60=0.03 avg300=0.00 total=50225\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=29386"
+                    }
+                  }
+                },
+                {
+                  "path": "/system.slice",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 315774261790\nuser_usec 243437521565\nsystem_usec 72336740225\nnice_usec 143490293\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "7064936448"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "762"
+                    },
+                    "io.stat": {
+                      "value": "7:6 rbytes=28672 wbytes=0 rios=22 wios=0 dbytes=0 dios=0\n7:5 rbytes=3320411136 wbytes=0 rios=77549 wios=0 dbytes=0 dios=0\n7:3 rbytes=709921792 wbytes=0 rios=16557 wios=0 dbytes=0 dios=0\n7:4 rbytes=25251840 wbytes=0 rios=758 wios=0 dbytes=0 dios=0\n7:2 rbytes=10080620544 wbytes=0 rios=251764 wios=0 dbytes=0 dios=0\n7:1 rbytes=750592 wbytes=0 rios=122 wios=0 dbytes=0 dios=0\n7:0 rbytes=696320 wbytes=0 rios=75 wios=0 dbytes=0 dios=0\n8:0 rbytes=2363432442368 wbytes=227437301248 rios=23901301 wios=34329745 dbytes=57488914432 dios=238563"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=72.47 avg60=59.75 avg300=21.68 total=55815459695\nfull avg10=4.53 avg60=5.08 avg300=2.39 total=11140977758"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.00 total=2579684473\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=2512104459"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.24 avg60=1.63 avg300=1.25 total=73767975483\nfull avg10=0.01 avg60=0.75 avg300=0.76 total=68335056895"
+                    }
+                  }
+                },
+                {
+                  "path": "/",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 1386379159747\nuser_usec 1149491787417\nsystem_usec 236887372329\nnice_usec 143490293\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.events.local": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.swap.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "pids.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=3975919966720 wbytes=3017865164288 rios=34904178 wios=55251492 dbytes=2956896577536 dios=5936085\n7:7 \n7:6 rbytes=28672 wbytes=0 rios=22 wios=0 dbytes=0 dios=0\n7:5 rbytes=3320411136 wbytes=0 rios=77549 wios=0 dbytes=0 dios=0\n7:4 rbytes=25251840 wbytes=0 rios=758 wios=0 dbytes=0 dios=0\n7:3 rbytes=709921792 wbytes=0 rios=16557 wios=0 dbytes=0 dios=0\n7:2 rbytes=10080620544 wbytes=0 rios=251764 wios=0 dbytes=0 dios=0\n7:1 rbytes=750592 wbytes=0 rios=122 wios=0 dbytes=0 dios=0\n7:0 rbytes=696320 wbytes=0 rios=75 wios=0 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=72.54 avg60=65.62 avg300=37.59 total=141037184158\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.00 total=16407900962\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=16224450729"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=1.80 avg60=3.01 avg300=2.54 total=91857037346\nfull avg10=0.21 avg60=1.15 avg300=1.18 total=68443083995"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "pid": 986676,
+              "levels": [
+                {
+                  "path": "/system.slice/docker-db6b4f46536ff472cff080832833b469eed0ab0d3db841749a1f4e7dbafec4a4.scope",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 35562630\nuser_usec 33202964\nsystem_usec 2359666\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "927895552"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "65"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=0 wbytes=1843200 rios=0 wios=136 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=37.88 avg60=21.47 avg300=5.73 total=18190104\nfull avg10=19.74 avg60=11.29 avg300=3.01 total=9575855"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.00 total=0\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.18 avg60=0.03 avg300=0.00 total=40065\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=20408"
+                    }
+                  }
+                },
+                {
+                  "path": "/system.slice",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 315774276655\nuser_usec 243437536319\nsystem_usec 72336740335\nnice_usec 143490293\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "7064936448"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "762"
+                    },
+                    "io.stat": {
+                      "value": "7:6 rbytes=28672 wbytes=0 rios=22 wios=0 dbytes=0 dios=0\n7:5 rbytes=3320411136 wbytes=0 rios=77549 wios=0 dbytes=0 dios=0\n7:3 rbytes=709921792 wbytes=0 rios=16557 wios=0 dbytes=0 dios=0\n7:4 rbytes=25251840 wbytes=0 rios=758 wios=0 dbytes=0 dios=0\n7:2 rbytes=10080620544 wbytes=0 rios=251764 wios=0 dbytes=0 dios=0\n7:1 rbytes=750592 wbytes=0 rios=122 wios=0 dbytes=0 dios=0\n7:0 rbytes=696320 wbytes=0 rios=75 wios=0 dbytes=0 dios=0\n8:0 rbytes=2363432442368 wbytes=227437301248 rios=23901301 wios=34329745 dbytes=57488914432 dios=238563"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=72.47 avg60=59.75 avg300=21.68 total=55815463845\nfull avg10=4.53 avg60=5.08 avg300=2.39 total=11140978696"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.00 total=2579684473\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=2512104459"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.24 avg60=1.63 avg300=1.25 total=73767975483\nfull avg10=0.01 avg60=0.75 avg300=0.76 total=68335056895"
+                    }
+                  }
+                },
+                {
+                  "path": "/",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 1386379174747\nuser_usec 1149491802417\nsystem_usec 236887372329\nnice_usec 143490293\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.events.local": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.swap.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "pids.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=3975919966720 wbytes=3017865164288 rios=34904178 wios=55251492 dbytes=2956896577536 dios=5936085\n7:7 \n7:6 rbytes=28672 wbytes=0 rios=22 wios=0 dbytes=0 dios=0\n7:5 rbytes=3320411136 wbytes=0 rios=77549 wios=0 dbytes=0 dios=0\n7:4 rbytes=25251840 wbytes=0 rios=758 wios=0 dbytes=0 dios=0\n7:3 rbytes=709921792 wbytes=0 rios=16557 wios=0 dbytes=0 dios=0\n7:2 rbytes=10080620544 wbytes=0 rios=251764 wios=0 dbytes=0 dios=0\n7:1 rbytes=750592 wbytes=0 rios=122 wios=0 dbytes=0 dios=0\n7:0 rbytes=696320 wbytes=0 rios=75 wios=0 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=72.54 avg60=65.62 avg300=37.59 total=141037187497\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.00 total=16407900962\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=16224450729"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=1.80 avg60=3.01 avg300=2.54 total=91857037346\nfull avg10=0.21 avg60=1.15 avg300=1.18 total=68443083995"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "host_cpu": {
+            "started_at_epoch": 1789533349.333959,
+            "scope": "visible host aggregate, not exclusive to benchmark; guest ticks overlap user/nice; iowait may decrease",
+            "cpu_ticks": {
+              "user": 114934831,
+              "nice": 14349,
+              "system": 22439550,
+              "idle": 453996349,
+              "iowait": 19865257,
+              "irq": 0,
+              "softirq": 1249186,
+              "steal": 1901050,
+              "guest": 0,
+              "guest_nice": 0
+            },
+            "clock_ticks_per_second": 100,
+            "boot_id": "dc654322-da37-4c6e-9a9d-be3db8949a5a",
+            "finished_at_epoch": 1789533349.334193
+          },
+          "scope": "observed settings and visible cgroup constraints; effective resource availability and application enforcement not verified"
+        },
+        "after": {
+          "captured_at_epoch": 1789533466.3021276,
+          "engine": "opensearch",
+          "nodes": [
+            {
+              "name": "steelsearch-bench-opensearch-three-node-1789533309-1",
+              "id": "da19121e155476dd7c9557ba001bc5247e5f0ba3d47a459377636369e3094051",
+              "image_id": "sha256:1f8b88245a6af61e7aa500afe0e87d43401e4b33140bb47230a919428ce3f7cb",
+              "pid": 986302,
+              "started_at": "2026-09-16T04:35:10.264802544Z",
+              "restart_count": 0,
+              "environment": {
+                "DISABLE_SECURITY_PLUGIN": "true",
+                "DISABLE_INSTALL_DEMO_CONFIG": "true"
+              },
+              "requested_heap_flags": [
+                "-Xms512m",
+                "-Xmx512m"
+              ],
+              "limits": {
+                "Memory": 0,
+                "MemorySwap": 0,
+                "NanoCpus": 0,
+                "CpuQuota": 0,
+                "CpuPeriod": 0,
+                "CpusetCpus": "",
+                "CpusetMems": ""
+              },
+              "cgroup": {
+                "coverage": "visible-v2-ancestors",
+                "membership": "0::/system.slice/docker-da19121e155476dd7c9557ba001bc5247e5f0ba3d47a459377636369e3094051.scope\n",
+                "levels": [
+                  {
+                    "path": "/system.slice/docker-da19121e155476dd7c9557ba001bc5247e5f0ba3d47a459377636369e3094051.scope",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "21415"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": ""
+                      }
+                    }
+                  },
+                  {
+                    "path": "/system.slice",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "max"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": ""
+                      }
+                    }
+                  },
+                  {
+                    "path": "/",
+                    "settings": {
+                      "cpu.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpu.weight": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.high": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.swap.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "pids.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  }
+                ],
+                "scope": "visible constraints only; hidden namespace ancestors and effective resource availability unverified"
+              },
+              "start_ticks": 205425195
+            },
+            {
+              "name": "steelsearch-bench-opensearch-three-node-1789533309-2",
+              "id": "158ed51dfa49261771fc901a4e9407e1327e305d62a564c6b5ad50949b099b12",
+              "image_id": "sha256:1f8b88245a6af61e7aa500afe0e87d43401e4b33140bb47230a919428ce3f7cb",
+              "pid": 986494,
+              "started_at": "2026-09-16T04:35:10.595723416Z",
+              "restart_count": 0,
+              "environment": {
+                "DISABLE_SECURITY_PLUGIN": "true",
+                "DISABLE_INSTALL_DEMO_CONFIG": "true"
+              },
+              "requested_heap_flags": [
+                "-Xms512m",
+                "-Xmx512m"
+              ],
+              "limits": {
+                "Memory": 0,
+                "MemorySwap": 0,
+                "NanoCpus": 0,
+                "CpuQuota": 0,
+                "CpuPeriod": 0,
+                "CpusetCpus": "",
+                "CpusetMems": ""
+              },
+              "cgroup": {
+                "coverage": "visible-v2-ancestors",
+                "membership": "0::/system.slice/docker-158ed51dfa49261771fc901a4e9407e1327e305d62a564c6b5ad50949b099b12.scope\n",
+                "levels": [
+                  {
+                    "path": "/system.slice/docker-158ed51dfa49261771fc901a4e9407e1327e305d62a564c6b5ad50949b099b12.scope",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "21415"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": ""
+                      }
+                    }
+                  },
+                  {
+                    "path": "/system.slice",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "max"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": ""
+                      }
+                    }
+                  },
+                  {
+                    "path": "/",
+                    "settings": {
+                      "cpu.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpu.weight": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.high": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.swap.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "pids.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  }
+                ],
+                "scope": "visible constraints only; hidden namespace ancestors and effective resource availability unverified"
+              },
+              "start_ticks": 205425228
+            },
+            {
+              "name": "steelsearch-bench-opensearch-three-node-1789533309-3",
+              "id": "db6b4f46536ff472cff080832833b469eed0ab0d3db841749a1f4e7dbafec4a4",
+              "image_id": "sha256:1f8b88245a6af61e7aa500afe0e87d43401e4b33140bb47230a919428ce3f7cb",
+              "pid": 986676,
+              "started_at": "2026-09-16T04:35:10.949302384Z",
+              "restart_count": 0,
+              "environment": {
+                "DISABLE_SECURITY_PLUGIN": "true",
+                "DISABLE_INSTALL_DEMO_CONFIG": "true"
+              },
+              "requested_heap_flags": [
+                "-Xms512m",
+                "-Xmx512m"
+              ],
+              "limits": {
+                "Memory": 0,
+                "MemorySwap": 0,
+                "NanoCpus": 0,
+                "CpuQuota": 0,
+                "CpuPeriod": 0,
+                "CpusetCpus": "",
+                "CpusetMems": ""
+              },
+              "cgroup": {
+                "coverage": "visible-v2-ancestors",
+                "membership": "0::/system.slice/docker-db6b4f46536ff472cff080832833b469eed0ab0d3db841749a1f4e7dbafec4a4.scope\n",
+                "levels": [
+                  {
+                    "path": "/system.slice/docker-db6b4f46536ff472cff080832833b469eed0ab0d3db841749a1f4e7dbafec4a4.scope",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "21415"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": ""
+                      }
+                    }
+                  },
+                  {
+                    "path": "/system.slice",
+                    "settings": {
+                      "cpu.max": {
+                        "value": "max 100000"
+                      },
+                      "cpu.weight": {
+                        "value": "100"
+                      },
+                      "memory.max": {
+                        "value": "max"
+                      },
+                      "memory.high": {
+                        "value": "max"
+                      },
+                      "memory.swap.max": {
+                        "value": "max"
+                      },
+                      "pids.max": {
+                        "value": "max"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": ""
+                      }
+                    }
+                  },
+                  {
+                    "path": "/",
+                    "settings": {
+                      "cpu.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpu.weight": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.high": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "memory.swap.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "pids.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      },
+                      "cpuset.cpus.effective": {
+                        "value": "0-2"
+                      },
+                      "cpuset.mems.effective": {
+                        "value": "0"
+                      },
+                      "io.max": {
+                        "value": null,
+                        "error": "FileNotFoundError"
+                      }
+                    }
+                  }
+                ],
+                "scope": "visible constraints only; hidden namespace ancestors and effective resource availability unverified"
+              },
+              "start_ticks": 205425263
+            }
+          ],
+          "resource_counters": [
+            {
+              "pid": 986302,
+              "levels": [
+                {
+                  "path": "/system.slice/docker-da19121e155476dd7c9557ba001bc5247e5f0ba3d47a459377636369e3094051.scope",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 123909955\nuser_usec 111794263\nsystem_usec 12115692\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "1072312320"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "83"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=0 wbytes=79171584 rios=0 wios=14719 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=43.39 avg60=33.41 avg300=14.01 total=54071752\nfull avg10=28.27 avg60=21.42 avg300=8.42 total=32042985"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.00 total=0\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.43 avg60=1.02 avg300=0.55 total=2790916\nfull avg10=0.01 avg60=0.77 avg300=0.45 total=2240782"
+                    }
+                  }
+                },
+                {
+                  "path": "/system.slice",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 316034319159\nuser_usec 243664366923\nsystem_usec 72369952236\nnice_usec 143490293\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "7123144704"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "787"
+                    },
+                    "io.stat": {
+                      "value": "7:6 rbytes=28672 wbytes=0 rios=22 wios=0 dbytes=0 dios=0\n7:5 rbytes=3320411136 wbytes=0 rios=77549 wios=0 dbytes=0 dios=0\n7:3 rbytes=709921792 wbytes=0 rios=16557 wios=0 dbytes=0 dios=0\n7:4 rbytes=25251840 wbytes=0 rios=758 wios=0 dbytes=0 dios=0\n7:2 rbytes=10080620544 wbytes=0 rios=251764 wios=0 dbytes=0 dios=0\n7:1 rbytes=750592 wbytes=0 rios=122 wios=0 dbytes=0 dios=0\n7:0 rbytes=696320 wbytes=0 rios=75 wios=0 dbytes=0 dios=0\n8:0 rbytes=2363433351680 wbytes=227672145408 rios=23901330 wios=34373864 dbytes=57488914432 dios=238563"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=75.64 avg60=62.23 avg300=32.65 total=55877196116\nfull avg10=7.16 avg60=6.14 avg300=3.42 total=11147758572"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.00 total=2579684474\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=2512104460"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=2.30 avg60=4.04 avg300=2.76 total=73775668821\nfull avg10=0.02 avg60=1.88 avg300=1.55 total=68339480732"
+                    }
+                  }
+                },
+                {
+                  "path": "/",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 1386658150916\nuser_usec 1149724879544\nsystem_usec 236933271372\nnice_usec 143490293\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.events.local": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.swap.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "pids.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=3975920876032 wbytes=3018517464576 rios=34904207 wios=55310913 dbytes=2956934883328 dios=5936335\n7:7 \n7:6 rbytes=28672 wbytes=0 rios=22 wios=0 dbytes=0 dios=0\n7:5 rbytes=3320411136 wbytes=0 rios=77549 wios=0 dbytes=0 dios=0\n7:4 rbytes=25251840 wbytes=0 rios=758 wios=0 dbytes=0 dios=0\n7:3 rbytes=709921792 wbytes=0 rios=16557 wios=0 dbytes=0 dios=0\n7:2 rbytes=10080620544 wbytes=0 rios=251764 wios=0 dbytes=0 dios=0\n7:1 rbytes=750592 wbytes=0 rios=122 wios=0 dbytes=0 dios=0\n7:0 rbytes=696320 wbytes=0 rios=75 wios=0 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=78.64 avg60=65.48 avg300=44.04 total=141102335189\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.00 total=16407900963\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=16224450729"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=3.92 avg60=6.47 avg300=4.68 total=91868678046\nfull avg10=0.03 avg60=2.88 avg300=2.37 total=68449454700"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "pid": 986494,
+              "levels": [
+                {
+                  "path": "/system.slice/docker-158ed51dfa49261771fc901a4e9407e1327e305d62a564c6b5ad50949b099b12.scope",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 115670173\nuser_usec 104475637\nsystem_usec 11194536\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "1067671552"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "76"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=45056 wbytes=80646144 rios=7 wios=14724 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=33.65 avg60=27.98 avg300=12.36 total=48747362\nfull avg10=23.05 avg60=17.90 avg300=7.21 total=27952428"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.00 total=0\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.21 avg60=0.88 avg300=0.49 total=2691908\nfull avg10=0.00 avg60=0.72 avg300=0.42 total=2178822"
+                    }
+                  }
+                },
+                {
+                  "path": "/system.slice",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 316034323083\nuser_usec 243664370847\nsystem_usec 72369952236\nnice_usec 143490293\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "7123144704"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "787"
+                    },
+                    "io.stat": {
+                      "value": "7:6 rbytes=28672 wbytes=0 rios=22 wios=0 dbytes=0 dios=0\n7:5 rbytes=3320411136 wbytes=0 rios=77549 wios=0 dbytes=0 dios=0\n7:3 rbytes=709921792 wbytes=0 rios=16557 wios=0 dbytes=0 dios=0\n7:4 rbytes=25251840 wbytes=0 rios=758 wios=0 dbytes=0 dios=0\n7:2 rbytes=10080620544 wbytes=0 rios=251764 wios=0 dbytes=0 dios=0\n7:1 rbytes=750592 wbytes=0 rios=122 wios=0 dbytes=0 dios=0\n7:0 rbytes=696320 wbytes=0 rios=75 wios=0 dbytes=0 dios=0\n8:0 rbytes=2363433351680 wbytes=227672145408 rios=23901330 wios=34373864 dbytes=57488914432 dios=238563"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=75.64 avg60=62.23 avg300=32.65 total=55877196129\nfull avg10=7.16 avg60=6.14 avg300=3.42 total=11147758572"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.00 total=2579684474\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=2512104460"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=2.30 avg60=4.04 avg300=2.76 total=73775668821\nfull avg10=0.02 avg60=1.88 avg300=1.55 total=68339480732"
+                    }
+                  }
+                },
+                {
+                  "path": "/",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 1386658156916\nuser_usec 1149724885544\nsystem_usec 236933271372\nnice_usec 143490293\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.events.local": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.swap.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "pids.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=3975920876032 wbytes=3018517464576 rios=34904207 wios=55310913 dbytes=2956934883328 dios=5936335\n7:7 \n7:6 rbytes=28672 wbytes=0 rios=22 wios=0 dbytes=0 dios=0\n7:5 rbytes=3320411136 wbytes=0 rios=77549 wios=0 dbytes=0 dios=0\n7:4 rbytes=25251840 wbytes=0 rios=758 wios=0 dbytes=0 dios=0\n7:3 rbytes=709921792 wbytes=0 rios=16557 wios=0 dbytes=0 dios=0\n7:2 rbytes=10080620544 wbytes=0 rios=251764 wios=0 dbytes=0 dios=0\n7:1 rbytes=750592 wbytes=0 rios=122 wios=0 dbytes=0 dios=0\n7:0 rbytes=696320 wbytes=0 rios=75 wios=0 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=78.64 avg60=65.48 avg300=44.04 total=141102335192\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.00 total=16407900963\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=16224450729"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=3.92 avg60=6.47 avg300=4.68 total=91868678046\nfull avg10=0.03 avg60=2.88 avg300=2.37 total=68449454700"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "pid": 986676,
+              "levels": [
+                {
+                  "path": "/system.slice/docker-db6b4f46536ff472cff080832833b469eed0ab0d3db841749a1f4e7dbafec4a4.scope",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 119204327\nuser_usec 107807494\nsystem_usec 11396832\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "1057763328"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "74"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=0 wbytes=78823424 rios=0 wios=14667 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=40.07 avg60=31.58 avg300=13.25 total=50912408\nfull avg10=27.37 avg60=21.16 avg300=8.40 total=31834292"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.00 total=0\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=0.24 avg60=0.91 avg300=0.51 total=2597684\nfull avg10=0.00 avg60=0.67 avg300=0.39 total=2081197"
+                    }
+                  }
+                },
+                {
+                  "path": "/system.slice",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 316034329075\nuser_usec 243664376839\nsystem_usec 72369952236\nnice_usec 143490293\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.events.local": {
+                      "value": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0"
+                    },
+                    "memory.current": {
+                      "value": "7123144704"
+                    },
+                    "memory.swap.current": {
+                      "value": "0"
+                    },
+                    "pids.current": {
+                      "value": "787"
+                    },
+                    "io.stat": {
+                      "value": "7:6 rbytes=28672 wbytes=0 rios=22 wios=0 dbytes=0 dios=0\n7:5 rbytes=3320411136 wbytes=0 rios=77549 wios=0 dbytes=0 dios=0\n7:3 rbytes=709921792 wbytes=0 rios=16557 wios=0 dbytes=0 dios=0\n7:4 rbytes=25251840 wbytes=0 rios=758 wios=0 dbytes=0 dios=0\n7:2 rbytes=10080620544 wbytes=0 rios=251764 wios=0 dbytes=0 dios=0\n7:1 rbytes=750592 wbytes=0 rios=122 wios=0 dbytes=0 dios=0\n7:0 rbytes=696320 wbytes=0 rios=75 wios=0 dbytes=0 dios=0\n8:0 rbytes=2363433351680 wbytes=227672145408 rios=23901330 wios=34373864 dbytes=57488914432 dios=238563"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=75.64 avg60=62.23 avg300=32.65 total=55877196129\nfull avg10=7.16 avg60=6.14 avg300=3.42 total=11147758572"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.00 total=2579684474\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=2512104460"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=2.30 avg60=4.04 avg300=2.76 total=73775668821\nfull avg10=0.02 avg60=1.88 avg300=1.55 total=68339480732"
+                    }
+                  }
+                },
+                {
+                  "path": "/",
+                  "counters": {
+                    "cpu.stat": {
+                      "value": "usage_usec 1386658162916\nuser_usec 1149724891544\nsystem_usec 236933271372\nnice_usec 143490293\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0"
+                    },
+                    "memory.events": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.events.local": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "memory.swap.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "pids.current": {
+                      "value": null,
+                      "error": "FileNotFoundError"
+                    },
+                    "io.stat": {
+                      "value": "8:0 rbytes=3975920876032 wbytes=3018517464576 rios=34904207 wios=55310913 dbytes=2956934883328 dios=5936335\n7:7 \n7:6 rbytes=28672 wbytes=0 rios=22 wios=0 dbytes=0 dios=0\n7:5 rbytes=3320411136 wbytes=0 rios=77549 wios=0 dbytes=0 dios=0\n7:4 rbytes=25251840 wbytes=0 rios=758 wios=0 dbytes=0 dios=0\n7:3 rbytes=709921792 wbytes=0 rios=16557 wios=0 dbytes=0 dios=0\n7:2 rbytes=10080620544 wbytes=0 rios=251764 wios=0 dbytes=0 dios=0\n7:1 rbytes=750592 wbytes=0 rios=122 wios=0 dbytes=0 dios=0\n7:0 rbytes=696320 wbytes=0 rios=75 wios=0 dbytes=0 dios=0"
+                    },
+                    "cpu.pressure": {
+                      "value": "some avg10=78.64 avg60=65.48 avg300=44.04 total=141102335216\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0"
+                    },
+                    "memory.pressure": {
+                      "value": "some avg10=0.00 avg60=0.00 avg300=0.00 total=16407900963\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=16224450729"
+                    },
+                    "io.pressure": {
+                      "value": "some avg10=3.92 avg60=6.47 avg300=4.68 total=91868678046\nfull avg10=0.03 avg60=2.88 avg300=2.37 total=68449454700"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "host_cpu": {
+            "started_at_epoch": 1789533466.3020036,
+            "scope": "visible host aggregate, not exclusive to benchmark; guest ticks overlap user/nice; iowait may decrease",
+            "cpu_ticks": {
+              "user": 114958140,
+              "nice": 14349,
+              "system": 22443689,
+              "idle": 454000269,
+              "iowait": 19867115,
+              "irq": 0,
+              "softirq": 1249637,
+              "steal": 1902325,
+              "guest": 0,
+              "guest_nice": 0
+            },
+            "clock_ticks_per_second": 100,
+            "boot_id": "dc654322-da37-4c6e-9a9d-be3db8949a5a",
+            "finished_at_epoch": 1789533466.3021264
+          },
+          "scope": "observed settings and visible cgroup constraints; effective resource availability and application enforcement not verified"
+        }
+      },
+      "target_identity": {
+        "name": "opensearch-node-1",
+        "cluster_name": "bench-opensearch-three-node",
+        "cluster_uuid": "LrFRHXosSIe9lGJ3dm03SQ",
+        "version": {
+          "distribution": "opensearch",
+          "number": "2.19.0",
+          "build_type": "tar",
+          "build_hash": "fd9a9d90df25bea1af2c6a85039692e815b894f5",
+          "build_date": "2025-02-05T16:13:57.130576800Z",
+          "build_snapshot": false,
+          "lucene_version": "9.12.1",
+          "minimum_wire_compatibility_version": "7.10.0",
+          "minimum_index_compatibility_version": "7.0.0"
+        },
+        "tagline": "The OpenSearch Project: https://opensearch.org/"
+      },
+      "base_url": "http://127.0.0.1:50535",
+      "manifest_path": "target/v074-release-opensearch-matrix-20260916/opensearch-three-node/cluster/cluster.json",
+      "resource_process_pids": [
+        986302,
+        986494,
+        986676
+      ],
+      "resource_container_names": [
+        "steelsearch-bench-opensearch-three-node-1789533309-1",
+        "steelsearch-bench-opensearch-three-node-1789533309-2",
+        "steelsearch-bench-opensearch-three-node-1789533309-3"
+      ]
+    }
+  },
+  "native_telemetry_budgets": {},
+  "comparisons": {}
+}

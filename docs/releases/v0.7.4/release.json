@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "release": "v0.7.4",
+  "previous_release": "v0.7.3",
+  "prerelease": false,
+  "support_profile": "core-native-knn",
+  "opensearch_version": "2.19.0",
+  "environment": "Local ARM64 Linux host; Steelsearch and OpenSearch run as isolated 1-node or colocated 3-node development processes with 512 MiB OpenSearch heap per node.",
+  "runtime_settings": "Development durability; security disabled for local benchmark services; 5,000 documents; deferred native writes replay on refresh; 3 primary shards; 0 replicas on one node and 1 on three nodes.",
+  "comparison_limits": "Fresh 60-second single samples with four clients and seed 13; OpenSearch includes opensearch-knn for vector and hybrid requests. The fixed v0.6.0 cumulative gate remains a prior scoped exception and is not reset or waived by this release; rejected performance experiments are excluded."
+}
