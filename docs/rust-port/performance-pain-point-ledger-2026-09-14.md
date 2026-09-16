@@ -825,6 +825,28 @@ another.
   within the window and that they share a native commit. Evidence:
   `target/v073-refresh-coalesce-paired-three-20260916/result.json`.
 
+### PP-033: Retain Tantivy's Four Merge Workers Per Index
+
+- Tags: `refresh`, `native-query`, `measurement`.
+- Pinned Tantivy 0.21.1 creates a dedicated Rayon merge pool in
+  `SegmentUpdater::create`, with `NUM_MERGE_THREADS` set to four. Because
+  SteelSearch creates one native index per shard, a three-node, three-shard
+  topology can make this pool count exceed the benchmark host CPU count. A
+  candidate changed only that native pool size from four to one; merge policy,
+  segment selection, commit, visibility, and query semantics were unchanged.
+- The focused queued-refresh tests passed and the full non-plugin HTTP fixture
+  passed 1,198 / 0 / 0 at
+  `target/v073-merge-worker-one-full-compat-20260916/search-compat-report.json`.
+  The ABBA three-node mixed diagnostic did not reproduce a benefit: paired
+  throughput averaged 828.244 versus 833.029 ops/s (0.994x), refresh mean was
+  10.519 versus 10.250ms (1.026x), p95 was 22.288 versus 21.937ms (1.016x),
+  and p99 was 33.351 versus 31.635ms (1.054x). Native commit time also did not
+  fall consistently across the paired runs.
+- Revert the worker limit. Do not retry a global per-index merge worker count
+  without a workload-specific contention profile and a repeated improvement in
+  both throughput and refresh latency. Evidence:
+  `target/v073-merge-worker-one-paired-three-20260916/result.json`.
+
 ## Review Queries
 
 Use these exact searches before beginning a change, then add the result to a
